@@ -6,15 +6,11 @@ pub use helper::*;
 pub use style::*;
 
 pub enum Command<'a> {
-    Rect {
-        rect: Rect,
-        color: u32,
-    },
-    Text {
-        text: &'a str,
-        pos: (usize, usize),
-        color: u32,
-    },
+    Rect { rect: Rect, color: u32 },
+    Text { text: &'a str, color: u32 },
+    VBox,
+    HBox,
+    Spacer,
 }
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
@@ -67,16 +63,12 @@ pub fn draw_cmd<'a>() {
                 &mut window.buffer,
                 color,
             ),
-            Command::Text {
-                text,
-                pos: (x, y),
-                color,
-            } => {
+            Command::Text { text, color } => {
                 draw_text(
                     text,
                     ctx.font.as_ref().unwrap(),
-                    x,
-                    y,
+                    0,
+                    0,
                     32,
                     window.display_scale(),
                     window.width(),
@@ -85,6 +77,9 @@ pub fn draw_cmd<'a>() {
                     false,
                 );
             }
+            Command::VBox => todo!(),
+            Command::HBox => todo!(),
+            Command::Spacer => todo!(),
         };
     }
 }
@@ -122,7 +117,7 @@ pub fn draw_rect(
     }
 }
 
-fn get_id(ctx: &Context, label: &str) -> u64 {
+fn get_id(label: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::hash::DefaultHasher::new();
     label.hash(&mut hasher);
@@ -133,11 +128,11 @@ pub fn button<'a: 'b, 'b>(label: &'a str, style: Style) -> bool {
     let ctx = unsafe { &mut *(&raw mut CTX) };
     let ctx = unsafe { core::mem::transmute::<&mut Context<'static>, &mut Context<'b>>(ctx) };
 
-    let id = get_id(ctx, label);
+    let id = get_id(label);
     let window = ctx.window.as_mut().unwrap();
 
     //TODO: This can easily be cached.
-    let rect = draw_text(
+    let area = draw_text(
         label,
         ctx.font.as_ref().unwrap(),
         0,
@@ -150,7 +145,7 @@ pub fn button<'a: 'b, 'b>(label: &'a str, style: Style) -> bool {
         true,
     );
 
-    let hovered = window.mouse_position.intersects(rect);
+    let hovered = window.mouse_position.intersects(area);
 
     if hovered {
         ctx.hovered_id = Some(id);
@@ -160,18 +155,17 @@ pub fn button<'a: 'b, 'b>(label: &'a str, style: Style) -> bool {
     }
 
     let mut clicked = false;
-    if window.left_mouse.clicked(rect) {
+    if window.left_mouse.clicked(area) {
         clicked = true;
     }
 
     ctx.commands.push(Command::Rect {
-        rect,
+        rect: area,
         color: style.bg.unwrap_or_default(),
     });
 
     ctx.commands.push(Command::Text {
         text: label,
-        pos: (rect.x, rect.y),
         color: style.fg.unwrap_or(white()),
     });
 

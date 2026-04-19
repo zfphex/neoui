@@ -12,7 +12,7 @@ fn main() {
             break;
         }
 
-        if button("example label", bg(black())) {
+        if button("example label", bg(gray())) {
             println!("Clicked")
         }
 

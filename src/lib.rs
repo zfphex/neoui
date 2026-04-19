@@ -1,33 +1,195 @@
 use window::*;
 
+pub mod helper;
+pub mod style;
+pub use helper::*;
+pub use style::*;
+
+pub enum Command<'a> {
+    Rect {
+        rect: Rect,
+        color: u32,
+    },
+    Text {
+        text: &'a str,
+        pos: (usize, usize),
+        color: u32,
+    },
+}
+
+pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
+
+pub struct Context<'a> {
+    pub mouse_pos: (usize, usize),
+    pub mouse_down: bool,
+    pub mouse_pressed_this_frame: bool,
+    pub hovered_id: Option<u64>,
+    pub active_id: Option<u64>,
+    pub commands: Vec<Command<'a>>,
+    pub font: Option<fontdue::Font>,
+    pub window: Option<std::pin::Pin<Box<Window>>>,
+}
+
+pub static mut CTX: Context<'static> = Context {
+    mouse_pos: (0, 0),
+    mouse_down: false,
+    mouse_pressed_this_frame: false,
+    hovered_id: None,
+    active_id: None,
+    commands: Vec::new(),
+    font: None,
+    window: None,
+};
+
+pub fn exit() -> bool {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let window = ctx.window.as_mut().unwrap();
+
+    if let Some(event) = window.event() {
+        return match event {
+            Event::Quit | Event::Input(Key::Escape, _) => true,
+            _ => false,
+        };
+    }
+
+    false
+}
+
+// pub fn ctx_handle_event<'a>(ctx: &mut Context<'a>, window: &mut Window) {}
+
+pub fn draw_cmd<'a>() {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let window = ctx.window.as_mut().unwrap();
+
+    for cmd in core::mem::take(&mut ctx.commands) {
+        match cmd {
+            Command::Rect { rect, color } => draw_rect(
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                window.width(),
+                window.height(),
+                &mut window.buffer,
+                color,
+            ),
+            Command::Text {
+                text,
+                pos: (x, y),
+                color,
+            } => {
+                draw_text(
+                    text,
+                    ctx.font.as_ref().unwrap(),
+                    x,
+                    y,
+                    32,
+                    window.display_scale(),
+                    window.width(),
+                    &mut window.buffer,
+                    color,
+                    false,
+                );
+            }
+        };
+    }
+}
+
+pub fn draw_rect(
+    x: usize,
+    y: usize,
+    mut width: usize,
+    mut height: usize,
+    window_width: usize,
+    window_height: usize,
+    buffer: &mut [u32],
+    color: u32,
+) {
+    //The rectangle is malformed and out of bounds.
+    if x > window_width || y > window_height {
+        return;
+    }
+
+    //Do not allow rectangles to be larger than the viewport
+    //the user should not crash for this.
+    if x + width > window_width {
+        width = window_width.saturating_sub(x);
+    }
+
+    if y + height > window_height {
+        height = window_height.saturating_sub(y);
+    }
+
+    for i in y..y + height {
+        let pos = x + window_width * i;
+        if let Some(buffer) = buffer.get_mut(pos..pos + width) {
+            buffer.fill(color);
+        }
+    }
+}
+
+fn get_id(ctx: &Context, label: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    label.hash(&mut hasher);
+    hasher.finish()
+}
+
+pub fn text(text: &str) {}
+
+pub fn button<'a: 'b, 'b>(label: &'a str, style: Style) -> bool {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let ctx = unsafe { core::mem::transmute::<&mut Context<'static>, &mut Context<'b>>(ctx) };
+
+    let id = get_id(ctx, label);
+    let window = ctx.window.as_mut().unwrap();
+
+    //TODO: This can easily be cached.
+    let rect = draw_text(
+        label,
+        ctx.font.as_ref().unwrap(),
+        0,
+        0,
+        32,
+        1.0,
+        window.width(),
+        &mut [],
+        white(),
+        true,
+    );
+
+    let hovered = window.mouse_position.intersects(rect);
+
+    if hovered {
+        ctx.hovered_id = Some(id);
+        if ctx.mouse_pressed_this_frame {
+            ctx.active_id = Some(id);
+        }
+    }
+
+    let clicked = false;
+    // if !window.left_mouse.pressed && ctx.active_id == Some(id) && hovered {
+    //     clicked = true;
+    // }
+
+    // ctx.commands.push(Command::Rect {
+    //     rect,
+    //     color: bg_color,
+    // });
+
+    ctx.commands.push(Command::Text {
+        text: label,
+        pos: (rect.x + 5, rect.y + 5),
+        color: style.bg.unwrap_or(white()),
+    });
+
+    clicked
+}
+
 pub fn draw_window(window: &mut Window, fill: u32) {
     window.draw();
     window.buffer.fill(fill);
     window.vsync();
-}
-
-pub const fn white() -> u32 {
-    rgb(255, 255, 255)
-}
-
-pub const fn gray() -> u32 {
-    rgb(128, 128, 128)
-}
-
-pub const fn black() -> u32 {
-    rgb(0, 0, 0)
-}
-
-pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
-    (r as u32) << 16 | (g as u32) << 8 | (b as u32)
-}
-
-pub const fn split(color: u32) -> (u8, u8, u8) {
-    (
-        (color >> 16 & 0xFF) as u8,
-        (color >> 8 & 0xFF) as u8,
-        (color & 0xFF) as u8,
-    )
 }
 
 pub const fn scale(value: usize, scale: f32) -> usize {

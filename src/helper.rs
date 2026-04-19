@@ -1,5 +1,3 @@
-use crate::*;
-
 pub struct Button<'a> {
     pub label: &'a str,
     pub bg_color: Option<u32>,

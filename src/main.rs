@@ -12,14 +12,13 @@ fn main() {
             break;
         }
 
-        if button("example label", bg(red())) {
+        if button("example label", bg(black())) {
             println!("Clicked")
         }
 
         let ctx = unsafe { &mut *(&raw mut CTX) };
         let window = ctx.window.as_mut().unwrap();
 
-        ctx.mouse_pos = (window.mouse_position.x, window.mouse_position.y);
         window.buffer.fill(black());
 
         draw_cmd();

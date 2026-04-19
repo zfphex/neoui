@@ -20,9 +20,6 @@ pub enum Command<'a> {
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub struct Context<'a> {
-    pub mouse_pos: (usize, usize),
-    pub mouse_down: bool,
-    pub mouse_pressed_this_frame: bool,
     pub hovered_id: Option<u64>,
     pub active_id: Option<u64>,
     pub commands: Vec<Command<'a>>,
@@ -31,9 +28,6 @@ pub struct Context<'a> {
 }
 
 pub static mut CTX: Context<'static> = Context {
-    mouse_pos: (0, 0),
-    mouse_down: false,
-    mouse_pressed_this_frame: false,
     hovered_id: None,
     active_id: None,
     commands: Vec::new(),
@@ -135,8 +129,6 @@ fn get_id(ctx: &Context, label: &str) -> u64 {
     hasher.finish()
 }
 
-pub fn text(text: &str) {}
-
 pub fn button<'a: 'b, 'b>(label: &'a str, style: Style) -> bool {
     let ctx = unsafe { &mut *(&raw mut CTX) };
     let ctx = unsafe { core::mem::transmute::<&mut Context<'static>, &mut Context<'b>>(ctx) };
@@ -162,25 +154,25 @@ pub fn button<'a: 'b, 'b>(label: &'a str, style: Style) -> bool {
 
     if hovered {
         ctx.hovered_id = Some(id);
-        if ctx.mouse_pressed_this_frame {
+        if window.left_mouse.pressed {
             ctx.active_id = Some(id);
         }
     }
 
-    let clicked = false;
-    // if !window.left_mouse.pressed && ctx.active_id == Some(id) && hovered {
-    //     clicked = true;
-    // }
+    let mut clicked = false;
+    if window.left_mouse.clicked(rect) {
+        clicked = true;
+    }
 
-    // ctx.commands.push(Command::Rect {
-    //     rect,
-    //     color: bg_color,
-    // });
+    ctx.commands.push(Command::Rect {
+        rect,
+        color: style.bg.unwrap_or_default(),
+    });
 
     ctx.commands.push(Command::Text {
         text: label,
-        pos: (rect.x + 5, rect.y + 5),
-        color: style.bg.unwrap_or(white()),
+        pos: (rect.x, rect.y),
+        color: style.fg.unwrap_or(white()),
     });
 
     clicked

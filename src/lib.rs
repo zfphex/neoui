@@ -5,6 +5,25 @@ pub mod style;
 pub use helper::*;
 pub use style::*;
 
+#[macro_export]
+//https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
+macro_rules! id {
+    () => {{
+        const fn _hash(file: &'static str, line: u32) -> u64 {
+            let mut hash = 0xcbf29ce484222325;
+            let mut i = 0;
+            while i < file.len() {
+                hash ^= file.as_bytes()[i] as u64;
+                hash = hash.wrapping_mul(0x100000001b3);
+                i += 1;
+            }
+            hash ^= line as u64;
+            hash
+        }
+        _hash(file!(), line!())
+    }};
+}
+
 pub enum Command<'a> {
     Rect { rect: Rect, color: u32 },
     Text { text: &'a str, color: u32 },

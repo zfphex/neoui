@@ -150,7 +150,7 @@ fn main() {
         begin_layout_with_bounds(Flow::Down, Rect::new(0, content_y, sidebar_w, content_h));
         ctx.rect(Rect::new(0, content_y, sidebar_w, content_h), panel_bg);
 
-        ctx.label("All Music (89)", style().fg(text_dim).font_size(13));
+        ctx.button("All Music (89)", style().fg(text_dim).font_size(13));
 
         let artists = [
             "  Arca (1)",
@@ -193,7 +193,7 @@ fn main() {
             panel_bg,
         );
 
-        ctx.label(
+        ctx.button(
             "Metadata Info Tracker",
             style().fg(accent_blue).font_size(13),
         );
@@ -225,7 +225,7 @@ fn main() {
                 meta_grid_bounds,
                 Flow::Right,
             );
-            ctx.label(*prop, style().fg(text_dim).font_size(13).pad(4));
+            ctx.button(*prop, style().fg(text_dim).font_size(13).pad(4));
             end_layout();
 
             begin_grid_cell(
@@ -237,7 +237,7 @@ fn main() {
                 Flow::Right,
             );
             let display_val = format!("{}", val);
-            ctx.label(display_val, style().fg(white()).font_size(13).pad(2));
+            ctx.button(display_val, style().fg(white()).font_size(13).pad(2));
             end_layout();
         }
 
@@ -256,7 +256,7 @@ fn main() {
             panel_bg,
         );
 
-        ctx.label(
+        ctx.button(
             "beabadoobee - [2020] Fake It Flowers",
             style().fg(accent_blue).font_size(14),
         );

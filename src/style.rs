@@ -46,38 +46,38 @@ impl Style {
         self
     }
 
-    pub fn pad(mut self, p: usize) -> Self {
-        self.padding = Some(pad(p));
-        self
-    }
+    // pub fn pad(mut self, p: usize) -> Self {
+    //     self.padding = Some(pad(p));
+    //     self
+    // }
 
-    pub fn padt(mut self, v: usize) -> Self {
-        let mut p = self.padding.unwrap_or_default();
-        p.top = v;
-        self.padding = Some(p);
-        self
-    }
+    // pub fn padt(mut self, v: usize) -> Self {
+    //     let mut p = self.padding.unwrap_or_default();
+    //     p.top = v;
+    //     self.padding = Some(p);
+    //     self
+    // }
 
-    pub fn padb(mut self, v: usize) -> Self {
-        let mut p = self.padding.unwrap_or_default();
-        p.bottom = v;
-        self.padding = Some(p);
-        self
-    }
+    // pub fn padb(mut self, v: usize) -> Self {
+    //     let mut p = self.padding.unwrap_or_default();
+    //     p.bottom = v;
+    //     self.padding = Some(p);
+    //     self
+    // }
 
-    pub fn padl(mut self, v: usize) -> Self {
-        let mut p = self.padding.unwrap_or_default();
-        p.left = v;
-        self.padding = Some(p);
-        self
-    }
+    // pub fn padl(mut self, v: usize) -> Self {
+    //     let mut p = self.padding.unwrap_or_default();
+    //     p.left = v;
+    //     self.padding = Some(p);
+    //     self
+    // }
 
-    pub fn padr(mut self, v: usize) -> Self {
-        let mut p = self.padding.unwrap_or_default();
-        p.right = v;
-        self.padding = Some(p);
-        self
-    }
+    // pub fn padr(mut self, v: usize) -> Self {
+    //     let mut p = self.padding.unwrap_or_default();
+    //     p.right = v;
+    //     self.padding = Some(p);
+    //     self
+    // }
 
     pub fn font_size(mut self, font_size: usize) -> Self {
         self.font_size = Some(font_size);
@@ -113,6 +113,44 @@ impl Style {
         self.height = Some(h);
         self
     }
+}
+
+macro_rules! impl_pad_swizzle {
+    ($($name:ident => [$($edge:ident),+]);* $(;)?) => {
+        impl Style {
+            $(
+                #[doc = concat!("Set padding for: (", stringify!($($edge)+), ")")]
+                pub fn $name(mut self, value: usize) -> Self {
+                    let mut p = self.padding.unwrap_or_default();
+                    $(
+                        p.$edge = value;
+                    )+
+                    self.padding = Some(p);
+                    self
+                }
+            )*
+        }
+    };
+}
+
+impl_pad_swizzle! {
+    pad   => [top, bottom, left, right];
+    padh  => [left, right];
+    padv  => [top, bottom];
+
+    padt  => [top];
+    padb  => [bottom];
+    padl  => [left];
+    padr  => [right];
+
+    padtl => [top, left];
+    padtr => [top, right];
+    padbl => [bottom, left];
+    padbr => [bottom, right];
+
+    padtb => [top, bottom];
+    padlr => [left, right];
+    padrl => [right, left];
 }
 
 pub fn font_size(font_size: usize) -> Style {

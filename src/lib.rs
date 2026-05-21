@@ -40,18 +40,9 @@ pub enum Command {
 }
 
 pub struct State {
-    clicked: bool,
-    hovered: bool,
-}
-
-impl State {
-    pub fn clicked(self) -> bool {
-        self.clicked
-    }
-
-    pub fn hovered(self) -> bool {
-        self.hovered
-    }
+    pub clicked: bool,
+    pub hovered: bool,
+    pub rect: Rect,
 }
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
@@ -113,11 +104,49 @@ impl Context {
         self.commands.push(Command::Rect { rect, color });
     }
 
+    pub fn text_aligned(
+        &mut self,
+        dest: Rect,
+        text: impl Into<Cow<'static, str>>,
+        color: u32,
+        font_size: usize,
+        alignment: Alignment,
+    ) {
+        let text = text.into();
+        let window = self.window.as_mut().unwrap();
+        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+        let font = self.font.as_ref().expect("Font asset missing from Context");
+        let text_metrics = draw_text_subpixel(
+            &text,
+            font,
+            0,
+            0,
+            font_size,
+            1.0,
+            window.width(),
+            &mut [],
+            color,
+            true,
+            cache_map,
+        );
+
+        let rect = align_rect(dest, text_metrics.width, text_metrics.height, alignment);
+        self.commands.push(Command::Text {
+            text,
+            x: rect.x,
+            y: rect.y,
+            color,
+            size: font_size,
+        });
+    }
+
     pub fn button<'a>(&mut self, text: impl Into<Cow<'static, str>>, style: Style) -> State {
         let text = text.into();
-        let width = self.width();
+        let width_ctx = self.width();
         let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
         let font_size = style.font_size.unwrap_or(self.default_font_size);
+
+        // 1. Dry-run text metrics measurement
         let text_metrics = draw_text_subpixel(
             &text,
             self.font.as_ref().unwrap(),
@@ -125,7 +154,7 @@ impl Context {
             0,
             font_size,
             1.0,
-            width,
+            width_ctx,
             &mut [],
             white(),
             true,
@@ -141,7 +170,6 @@ impl Context {
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
         let rect = self.walk_layout(width, height);
-
         let window = self.window.as_mut().unwrap();
         let hovered = window.mouse_position.intersects(rect);
         let clicked = window.left_mouse.clicked(rect);
@@ -151,55 +179,19 @@ impl Context {
             self.commands.push(Command::Rect { rect, color });
         }
 
-        let center_y = rect.y + rect.height / 2;
-        let text_x = rect.x + (width.saturating_sub(text_metrics.width) / 2);
-        let text_y = center_y.saturating_sub(text_metrics.height / 2);
-
-        self.commands.push(Command::Text {
+        self.text_aligned(
+            rect,
             text,
-            x: text_x,
-            y: text_y,
-            color: style.fg.unwrap_or(white()),
-            size: font_size,
-        });
-
-        State { clicked, hovered }
-    }
-
-    pub fn label(&mut self, text: impl Into<Cow<'static, str>>, style: Style) {
-        let text = text.into();
-        let ctx = unsafe { &mut *(&raw mut CTX) };
-        let window = self.window.as_ref().unwrap();
-        let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
-        let text_metrics = draw_text_subpixel(
-            &text,
-            ctx.font.as_ref().unwrap(),
-            0,
-            0,
+            style.fg.unwrap_or(white()),
             font_size,
-            1.0,
-            window.width(),
-            &mut [],
-            white(),
-            true,
-            cache_map,
+            Alignment::Center,
         );
 
-        let padding = style.padding.unwrap_or_default();
-        let width = text_metrics.width + padding.left + padding.right;
-        let height = text_metrics.height + padding.top + padding.bottom;
-        let rect = self.walk_layout(width, height);
-
-        let center_y = rect.y + rect.height / 2;
-        let text_y = center_y.saturating_sub(text_metrics.height / 2);
-        ctx.commands.push(Command::Text {
-            text,
-            x: rect.x + padding.left,
-            y: text_y,
-            color: style.fg.unwrap_or(white()),
-            size: font_size,
-        });
+        State {
+            clicked,
+            hovered,
+            rect,
+        }
     }
 
     pub fn list_item(
@@ -210,32 +202,15 @@ impl Context {
         style: Style,
     ) -> bool {
         let text = text.into();
-        let ctx = unsafe { &mut *(&raw mut CTX) };
-        let window = ctx.window.as_mut().unwrap();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let padding = style.padding.unwrap_or_default();
-
-        let cache_map = ctx.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
-        let text_metrics = draw_text_subpixel(
-            &text,
-            ctx.font.as_ref().unwrap(),
-            0,
-            0,
-            font_size,
-            1.0,
-            window.width(),
-            &mut [],
-            white(),
-            true,
-            cache_map,
-        );
-
         let allocated_h = font_size + padding.top + padding.bottom;
         let rect = self.walk_layout(width_override, allocated_h);
+        let window = self.window.as_mut().unwrap();
         let hovered = window.mouse_position.intersects(rect);
         let clicked = window.left_mouse.clicked(rect);
 
-        let resolved_bg = if selected {
+        let bg = if selected {
             style.selected
         } else if hovered {
             style.hover
@@ -243,32 +218,23 @@ impl Context {
             style.bg
         };
 
-        if let Some(bg_color) = resolved_bg {
-            ctx.commands.push(Command::Rect {
-                rect,
-                color: bg_color,
-            });
+        if let Some(color) = bg {
+            self.commands.push(Command::Rect { rect, color });
         }
 
         if selected {
-            if let Some(border_color) = style.selected_border {
-                ctx.commands.push(Command::RectOutline {
-                    rect,
-                    color: border_color,
-                });
+            if let Some(color) = style.selected_border {
+                self.commands.push(Command::RectOutline { rect, color });
             }
         }
 
-        let center_y = rect.y + rect.height / 2;
-        let text_y = center_y.saturating_sub(text_metrics.height / 2);
-
-        ctx.commands.push(Command::Text {
+        self.text_aligned(
+            rect,
             text,
-            x: rect.x + padding.left,
-            y: text_y,
-            color: style.fg.unwrap_or(white()),
-            size: font_size,
-        });
+            style.fg.unwrap_or(white()),
+            font_size,
+            Alignment::Left { pad: padding.left },
+        );
 
         clicked
     }
@@ -410,6 +376,44 @@ pub fn end_layout() {
             }
         }
     }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Alignment {
+    Left { pad: usize },
+    Center,
+    Right { pad: usize },
+    TopLeft { padh: usize, padv: usize },
+    TopCenter { pad: usize },
+    TopRight { padh: usize, padv: usize },
+    BottomLeft { padh: usize, padv: usize },
+    BottomCenter { pad: usize },
+    BottomRight { padh: usize, padv: usize },
+}
+
+pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
+    let mid_x = || parent.x + (parent.width / 2) - (child_w / 2);
+    let mid_y = || parent.y + (parent.height / 2) - (child_h / 2);
+    let right_edge = || parent.x + parent.width - child_w;
+    let bottom_edge = || parent.y + parent.height - child_h;
+
+    let (x, y) = match alignment {
+        Alignment::Left { pad } => (parent.x + pad, mid_y()),
+        Alignment::Center => (mid_x(), mid_y()),
+        Alignment::Right { pad } => (right_edge().saturating_sub(pad), mid_y()),
+        Alignment::TopLeft { padh, padv } => (parent.x + padh, parent.y + padv),
+        Alignment::TopCenter { pad } => (mid_x(), parent.y + pad),
+        Alignment::TopRight { padh, padv } => (right_edge().saturating_sub(padh), parent.y + padv),
+        Alignment::BottomLeft { padh, padv } => {
+            (parent.x + padh, bottom_edge().saturating_sub(padv))
+        }
+        Alignment::BottomCenter { pad } => (mid_x(), bottom_edge().saturating_sub(pad)),
+        Alignment::BottomRight { padh, padv } => (
+            right_edge().saturating_sub(padh),
+            bottom_edge().saturating_sub(padv),
+        ),
+    };
+
+    Rect::new(x, y, child_w, child_h)
 }
 
 pub fn exit() -> bool {

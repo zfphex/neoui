@@ -1,54 +1,373 @@
-use window::*;
-
-pub mod helper;
 pub mod style;
-pub use helper::*;
 pub use style::*;
 
-#[macro_export]
-//https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-macro_rules! id {
-    () => {{
-        const fn _hash(file: &'static str, line: u32) -> u64 {
-            let mut hash = 0xcbf29ce484222325;
-            let mut i = 0;
-            while i < file.len() {
-                hash ^= file.as_bytes()[i] as u64;
-                hash = hash.wrapping_mul(0x100000001b3);
-                i += 1;
-            }
-            hash ^= line as u64;
-            hash
-        }
-        _hash(file!(), line!())
-    }};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use window::*;
+
+#[derive(Debug, Clone, Copy)]
+pub enum Flow {
+    Down,
+    Right,
 }
 
-pub enum Command<'a> {
-    Rect { rect: Rect, color: u32 },
-    Text { text: &'a str, color: u32 },
-    VBox,
-    HBox,
-    Spacer,
+#[derive(Debug, Clone, Copy)]
+pub struct TurtleFrame {
+    pub bounds: Rect,
+    pub flow: Flow,
+    pub cursor_x: usize,
+    pub cursor_y: usize,
+    pub max_child_width: usize,
+    pub max_child_height: usize,
+}
+
+pub enum Command {
+    Rect {
+        rect: Rect,
+        color: u32,
+    },
+    RectOutline {
+        rect: Rect,
+        color: u32,
+    },
+    Text {
+        text: Cow<'static, str>,
+        x: usize,
+        y: usize,
+        color: u32,
+        size: usize,
+    },
 }
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
-pub struct Context<'a> {
+pub struct Context {
     pub hovered_id: Option<u64>,
     pub active_id: Option<u64>,
-    pub commands: Vec<Command<'a>>,
+    pub commands: Vec<Command>,
     pub font: Option<fontdue::Font>,
     pub window: Option<std::pin::Pin<Box<Window>>>,
+    pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    pub glyph_cache_subpixel: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    pub layout_stack: Vec<TurtleFrame>,
+    pub default_font_size: usize,
 }
 
-pub static mut CTX: Context<'static> = Context {
+impl Context {
+    pub fn rect(&mut self, rect: Rect, color: u32) {
+        self.commands.push(Command::Rect { rect, color });
+    }
+
+    pub fn button<'a>(&mut self, text: impl Into<Cow<'static, str>>, style: Style) -> bool {
+        let text = text.into();
+        let window = self.window.as_mut().unwrap();
+
+        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+        let font_size = style.font_size.unwrap_or(self.default_font_size);
+        let text_metrics = draw_text_subpixel(
+            &text,
+            self.font.as_ref().unwrap(),
+            0,
+            0,
+            font_size,
+            1.0,
+            window.width(),
+            &mut [],
+            white(),
+            true,
+            cache_map,
+        );
+
+        let padding = style.padding.unwrap_or_default();
+        let width = text_metrics.width + padding.left + padding.right;
+        let height = text_metrics.height + padding.top + padding.bottom;
+
+        let frame = self
+            .layout_stack
+            .last_mut()
+            .expect("No active layout frame");
+        let button_rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
+
+        match frame.flow {
+            Flow::Down => {
+                frame.cursor_y += height;
+                frame.max_child_width = frame.max_child_width.max(width);
+                frame.max_child_height += height;
+            }
+            Flow::Right => {
+                frame.cursor_x += width;
+                frame.max_child_width += width;
+                frame.max_child_height = frame.max_child_height.max(height);
+            }
+        }
+
+        let _hovered = window.mouse_position.intersects(button_rect);
+        let clicked = window.left_mouse.clicked(button_rect);
+
+        self.commands.push(Command::Rect {
+            rect: button_rect,
+            color: style.bg.unwrap_or(gray()),
+        });
+
+        let center_y = button_rect.y + button_rect.height / 2;
+        let text_y = center_y.saturating_sub(font_size / 2);
+
+        self.commands.push(Command::Text {
+            text,
+            x: button_rect.x + padding.left,
+            y: text_y,
+            color: style.fg.unwrap_or(white()),
+            size: font_size,
+        });
+
+        clicked
+    }
+
+    pub fn label(&mut self, text: impl Into<Cow<'static, str>>, style: Style) {
+        let text = text.into();
+        let ctx = unsafe { &mut *(&raw mut CTX) };
+        let window = self.window.as_ref().unwrap();
+        let font_size = style.font_size.unwrap_or(self.default_font_size);
+        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+        let text_metrics = draw_text_subpixel(
+            &text,
+            ctx.font.as_ref().unwrap(),
+            0,
+            0,
+            font_size,
+            1.0,
+            window.width(),
+            &mut [],
+            white(),
+            true,
+            cache_map,
+        );
+
+        let padding = style.padding.unwrap_or_default();
+        let width = text_metrics.width + padding.left + padding.right;
+        let height = text_metrics.height + padding.top + padding.bottom;
+
+        let frame = ctx.layout_stack.last_mut().expect("No active layout frame");
+        let target_rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
+
+        match frame.flow {
+            Flow::Down => {
+                frame.cursor_y += height;
+                frame.max_child_width = frame.max_child_width.max(width);
+                frame.max_child_height += height;
+            }
+            Flow::Right => {
+                frame.cursor_x += width;
+                frame.max_child_width += width;
+                frame.max_child_height = frame.max_child_height.max(height);
+            }
+        }
+
+        let center_y = target_rect.y + target_rect.height / 2;
+        let text_y = center_y.saturating_sub(text_metrics.height / 2);
+        ctx.commands.push(Command::Text {
+            text,
+            x: target_rect.x + padding.left,
+            y: text_y,
+            color: style.fg.unwrap_or(white()),
+            size: font_size,
+        });
+    }
+
+    pub fn list_item(
+        &mut self,
+        text: impl Into<Cow<'static, str>>,
+        selected: bool,
+        width_override: usize,
+        style: Style,
+    ) -> bool {
+        let text = text.into();
+        let ctx = unsafe { &mut *(&raw mut CTX) };
+        let window = ctx.window.as_mut().unwrap();
+        let font_size = style.font_size.unwrap_or(self.default_font_size);
+        let padding = style.padding.unwrap_or_default();
+
+        let cache_map = ctx.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+        let text_metrics = draw_text_subpixel(
+            &text,
+            ctx.font.as_ref().unwrap(),
+            0,
+            0,
+            font_size,
+            1.0,
+            window.width(),
+            &mut [],
+            white(),
+            true,
+            cache_map,
+        );
+
+        let allocated_h = font_size + padding.top + padding.bottom;
+        let frame = ctx.layout_stack.last_mut().expect("No active layout frame");
+        let target_rect = Rect::new(frame.cursor_x, frame.cursor_y, width_override, allocated_h);
+
+        match frame.flow {
+            Flow::Down => {
+                frame.cursor_y += allocated_h;
+                frame.max_child_width = frame.max_child_width.max(width_override);
+                frame.max_child_height += allocated_h;
+            }
+            Flow::Right => {
+                frame.cursor_x += width_override;
+                frame.max_child_width += width_override;
+                frame.max_child_height = frame.max_child_height.max(allocated_h);
+            }
+        }
+
+        let hovered = window.mouse_position.intersects(target_rect);
+        let clicked = window.left_mouse.clicked(target_rect);
+
+        let resolved_bg = if selected {
+            style.selected
+        } else if hovered {
+            style.hover
+        } else {
+            style.bg
+        };
+
+        if let Some(bg_color) = resolved_bg {
+            ctx.commands.push(Command::Rect {
+                rect: target_rect,
+                color: bg_color,
+            });
+        }
+
+        if selected {
+            if let Some(border_color) = style.selected_border {
+                ctx.commands.push(Command::RectOutline {
+                    rect: target_rect,
+                    color: border_color,
+                });
+            }
+        }
+
+        let center_y = target_rect.y + target_rect.height / 2;
+        let text_y = center_y.saturating_sub(text_metrics.height / 2);
+
+        ctx.commands.push(Command::Text {
+            text,
+            x: target_rect.x + padding.left,
+            y: text_y,
+            color: style.fg.unwrap_or(white()),
+            size: font_size,
+        });
+
+        clicked
+    }
+
+    pub fn fill(&mut self, color: u32) {
+        let window = self.window.as_mut().unwrap();
+        window.buffer.fill(color);
+    }
+
+    pub fn draw(&mut self) {
+        let window = self.window.as_mut().unwrap();
+        window.draw();
+        window.vsync();
+    }
+}
+
+pub static mut CTX: Context = Context {
     hovered_id: None,
     active_id: None,
     commands: Vec::new(),
     font: None,
     window: None,
+    layout_stack: Vec::new(),
+    glyph_cache: None,
+    glyph_cache_subpixel: None,
+    default_font_size: 32,
 };
+
+pub fn begin_ui() {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let window = ctx.window.as_ref().unwrap();
+    let root_bounds = Rect::new(0, 0, window.width(), window.height());
+    ctx.layout_stack.clear();
+    ctx.layout_stack.push(TurtleFrame {
+        bounds: root_bounds,
+        flow: Flow::Down,
+        cursor_x: 0,
+        cursor_y: 0,
+        max_child_width: 0,
+        max_child_height: 0,
+    });
+}
+
+pub fn begin_layout(flow: Flow) {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let parent = ctx.layout_stack.last().expect("Layout stack empty");
+
+    let new_frame = TurtleFrame {
+        bounds: Rect::new(
+            parent.cursor_x,
+            parent.cursor_y,
+            parent.bounds.width,
+            parent.bounds.height,
+        ),
+        flow,
+        cursor_x: parent.cursor_x,
+        cursor_y: parent.cursor_y,
+        max_child_width: 0,
+        max_child_height: 0,
+    };
+    ctx.layout_stack.push(new_frame);
+}
+
+pub fn begin_layout_with_bounds(flow: Flow, explicit_bounds: Rect) {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let new_frame = TurtleFrame {
+        bounds: explicit_bounds,
+        flow,
+        cursor_x: explicit_bounds.x,
+        cursor_y: explicit_bounds.y,
+        max_child_width: 0,
+        max_child_height: 0,
+    };
+    ctx.layout_stack.push(new_frame);
+}
+
+pub fn begin_grid_cell(
+    col: usize,
+    row: usize,
+    col_width: usize,
+    row_height: usize,
+    grid_bounds: Rect,
+    flow: Flow,
+) {
+    let cell_x = grid_bounds.x + (col * col_width);
+    let cell_y = grid_bounds.y + (row * row_height);
+
+    let cell_w = col_width.min(grid_bounds.width.saturating_sub(col * col_width));
+    let cell_h = row_height.min(grid_bounds.height.saturating_sub(row * row_height));
+
+    begin_layout_with_bounds(flow, Rect::new(cell_x, cell_y, cell_w, cell_h));
+}
+
+pub fn end_layout() {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let finished = ctx.layout_stack.pop().expect("Layout underflow");
+
+    if let Some(parent) = ctx.layout_stack.last_mut() {
+        match parent.flow {
+            Flow::Down => {
+                parent.cursor_y += finished.max_child_height;
+                parent.max_child_width = parent.max_child_width.max(finished.max_child_width);
+                parent.max_child_height += finished.max_child_height;
+            }
+            Flow::Right => {
+                parent.cursor_x += finished.max_child_width;
+                parent.max_child_width += finished.max_child_width;
+                parent.max_child_height = parent.max_child_height.max(finished.max_child_height);
+            }
+        }
+    }
+}
 
 pub fn exit() -> bool {
     let ctx = unsafe { &mut *(&raw mut CTX) };
@@ -60,18 +379,25 @@ pub fn exit() -> bool {
             _ => false,
         };
     }
-
     false
 }
 
-// pub fn ctx_handle_event<'a>(ctx: &mut Context<'a>, window: &mut Window) {}
-
-pub fn draw_cmd<'a>() {
+pub fn draw_cmd() {
     let ctx = unsafe { &mut *(&raw mut CTX) };
     let window = ctx.window.as_mut().unwrap();
 
     for cmd in core::mem::take(&mut ctx.commands) {
         match cmd {
+            Command::RectOutline { rect, color } => draw_rect_outline(
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                window.width(),
+                // window.height(),
+                &mut window.buffer,
+                color,
+            ),
             Command::Rect { rect, color } => draw_rect(
                 rect.x,
                 rect.y,
@@ -82,23 +408,28 @@ pub fn draw_cmd<'a>() {
                 &mut window.buffer,
                 color,
             ),
-            Command::Text { text, color } => {
-                draw_text(
-                    text,
+            Command::Text {
+                text,
+                x,
+                y,
+                color,
+                size,
+            } => {
+                let cache_map = ctx.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+                draw_text_subpixel(
+                    &text,
                     ctx.font.as_ref().unwrap(),
-                    0,
-                    0,
-                    32,
+                    x,
+                    y,
+                    size,
                     window.display_scale(),
                     window.width(),
                     &mut window.buffer,
                     color,
                     false,
+                    cache_map,
                 );
             }
-            Command::VBox => todo!(),
-            Command::HBox => todo!(),
-            Command::Spacer => todo!(),
         };
     }
 }
@@ -113,17 +444,12 @@ pub fn draw_rect(
     buffer: &mut [u32],
     color: u32,
 ) {
-    //The rectangle is malformed and out of bounds.
     if x > window_width || y > window_height {
         return;
     }
-
-    //Do not allow rectangles to be larger than the viewport
-    //the user should not crash for this.
     if x + width > window_width {
         width = window_width.saturating_sub(x);
     }
-
     if y + height > window_height {
         height = window_height.saturating_sub(y);
     }
@@ -136,65 +462,45 @@ pub fn draw_rect(
     }
 }
 
-fn get_id(label: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::hash::DefaultHasher::new();
-    label.hash(&mut hasher);
-    hasher.finish()
-}
+pub fn draw_rect_outline(
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    window_width: usize,
+    buffer: &mut [u32],
+    color: u32,
+) {
+    if height == 0 || width == 0 {
+        return;
+    }
+    //Draw the first line
+    let pos = x + window_width * y;
+    if let Some(buffer) = buffer.get_mut(pos..=pos + width) {
+        buffer.fill(color);
+    }
 
-pub fn button<'a: 'b, 'b>(label: &'a str, style: Style) -> bool {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let ctx = unsafe { core::mem::transmute::<&mut Context<'static>, &mut Context<'b>>(ctx) };
+    //Draw the middle pixels
+    //Skip the first line.
+    for i in (y + 1)..(y + height - 1) {
+        let left = x + window_width * i;
+        if let Some(buffer) = buffer.get_mut(left) {
+            *buffer = color;
+        }
 
-    let id = get_id(label);
-    let window = ctx.window.as_mut().unwrap();
-
-    //TODO: This can easily be cached.
-    let area = draw_text(
-        label,
-        ctx.font.as_ref().unwrap(),
-        0,
-        0,
-        32,
-        1.0,
-        window.width(),
-        &mut [],
-        white(),
-        true,
-    );
-
-    let hovered = window.mouse_position.intersects(area);
-
-    if hovered {
-        ctx.hovered_id = Some(id);
-        if window.left_mouse.pressed {
-            ctx.active_id = Some(id);
+        let right = x + width + window_width * i;
+        if let Some(buffer) = buffer.get_mut(right) {
+            *buffer = color;
         }
     }
 
-    let mut clicked = false;
-    if window.left_mouse.clicked(area) {
-        clicked = true;
+    //Draw the last line
+    if height > 1 {
+        let pos = x + window_width * (y + height - 1);
+        if let Some(buffer) = buffer.get_mut(pos..=pos + width) {
+            buffer.fill(color);
+        }
     }
-
-    ctx.commands.push(Command::Rect {
-        rect: area,
-        color: style.bg.unwrap_or_default(),
-    });
-
-    ctx.commands.push(Command::Text {
-        text: label,
-        color: style.fg.unwrap_or(white()),
-    });
-
-    clicked
-}
-
-pub fn draw_window(window: &mut Window, fill: u32) {
-    window.draw();
-    window.buffer.fill(fill);
-    window.vsync();
 }
 
 pub const fn scale(value: usize, scale: f32) -> usize {
@@ -212,11 +518,11 @@ pub fn draw_text(
     y: usize,
     font_size: usize,
     display_scale: f32,
-    // window: Rect,
     window_width: usize,
     buffer: &mut [u32],
     color: u32,
     skip_draw: bool,
+    cache_map: &mut HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
 ) -> Rect {
     if text.is_empty() || font_size == 0 {
         return Rect::new(0, 0, 0, 0);
@@ -239,30 +545,26 @@ pub fn draw_text(
         let mut glyph_x = x;
 
         for char in line.chars() {
-            let (metrics, bitmap) = font.rasterize(char, font_size as f32);
+            let (metrics, bitmap) = cache_map
+                .entry((char, font_size))
+                .or_insert_with(|| font.rasterize(char, font_size as f32));
 
             let glyph_y =
                 y as f32 - (metrics.height as f32 - metrics.advance_height) - metrics.ymin as f32;
 
             for y in 0..metrics.height {
                 'x: for x in 0..metrics.width {
-                    //Text doesn't fit on the screen.
                     if (x + glyph_x) >= window_width {
                         continue;
                     }
 
-                    //TODO: Metrics.bounds determines the bounding are of the glyph.
-                    //Currently the whole bitmap bounding box is drawn.
                     let alpha = bitmap[x + y * metrics.width];
                     if alpha == 0 {
                         continue;
                     }
 
-                    //Should the text really be offset by the font size?
-                    //This allows the user to draw text at (0, 0).
                     let offset = font_size as f32 + glyph_y + y as f32;
 
-                    //We can't render off of the screen, mkay?
                     if offset < 0.0 {
                         continue;
                     }
@@ -299,7 +601,6 @@ pub fn draw_text(
 
             glyph_x += metrics.advance_width as usize;
 
-            //Check if the glyph position is off the screen.
             if glyph_x >= window_width {
                 break 'line;
             }
@@ -308,8 +609,177 @@ pub fn draw_text(
         y += font_size;
     }
 
-    //Not sure why these are one off.
     area.height = max_y + 1 - area.y;
     area.width = max_x + 1 - area.x;
+    area
+}
+
+pub fn draw_text_subpixel(
+    text: &str,
+    font: &fontdue::Font,
+    x: usize,
+    y: usize,
+    font_size: usize,
+    display_scale: f32,
+    window_width: usize,
+    buffer: &mut [u32],
+    color: u32,
+    skip_draw: bool,
+    cache_map: &mut HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+) -> Rect {
+    //http://arkanis.de/weblog/2023-08-14-simple-good-quality-subpixel-text-rendering-in-opengl-with-stb-truetype-and-dual-source-blending
+    // https://github.com/arkanis/gl-4.5-subpixel-text-rendering/blob/d770f0395f610d9fcc53319734069fe7fc4138b2/main.c#L626
+
+    // [FT_LCD_FILTER_DEFAULT](https://freetype.org/freetype2/docs/reference/ft2-lcd_rendering.html)
+    // This is a beveled, normalized, and color-balanced five-tap filter with weights of [0x08 0x4D 0x56 0x4D 0x08] in 1/256 units.
+    // const LCD_FILTER: [u8; 5] = [0x08, 0x4D, 0x56, 0x4D, 0x08];
+
+    pub fn apply_lcd_filter(bitmap: &[u8], width: usize, height: usize) -> Vec<u8> {
+        let stride = width * 3;
+        let mut output = vec![0u8; bitmap.len()];
+
+        for row in 0..height {
+            let offset = row * stride;
+            for i in 0..stride {
+                // We only filter horizontally across R, G, B values
+                let idx = offset + i;
+
+                // Boundary checks for left/right neighbors
+                let left = if i == 0 { 0 } else { bitmap[idx - 1] as u16 };
+                let center = bitmap[idx] as u16;
+                let right = if i == stride - 1 {
+                    0
+                } else {
+                    bitmap[idx + 1] as u16
+                };
+
+                // [1, 2, 1] weighted average
+                output[idx] = ((left + center * 2 + right) / 4) as u8;
+            }
+        }
+        output
+    }
+
+    if text.is_empty() || font_size == 0 {
+        return Rect::default();
+    }
+
+    let x_start = scale(x, display_scale);
+    let y_start = scale(y, display_scale);
+    let font_size = scale(font_size, display_scale);
+
+    let mut area = Rect::new(x_start, y_start, 0, 0);
+    let mut y_pos = area.y;
+    let x_pos = area.x;
+
+    let mut max_x = 0;
+    let mut max_y = 0;
+
+    let (r, g, b) = split(color);
+
+    // Pre-calculate linear text color (Gamma 2.2 approximation: x^2)
+    let txt_r_lin = (r as f32 / 255.0).powi(2);
+    let txt_g_lin = (g as f32 / 255.0).powi(2);
+    let txt_b_lin = (b as f32 / 255.0).powi(2);
+
+    'line: for line in text.lines() {
+        let mut glyph_x = x_pos;
+
+        for char in line.chars() {
+            // let (metrics, raw_bitmap) = font.rasterize_subpixel(char, font_size as f32);
+
+            let (metrics, bitmap) = cache_map.entry((char, font_size)).or_insert_with(|| {
+                let (metrics, bitmap) = font.rasterize_subpixel(char, font_size as f32);
+                let bitmap = apply_lcd_filter(&bitmap, metrics.width, metrics.height);
+                (metrics, bitmap)
+            });
+
+            // let glyph_y = y_pos as f32
+            //     - (metrics.height as f32 - metrics.advance_height)
+            //     - metrics.ymin as f32;
+
+            let glyph_y = y_pos as f32 - metrics.bounds.height - metrics.bounds.ymin;
+
+            for y in 0..metrics.height {
+                let offset = font_size as f32 + glyph_y + y as f32;
+
+                if offset < 0.0 {
+                    continue;
+                }
+
+                let screen_y = offset as usize;
+
+                'x: for x in 0..metrics.width {
+                    let screen_x = x + glyph_x;
+
+                    if screen_x >= window_width {
+                        continue;
+                    }
+
+                    // Subpixel Indexing, 3 bytes per pixel
+                    let glyph_idx = (y * metrics.width + x) * 3;
+
+                    // Get the coverage masks for R, G, and B
+                    let mask_r = bitmap[glyph_idx] as f32 / 255.0;
+                    let mask_g = bitmap[glyph_idx + 1] as f32 / 255.0;
+                    let mask_b = bitmap[glyph_idx + 2] as f32 / 255.0;
+
+                    // If fully transparent, skip
+                    if mask_r == 0.0 && mask_g == 0.0 && mask_b == 0.0 {
+                        continue;
+                    }
+
+                    // Update bounds
+                    if max_x < screen_x {
+                        max_x = screen_x;
+                    }
+
+                    if max_y < screen_y {
+                        max_y = screen_y;
+                    }
+
+                    if skip_draw {
+                        continue;
+                    }
+
+                    let i = screen_x + window_width * screen_y;
+
+                    if i >= buffer.len() {
+                        break 'x;
+                    }
+
+                    if let Some(bg) = buffer.get_mut(i) {
+                        let bg_r = (((*bg >> 16) & 0xFF) as f32 / 255.0).powi(2);
+                        let bg_g = (((*bg >> 8) & 0xFF) as f32 / 255.0).powi(2);
+                        let bg_b = ((*bg & 0xFF) as f32 / 255.0).powi(2);
+
+                        // Per-Channel Blending in Linear Space
+                        let out_r_lin = (txt_r_lin * mask_r) + (bg_r * (1.0 - mask_r));
+                        let out_g_lin = (txt_g_lin * mask_g) + (bg_g * (1.0 - mask_g));
+                        let out_b_lin = (txt_b_lin * mask_b) + (bg_b * (1.0 - mask_b));
+
+                        // Convert back to sRGB (approx sqrt) and clamp
+                        let r = (out_r_lin.sqrt() * 255.0) as u8;
+                        let g = (out_g_lin.sqrt() * 255.0) as u8;
+                        let b = (out_b_lin.sqrt() * 255.0) as u8;
+
+                        *bg = rgb(r, g, b);
+                    }
+                }
+            }
+
+            glyph_x += metrics.advance_width as usize;
+
+            if glyph_x >= window_width {
+                break 'line;
+            }
+        }
+
+        y_pos += font_size;
+    }
+
+    area.height = max_y + 1 - area.y;
+    area.width = max_x + 1 - area.x;
+
     area
 }

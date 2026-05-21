@@ -19,6 +19,7 @@ pub fn pad(p: usize) -> Padding {
 pub struct Style {
     pub bg: Option<u32>,
     pub fg: Option<u32>,
+    pub border: Option<u32>,
     pub padding: Option<Padding>,
     pub font_size: Option<usize>,
     pub selected: Option<u32>,
@@ -37,6 +38,11 @@ impl Style {
 
     pub fn fg(mut self, color: u32) -> Self {
         self.fg = Some(color);
+        self
+    }
+
+    pub fn border(mut self, color: u32) -> Self {
+        self.border = Some(color);
         self
     }
 

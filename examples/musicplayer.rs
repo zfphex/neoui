@@ -74,17 +74,7 @@ fn slider(
 }
 
 fn main() {
-    unsafe {
-        CTX.font = Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap());
-        CTX.window = Some(create_window(
-            "beabadoobee - [Space Cadet CD1 #04] She Plays Bass",
-            0,
-            0,
-            1000,
-            750,
-            WindowStyle::DEFAULT,
-        ));
-    }
+    let ctx = create_ctx("Music Player", 1000, 700, WindowStyle::DEFAULT);
 
     let mut state = PlayerState {
         selected_artist_idx: 2,
@@ -107,8 +97,6 @@ fn main() {
         .hover_border(rgb(90, 90, 90))
         .selection(rgb(82, 82, 82))
         .selection_border(rgb(170, 170, 170));
-
-    let ctx = unsafe { &mut *(&raw mut CTX) };
 
     loop {
         if exit() {

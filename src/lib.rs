@@ -12,7 +12,7 @@ pub enum Flow {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TurtleFrame {
+pub struct Frame {
     pub bounds: Rect,
     pub flow: Flow,
     pub cursor_x: usize,
@@ -56,15 +56,22 @@ impl State {
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
+pub fn create_ctx(title: &str, w: i32, h: i32, s: WindowStyle) -> &'static mut Context {
+    unsafe {
+        CTX.font = Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap());
+        CTX.window = Some(create_window(title, 0, 0, w, h, s));
+    }
+
+    unsafe { &mut *(&raw mut CTX) }
+}
+
 pub struct Context {
-    // pub hovered_id: Option<u64>,
-    // pub active_id: Option<u64>,
     pub commands: Vec<Command>,
     pub font: Option<fontdue::Font>,
     pub window: Option<std::pin::Pin<Box<Window>>>,
+    pub layout_stack: Vec<Frame>,
     pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub glyph_cache_subpixel: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    pub layout_stack: Vec<TurtleFrame>,
     pub default_font_size: usize,
 }
 
@@ -284,6 +291,42 @@ impl Context {
         clicked
     }
 
+    pub fn spacer(&mut self, style: Style) {
+        let frame = self
+            .layout_stack
+            .last_mut()
+            .expect("No active layout frame");
+
+        let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
+        let remaining_height =
+            (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+
+        let width = style.width.unwrap_or(remaining_width);
+        let height = style.height.unwrap_or(remaining_height);
+        let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
+
+        match frame.flow {
+            Flow::Down => {
+                frame.cursor_y += height;
+                frame.max_child_width = frame.max_child_width.max(width);
+                frame.max_child_height += height;
+            }
+            Flow::Right => {
+                frame.cursor_x += width;
+                frame.max_child_width += width;
+                frame.max_child_height = frame.max_child_height.max(height);
+            }
+        }
+
+        if let Some(color) = style.bg {
+            self.commands.push(Command::Rect { rect, color });
+        }
+
+        if let Some(color) = style.border {
+            self.commands.push(Command::RectOutline { rect, color });
+        }
+    }
+
     pub fn fill(&mut self, color: u32) {
         let window = self.window.as_mut().unwrap();
         window.buffer.fill(color);
@@ -307,8 +350,6 @@ impl Context {
 }
 
 pub static mut CTX: Context = Context {
-    // hovered_id: None,
-    // active_id: None,
     commands: Vec::new(),
     font: None,
     window: None,
@@ -320,12 +361,11 @@ pub static mut CTX: Context = Context {
 
 pub fn begin_ui(fill_color: u32) {
     let ctx = unsafe { &mut *(&raw mut CTX) };
+    let bounds = Rect::new(0, 0, ctx.width(), ctx.height());
     ctx.fill(fill_color);
-    let window = ctx.window.as_ref().unwrap();
-    let root_bounds = Rect::new(0, 0, window.width(), window.height());
     ctx.layout_stack.clear();
-    ctx.layout_stack.push(TurtleFrame {
-        bounds: root_bounds,
+    ctx.layout_stack.push(Frame {
+        bounds,
         flow: Flow::Down,
         cursor_x: 0,
         cursor_y: 0,
@@ -337,8 +377,7 @@ pub fn begin_ui(fill_color: u32) {
 pub fn begin_layout(flow: Flow) {
     let ctx = unsafe { &mut *(&raw mut CTX) };
     let parent = ctx.layout_stack.last().expect("Layout stack empty");
-
-    let new_frame = TurtleFrame {
+    let new_frame = Frame {
         bounds: Rect::new(
             parent.cursor_x,
             parent.cursor_y,
@@ -356,7 +395,7 @@ pub fn begin_layout(flow: Flow) {
 
 pub fn begin_layout_with_bounds(flow: Flow, explicit_bounds: Rect) {
     let ctx = unsafe { &mut *(&raw mut CTX) };
-    let new_frame = TurtleFrame {
+    let new_frame = Frame {
         bounds: explicit_bounds,
         flow,
         cursor_x: explicit_bounds.x,

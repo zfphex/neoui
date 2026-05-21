@@ -200,7 +200,7 @@ impl Context {
         selected: bool,
         width_override: usize,
         style: Style,
-    ) -> bool {
+    ) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let padding = style.padding.unwrap_or_default();
@@ -236,7 +236,11 @@ impl Context {
             Alignment::Left { pad: padding.left },
         );
 
-        clicked
+        State {
+            clicked,
+            hovered,
+            rect,
+        }
     }
 
     pub fn spacer(&mut self, style: Style) {
@@ -377,6 +381,7 @@ pub fn end_layout() {
         }
     }
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Alignment {
     Left { pad: usize },

@@ -74,7 +74,7 @@ fn main() {
             };
 
             for &item in menu_items {
-                if ctx.list_item(item, false, dropdown_width, item_style) {
+                if ctx.list_item(item, false, dropdown_width, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;
                 }

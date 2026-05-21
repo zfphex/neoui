@@ -4,7 +4,7 @@ struct PlayerState {
     selected_artist_idx: usize,
     selected_track_idx: usize,
     volume: f32,
-    playback_pos: f32,
+    // playback_pos: f32,
 }
 
 fn slider(
@@ -80,7 +80,7 @@ fn main() {
         selected_artist_idx: 2,
         selected_track_idx: 1,
         volume: 0.8,
-        playback_pos: 0.71,
+        // playback_pos: 0.71,
     };
 
     let dark_bg = rgb(15, 15, 15);
@@ -172,7 +172,7 @@ fn main() {
                 idx == state.selected_artist_idx,
                 sidebar_w - 10,
                 player_row_style,
-            ) {
+            ).clicked {
                 state.selected_artist_idx = idx;
             }
         }
@@ -277,7 +277,7 @@ fn main() {
                 idx == state.selected_track_idx,
                 right_panel_w - 20,
                 player_row_style,
-            ) {
+            ).clicked {
                 state.selected_track_idx = idx;
             }
         }

@@ -76,14 +76,46 @@ pub struct Context {
 }
 
 impl Context {
+    /// Walk the layout forward by an explicit size and return the screen-space bounding box.
+    pub fn walk_layout(&mut self, width: usize, height: usize) -> Rect {
+        let frame = self
+            .layout_stack
+            .last_mut()
+            .expect("No active layout frame");
+        let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
+
+        match frame.flow {
+            Flow::Down => {
+                frame.cursor_y += height;
+                frame.max_child_width = frame.max_child_width.max(width);
+                frame.max_child_height += height;
+            }
+            Flow::Right => {
+                frame.cursor_x += width;
+                frame.max_child_width += width;
+                frame.max_child_height = frame.max_child_height.max(height);
+            }
+        }
+        rect
+    }
+
+    pub fn clicked(&mut self, rect: Rect) -> bool {
+        let window = self.window.as_mut().unwrap();
+        window.left_mouse.clicked(rect)
+    }
+
+    pub fn hovered(&self, rect: Rect) -> bool {
+        let window = self.window.as_ref().unwrap();
+        window.mouse_position.intersects(rect)
+    }
+
     pub fn rect(&mut self, rect: Rect, color: u32) {
         self.commands.push(Command::Rect { rect, color });
     }
 
     pub fn button<'a>(&mut self, text: impl Into<Cow<'static, str>>, style: Style) -> State {
         let text = text.into();
-        let window = self.window.as_mut().unwrap();
-
+        let width = self.width();
         let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let text_metrics = draw_text_subpixel(
@@ -93,7 +125,7 @@ impl Context {
             0,
             font_size,
             1.0,
-            window.width(),
+            width,
             &mut [],
             white(),
             true,
@@ -108,39 +140,19 @@ impl Context {
             .height
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
-        let frame = self
-            .layout_stack
-            .last_mut()
-            .expect("No active layout frame");
+        let rect = self.walk_layout(width, height);
 
-        let button_rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
-
-        match frame.flow {
-            Flow::Down => {
-                frame.cursor_y += height;
-                frame.max_child_width = frame.max_child_width.max(width);
-                frame.max_child_height += height;
-            }
-            Flow::Right => {
-                frame.cursor_x += width;
-                frame.max_child_width += width;
-                frame.max_child_height = frame.max_child_height.max(height);
-            }
-        }
-
-        let hovered = window.mouse_position.intersects(button_rect);
-        let clicked = window.left_mouse.clicked(button_rect);
+        let window = self.window.as_mut().unwrap();
+        let hovered = window.mouse_position.intersects(rect);
+        let clicked = window.left_mouse.clicked(rect);
         let bg = if hovered { style.hover } else { style.bg };
 
         if let Some(color) = bg {
-            self.commands.push(Command::Rect {
-                rect: button_rect,
-                color,
-            });
+            self.commands.push(Command::Rect { rect, color });
         }
 
-        let center_y = button_rect.y + button_rect.height / 2;
-        let text_x = button_rect.x + (width.saturating_sub(text_metrics.width) / 2);
+        let center_y = rect.y + rect.height / 2;
+        let text_x = rect.x + (width.saturating_sub(text_metrics.width) / 2);
         let text_y = center_y.saturating_sub(text_metrics.height / 2);
 
         self.commands.push(Command::Text {
@@ -177,28 +189,13 @@ impl Context {
         let padding = style.padding.unwrap_or_default();
         let width = text_metrics.width + padding.left + padding.right;
         let height = text_metrics.height + padding.top + padding.bottom;
+        let rect = self.walk_layout(width, height);
 
-        let frame = ctx.layout_stack.last_mut().expect("No active layout frame");
-        let target_rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
-
-        match frame.flow {
-            Flow::Down => {
-                frame.cursor_y += height;
-                frame.max_child_width = frame.max_child_width.max(width);
-                frame.max_child_height += height;
-            }
-            Flow::Right => {
-                frame.cursor_x += width;
-                frame.max_child_width += width;
-                frame.max_child_height = frame.max_child_height.max(height);
-            }
-        }
-
-        let center_y = target_rect.y + target_rect.height / 2;
+        let center_y = rect.y + rect.height / 2;
         let text_y = center_y.saturating_sub(text_metrics.height / 2);
         ctx.commands.push(Command::Text {
             text,
-            x: target_rect.x + padding.left,
+            x: rect.x + padding.left,
             y: text_y,
             color: style.fg.unwrap_or(white()),
             size: font_size,
@@ -234,24 +231,9 @@ impl Context {
         );
 
         let allocated_h = font_size + padding.top + padding.bottom;
-        let frame = ctx.layout_stack.last_mut().expect("No active layout frame");
-        let target_rect = Rect::new(frame.cursor_x, frame.cursor_y, width_override, allocated_h);
-
-        match frame.flow {
-            Flow::Down => {
-                frame.cursor_y += allocated_h;
-                frame.max_child_width = frame.max_child_width.max(width_override);
-                frame.max_child_height += allocated_h;
-            }
-            Flow::Right => {
-                frame.cursor_x += width_override;
-                frame.max_child_width += width_override;
-                frame.max_child_height = frame.max_child_height.max(allocated_h);
-            }
-        }
-
-        let hovered = window.mouse_position.intersects(target_rect);
-        let clicked = window.left_mouse.clicked(target_rect);
+        let rect = self.walk_layout(width_override, allocated_h);
+        let hovered = window.mouse_position.intersects(rect);
+        let clicked = window.left_mouse.clicked(rect);
 
         let resolved_bg = if selected {
             style.selected
@@ -263,7 +245,7 @@ impl Context {
 
         if let Some(bg_color) = resolved_bg {
             ctx.commands.push(Command::Rect {
-                rect: target_rect,
+                rect,
                 color: bg_color,
             });
         }
@@ -271,18 +253,18 @@ impl Context {
         if selected {
             if let Some(border_color) = style.selected_border {
                 ctx.commands.push(Command::RectOutline {
-                    rect: target_rect,
+                    rect,
                     color: border_color,
                 });
             }
         }
 
-        let center_y = target_rect.y + target_rect.height / 2;
+        let center_y = rect.y + rect.height / 2;
         let text_y = center_y.saturating_sub(text_metrics.height / 2);
 
         ctx.commands.push(Command::Text {
             text,
-            x: target_rect.x + padding.left,
+            x: rect.x + padding.left,
             y: text_y,
             color: style.fg.unwrap_or(white()),
             size: font_size,
@@ -303,20 +285,7 @@ impl Context {
 
         let width = style.width.unwrap_or(remaining_width);
         let height = style.height.unwrap_or(remaining_height);
-        let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
-
-        match frame.flow {
-            Flow::Down => {
-                frame.cursor_y += height;
-                frame.max_child_width = frame.max_child_width.max(width);
-                frame.max_child_height += height;
-            }
-            Flow::Right => {
-                frame.cursor_x += width;
-                frame.max_child_width += width;
-                frame.max_child_height = frame.max_child_height.max(height);
-            }
-        }
+        let rect = self.walk_layout(width, height);
 
         if let Some(color) = style.bg {
             self.commands.push(Command::Rect { rect, color });

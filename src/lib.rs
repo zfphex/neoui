@@ -3,7 +3,7 @@ pub use style::*;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use window::*;
+pub use window::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Flow {
@@ -39,11 +39,26 @@ pub enum Command {
     },
 }
 
+pub struct State {
+    clicked: bool,
+    hovered: bool,
+}
+
+impl State {
+    pub fn clicked(self) -> bool {
+        self.clicked
+    }
+
+    pub fn hovered(self) -> bool {
+        self.hovered
+    }
+}
+
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub struct Context {
-    pub hovered_id: Option<u64>,
-    pub active_id: Option<u64>,
+    // pub hovered_id: Option<u64>,
+    // pub active_id: Option<u64>,
     pub commands: Vec<Command>,
     pub font: Option<fontdue::Font>,
     pub window: Option<std::pin::Pin<Box<Window>>>,
@@ -58,7 +73,7 @@ impl Context {
         self.commands.push(Command::Rect { rect, color });
     }
 
-    pub fn button<'a>(&mut self, text: impl Into<Cow<'static, str>>, style: Style) -> bool {
+    pub fn button<'a>(&mut self, text: impl Into<Cow<'static, str>>, style: Style) -> State {
         let text = text.into();
         let window = self.window.as_mut().unwrap();
 
@@ -79,13 +94,18 @@ impl Context {
         );
 
         let padding = style.padding.unwrap_or_default();
-        let width = text_metrics.width + padding.left + padding.right;
-        let height = text_metrics.height + padding.top + padding.bottom;
+        let width = style
+            .width
+            .unwrap_or(text_metrics.width + padding.left + padding.right);
+        let height = style
+            .height
+            .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
         let frame = self
             .layout_stack
             .last_mut()
             .expect("No active layout frame");
+
         let button_rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
 
         match frame.flow {
@@ -101,26 +121,30 @@ impl Context {
             }
         }
 
-        let _hovered = window.mouse_position.intersects(button_rect);
+        let hovered = window.mouse_position.intersects(button_rect);
         let clicked = window.left_mouse.clicked(button_rect);
+        let bg = if hovered { style.hover } else { style.bg };
 
-        self.commands.push(Command::Rect {
-            rect: button_rect,
-            color: style.bg.unwrap_or(gray()),
-        });
+        if let Some(color) = bg {
+            self.commands.push(Command::Rect {
+                rect: button_rect,
+                color,
+            });
+        }
 
         let center_y = button_rect.y + button_rect.height / 2;
-        let text_y = center_y.saturating_sub(font_size / 2);
+        let text_x = button_rect.x + (width.saturating_sub(text_metrics.width) / 2);
+        let text_y = center_y.saturating_sub(text_metrics.height / 2);
 
         self.commands.push(Command::Text {
             text,
-            x: button_rect.x + padding.left,
+            x: text_x,
             y: text_y,
             color: style.fg.unwrap_or(white()),
             size: font_size,
         });
 
-        clicked
+        State { clicked, hovered }
     }
 
     pub fn label(&mut self, text: impl Into<Cow<'static, str>>, style: Style) {
@@ -270,11 +294,21 @@ impl Context {
         window.draw();
         window.vsync();
     }
+
+    pub fn width(&mut self) -> usize {
+        let window = self.window.as_ref().unwrap();
+        window.width()
+    }
+
+    pub fn height(&mut self) -> usize {
+        let window = self.window.as_ref().unwrap();
+        window.height()
+    }
 }
 
 pub static mut CTX: Context = Context {
-    hovered_id: None,
-    active_id: None,
+    // hovered_id: None,
+    // active_id: None,
     commands: Vec::new(),
     font: None,
     window: None,
@@ -284,8 +318,9 @@ pub static mut CTX: Context = Context {
     default_font_size: 32,
 };
 
-pub fn begin_ui() {
+pub fn begin_ui(fill_color: u32) {
     let ctx = unsafe { &mut *(&raw mut CTX) };
+    ctx.fill(fill_color);
     let window = ctx.window.as_ref().unwrap();
     let root_bounds = Rect::new(0, 0, window.width(), window.height());
     ctx.layout_stack.clear();

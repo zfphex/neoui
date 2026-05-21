@@ -25,6 +25,8 @@ pub struct Style {
     pub selected_border: Option<u32>,
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
+    pub width: Option<usize>,
+    pub height: Option<usize>,
 }
 
 impl Style {
@@ -93,6 +95,16 @@ impl Style {
 
     pub fn hover_border(mut self, color: u32) -> Self {
         self.hover_border = Some(color);
+        self
+    }
+
+    pub fn width(mut self, w: usize) -> Self {
+        self.width = Some(w);
+        self
+    }
+
+    pub fn height(mut self, h: usize) -> Self {
+        self.height = Some(h);
         self
     }
 }

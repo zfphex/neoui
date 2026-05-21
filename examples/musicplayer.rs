@@ -1,5 +1,4 @@
 use neoui::*;
-use window::*;
 
 struct PlayerState {
     selected_artist_idx: usize,
@@ -116,14 +115,12 @@ fn main() {
             break;
         }
 
-        ctx.fill(dark_bg);
+        let width = ctx.width();
+        let height = ctx.height();
 
-        begin_ui();
+        begin_ui(dark_bg);
 
-        let win_w = ctx.window.as_ref().unwrap().width();
-        let win_h = ctx.window.as_ref().unwrap().height();
-
-        begin_layout_with_bounds(Flow::Right, Rect::new(0, 0, win_w, 30));
+        begin_layout_with_bounds(Flow::Right, Rect::new(0, 0, width, 30));
 
         let menu_style = style()
             .font_size(13)
@@ -140,7 +137,7 @@ fn main() {
         ctx.button("Help", menu_style);
         end_layout();
 
-        begin_layout_with_bounds(Flow::Right, Rect::new(0, 30, win_w, 40));
+        begin_layout_with_bounds(Flow::Right, Rect::new(0, 30, width, 40));
         let btn_style = style().font_size(12).pad(4).bg(rgb(30, 30, 30));
         ctx.button(" ⏹ ", btn_style);
         ctx.button(" ▶ ", btn_style);
@@ -155,12 +152,12 @@ fn main() {
 
         end_layout();
 
-        ctx.rect(Rect::new(0, 70, win_w, 1), border_color);
+        ctx.rect(Rect::new(0, 70, width, 1), border_color);
 
         let content_y = 72;
-        let content_h = win_h.saturating_sub(content_y);
+        let content_h = height.saturating_sub(content_y);
         let sidebar_w = 260;
-        let right_panel_w = win_w.saturating_sub(sidebar_w);
+        let right_panel_w = width.saturating_sub(sidebar_w);
 
         begin_layout_with_bounds(Flow::Down, Rect::new(0, content_y, sidebar_w, content_h));
         ctx.rect(Rect::new(0, content_y, sidebar_w, content_h), panel_bg);

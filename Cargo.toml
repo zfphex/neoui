@@ -5,5 +5,9 @@ edition = "2024"
 
 [dependencies]
 fontdue = "0.9.3"
-window = { version = "0.1.0", path = "../projects/window" }
-# window = { git = "https://github.com/zfphex/window", version = "0.1.0" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# window = { version = "0.1.0", path = "../projects/window" }
+window = { git = "https://github.com/zfphex/window", version = "0.1.0" }
+
+[target.'cfg(target_os = "macos")'.dependencies]

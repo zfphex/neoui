@@ -3,6 +3,8 @@ pub use style::*;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+
+#[cfg(target_os = "windows")]
 pub use window::*;
 
 #[derive(Debug, Clone, Copy)]

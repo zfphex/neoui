@@ -2,42 +2,6 @@
 #[cfg(target_os = "windows")]
 pub use window::*;
 
-#[derive(Debug, Clone)]
-pub enum Action {
-    Pressed,
-    Released,
-    Clicked,
-    Hover,
-    LostFocus,
-}
-
-//Using the Windows Virtual Key Codes.
-#[derive(Clone, Copy)]
-pub struct WindowsKeyboard {
-    keys_down_current: [bool; 256],
-    keys_down_prev: [bool; 256],
-}
-
-impl WindowsKeyboard {
-    pub fn new() -> Self {
-        Self {
-            keys_down_current: [false; 256],
-            keys_down_prev: [false; 256],
-        }
-    }
-
-    pub fn start_new_frame(&mut self) {
-        // Propagate current state to previous state to track changes.
-        self.keys_down_prev = self.keys_down_current;
-    }
-
-    pub fn handle_event(&mut self, vk_code: usize, is_down: bool) {
-        if vk_code < 256 {
-            self.keys_down_current[vk_code] = is_down;
-        }
-    }
-}
-
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
@@ -301,36 +265,6 @@ pub mod macos {
         Unknown(u16),
     }
 
-    pub const fn char_to_static_str(c: char) -> &'static str {
-        const CACHE: [&str; 128] = [
-            "\x00", "\x01", "\x02", "\x03", "\x04", "\x05", "\x06", "\x07", "\x08", "\x09", "\x0a",
-            "\x0b", "\x0c", "\x0d", "\x0e", "\x0f", "\x10", "\x11", "\x12", "\x13", "\x14", "\x15",
-            "\x16", "\x17", "\x18", "\x19", "\x1a", "\x1b", "\x1c", "\x1d", "\x1e", "\x1f", " ",
-            "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", "0", "1",
-            "2", "3", "4", "5", "6", "7", "8", "9", ":", ";", "<", "=", ">", "?", "@", "A", "B",
-            "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
-            "T", "U", "V", "W", "X", "Y", "Z", "[", "\\", "]", "^", "_", "`", "a", "b", "c", "d",
-            "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u",
-            "v", "w", "x", "y", "z", "{", "|", "}", "~", "\x7f",
-        ];
-
-        let val = c as usize;
-        if val < 128 {
-            CACHE[val]
-        } else {
-            unreachable!()
-        }
-    }
-
-    impl Key {
-        pub const fn as_str(&self) -> &str {
-            match self {
-                Key::Char(c) => char_to_static_str(*c),
-                _ => "",
-            }
-        }
-    }
-
     use std::ops::AddAssign;
 
     use minifb::*;
@@ -431,10 +365,6 @@ pub mod macos {
                 false
             }
         }
-        // pub(crate) const fn reset(&mut self) {
-        //     self.pressed = false;
-        //     self.released = false;
-        // }
         pub(crate) const fn pressed(&mut self, pos: Rect) {
             self.pressed = true;
             self.released = false;

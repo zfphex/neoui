@@ -160,8 +160,6 @@ impl Context {
         let width_ctx = self.width();
         let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-
-        // 1. Dry-run text metrics measurement
         let text_metrics = draw_text_subpixel(
             &text,
             self.font.as_ref().unwrap(),
@@ -604,8 +602,7 @@ pub fn draw_text(
     let font_size = scale(font_size, display_scale);
 
     let mut area = Rect::new(x, y, 0, 0);
-    let mut y = area.y;
-    let x = area.x;
+    let mut y_pos = area.y;
 
     let mut max_x = 0;
     let mut max_y = 0;
@@ -613,35 +610,42 @@ pub fn draw_text(
     let (r1, g1, b1) = split(color);
 
     'line: for line in text.lines() {
-        let mut glyph_x = x;
+        let mut glyph_x = x as f32;
 
         for char in line.chars() {
             let (metrics, bitmap) = cache_map
                 .entry((char, font_size))
                 .or_insert_with(|| font.rasterize(char, font_size as f32));
 
-            let glyph_y =
-                y as f32 - (metrics.height as f32 - metrics.advance_height) - metrics.ymin as f32;
+            let glyph_y = y_pos as f32
+                - (metrics.height as f32 - metrics.advance_height)
+                - metrics.ymin as f32;
 
-            for y in 0..metrics.height {
-                'x: for x in 0..metrics.width {
-                    if (x + glyph_x) >= window_width {
+            for y_px in 0..metrics.height {
+                'x: for x_px in 0..metrics.width {
+                    let screen_x_i32 = glyph_x.round() as i32 + metrics.xmin + x_px as i32;
+                    if screen_x_i32 < 0 {
                         continue;
                     }
 
-                    let alpha = bitmap[x + y * metrics.width];
+                    let screen_x = screen_x_i32 as usize;
+                    if screen_x >= window_width {
+                        continue;
+                    }
+
+                    let alpha = bitmap[x_px + y_px * metrics.width];
                     if alpha == 0 {
                         continue;
                     }
 
-                    let offset = font_size as f32 + glyph_y + y as f32;
+                    let offset = font_size as f32 + glyph_y + y_px as f32;
 
                     if offset < 0.0 {
                         continue;
                     }
 
-                    if max_x < x + glyph_x {
-                        max_x = x + glyph_x;
+                    if max_x < screen_x {
+                        max_x = screen_x;
                     }
 
                     if max_y < offset as usize {
@@ -652,7 +656,7 @@ pub fn draw_text(
                         continue;
                     }
 
-                    let i = x + glyph_x + window_width * offset as usize;
+                    let i = screen_x + window_width * offset as usize;
 
                     if i >= buffer.len() {
                         break 'x;
@@ -670,14 +674,14 @@ pub fn draw_text(
                 }
             }
 
-            glyph_x += metrics.advance_width as usize;
+            glyph_x += metrics.advance_width;
 
-            if glyph_x >= window_width {
+            if glyph_x.round() as usize >= window_width {
                 break 'line;
             }
         }
 
-        y += font_size;
+        y_pos += font_size;
     }
 
     area.height = max_y + 1 - area.y;
@@ -698,13 +702,6 @@ pub fn draw_text_subpixel(
     skip_draw: bool,
     cache_map: &mut HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
 ) -> Rect {
-    //http://arkanis.de/weblog/2023-08-14-simple-good-quality-subpixel-text-rendering-in-opengl-with-stb-truetype-and-dual-source-blending
-    // https://github.com/arkanis/gl-4.5-subpixel-text-rendering/blob/d770f0395f610d9fcc53319734069fe7fc4138b2/main.c#L626
-
-    // [FT_LCD_FILTER_DEFAULT](https://freetype.org/freetype2/docs/reference/ft2-lcd_rendering.html)
-    // This is a beveled, normalized, and color-balanced five-tap filter with weights of [0x08 0x4D 0x56 0x4D 0x08] in 1/256 units.
-    // const LCD_FILTER: [u8; 5] = [0x08, 0x4D, 0x56, 0x4D, 0x08];
-
     pub fn apply_lcd_filter(bitmap: &[u8], width: usize, height: usize) -> Vec<u8> {
         let stride = width * 3;
         let mut output = vec![0u8; bitmap.len()];
@@ -741,38 +738,30 @@ pub fn draw_text_subpixel(
 
     let mut area = Rect::new(x_start, y_start, 0, 0);
     let mut y_pos = area.y;
-    let x_pos = area.x;
 
     let mut max_x = 0;
     let mut max_y = 0;
 
     let (r, g, b) = split(color);
 
-    // Pre-calculate linear text color (Gamma 2.2 approximation: x^2)
     let txt_r_lin = (r as f32 / 255.0).powi(2);
     let txt_g_lin = (g as f32 / 255.0).powi(2);
     let txt_b_lin = (b as f32 / 255.0).powi(2);
 
     'line: for line in text.lines() {
-        let mut glyph_x = x_pos;
+        let mut glyph_x = x_start as f32;
 
         for char in line.chars() {
-            // let (metrics, raw_bitmap) = font.rasterize_subpixel(char, font_size as f32);
-
             let (metrics, bitmap) = cache_map.entry((char, font_size)).or_insert_with(|| {
                 let (metrics, bitmap) = font.rasterize_subpixel(char, font_size as f32);
                 let bitmap = apply_lcd_filter(&bitmap, metrics.width, metrics.height);
                 (metrics, bitmap)
             });
 
-            // let glyph_y = y_pos as f32
-            //     - (metrics.height as f32 - metrics.advance_height)
-            //     - metrics.ymin as f32;
-
             let glyph_y = y_pos as f32 - metrics.bounds.height - metrics.bounds.ymin;
 
-            for y in 0..metrics.height {
-                let offset = font_size as f32 + glyph_y + y as f32;
+            for y_px in 0..metrics.height {
+                let offset = font_size as f32 + glyph_y + y_px as f32;
 
                 if offset < 0.0 {
                     continue;
@@ -780,27 +769,27 @@ pub fn draw_text_subpixel(
 
                 let screen_y = offset as usize;
 
-                'x: for x in 0..metrics.width {
-                    let screen_x = x + glyph_x;
+                'x: for x_px in 0..metrics.width {
+                    let screen_x_i32 = glyph_x.round() as i32 + metrics.xmin + x_px as i32;
+                    if screen_x_i32 < 0 {
+                        continue;
+                    }
 
+                    let screen_x = screen_x_i32 as usize;
                     if screen_x >= window_width {
                         continue;
                     }
 
-                    // Subpixel Indexing, 3 bytes per pixel
-                    let glyph_idx = (y * metrics.width + x) * 3;
+                    let glyph_idx = (y_px * metrics.width + x_px) * 3;
 
-                    // Get the coverage masks for R, G, and B
                     let mask_r = bitmap[glyph_idx] as f32 / 255.0;
                     let mask_g = bitmap[glyph_idx + 1] as f32 / 255.0;
                     let mask_b = bitmap[glyph_idx + 2] as f32 / 255.0;
 
-                    // If fully transparent, skip
                     if mask_r == 0.0 && mask_g == 0.0 && mask_b == 0.0 {
                         continue;
                     }
 
-                    // Update bounds
                     if max_x < screen_x {
                         max_x = screen_x;
                     }
@@ -824,12 +813,10 @@ pub fn draw_text_subpixel(
                         let bg_g = (((*bg >> 8) & 0xFF) as f32 / 255.0).powi(2);
                         let bg_b = ((*bg & 0xFF) as f32 / 255.0).powi(2);
 
-                        // Per-Channel Blending in Linear Space
                         let out_r_lin = (txt_r_lin * mask_r) + (bg_r * (1.0 - mask_r));
                         let out_g_lin = (txt_g_lin * mask_g) + (bg_g * (1.0 - mask_g));
                         let out_b_lin = (txt_b_lin * mask_b) + (bg_b * (1.0 - mask_b));
 
-                        // Convert back to sRGB (approx sqrt) and clamp
                         let r = (out_r_lin.sqrt() * 255.0) as u8;
                         let g = (out_g_lin.sqrt() * 255.0) as u8;
                         let b = (out_b_lin.sqrt() * 255.0) as u8;
@@ -839,9 +826,9 @@ pub fn draw_text_subpixel(
                 }
             }
 
-            glyph_x += metrics.advance_width as usize;
+            glyph_x += metrics.advance_width;
 
-            if glyph_x >= window_width {
+            if glyph_x.round() as usize >= window_width {
                 break 'line;
             }
         }

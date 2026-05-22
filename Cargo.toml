@@ -11,3 +11,4 @@ fontdue = "0.9.3"
 window = { git = "https://github.com/zfphex/window", version = "0.1.0" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+minifb = "0.27.0"

@@ -1,11 +1,11 @@
 pub mod style;
 pub use style::*;
 
+pub mod platform;
+pub use platform::*;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
-
-#[cfg(target_os = "windows")]
-pub use window::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Flow {
@@ -49,13 +49,26 @@ pub struct State {
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
-pub fn create_ctx(title: &str, w: i32, h: i32, s: WindowStyle) -> &'static mut Context {
+pub fn create_ctx(title: &str, width: usize, height: usize) -> &'static mut Context {
     unsafe {
-        CTX.font = Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap());
-        CTX.window = Some(create_window(title, 0, 0, w, h, s));
-    }
+        #[cfg(target_os = "windows")]
+        let window = create_window(
+            title,
+            0,
+            0,
+            width as i32,
+            height as i32,
+            WindowStyle::DEFAULT,
+        );
 
-    unsafe { &mut *(&raw mut CTX) }
+        #[cfg(target_os = "macos")]
+        let window = Box::pin(Window::new(title, width, height));
+
+        CTX.window = Some(window);
+        CTX.font = Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap());
+
+        &mut *(&raw mut CTX)
+    }
 }
 
 pub struct Context {

@@ -74,7 +74,7 @@ fn slider(
 }
 
 fn main() {
-    let ctx = create_ctx("Music Player", 1000, 700, WindowStyle::DEFAULT);
+    let ctx = create_ctx("Music Player", 1000, 700);
 
     let mut state = PlayerState {
         selected_artist_idx: 2,
@@ -167,12 +167,15 @@ fn main() {
         ];
 
         for (idx, artist) in artists.iter().enumerate() {
-            if ctx.list_item(
-                *artist,
-                idx == state.selected_artist_idx,
-                sidebar_w - 10,
-                player_row_style,
-            ).clicked {
+            if ctx
+                .list_item(
+                    *artist,
+                    idx == state.selected_artist_idx,
+                    sidebar_w - 10,
+                    player_row_style,
+                )
+                .clicked
+            {
                 state.selected_artist_idx = idx;
             }
         }
@@ -272,12 +275,15 @@ fn main() {
         ];
 
         for (idx, track) in tracklist.iter().enumerate() {
-            if ctx.list_item(
-                *track,
-                idx == state.selected_track_idx,
-                right_panel_w - 20,
-                player_row_style,
-            ).clicked {
+            if ctx
+                .list_item(
+                    *track,
+                    idx == state.selected_track_idx,
+                    right_panel_w - 20,
+                    player_row_style,
+                )
+                .clicked
+            {
                 state.selected_track_idx = idx;
             }
         }

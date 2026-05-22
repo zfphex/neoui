@@ -11,7 +11,7 @@ enum Menu {
 }
 
 fn main() {
-    let ctx = create_ctx("Basic", 1000, 700, WindowStyle::DEFAULT);
+    let ctx = create_ctx("Basic", 1000, 700);
     let mut current_menu: Option<(Menu, usize)> = None;
 
     loop {

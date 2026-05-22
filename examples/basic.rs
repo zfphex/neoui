@@ -55,6 +55,7 @@ fn main() {
 
         begin_ui(black());
 
+        //Menu Items
         {
             let height = 30;
             let menu_style = style()
@@ -65,7 +66,7 @@ fn main() {
                 .bg(rgb(25, 25, 25))
                 .hover(rgb(45, 45, 45));
 
-            begin_layout_with_bounds(Flow::Right, Rect::new(0, 0, ctx_width, height));
+            begin_layout(Flow::Right);
 
             let items = [
                 ("File", Menu::File),
@@ -79,7 +80,13 @@ fn main() {
             for (label, menu) in items {
                 let state = ctx.button(label, menu_style);
                 if state.clicked {
-                    current_menu = Some((menu, state.rect));
+                    if let Some((cm, _)) = current_menu
+                        && cm == menu
+                    {
+                        current_menu = None;
+                    } else {
+                        current_menu = Some((menu, state.rect));
+                    }
                 }
             }
 
@@ -99,6 +106,7 @@ fn main() {
             end_layout();
         }
 
+        //Drop down menu
         if let Some((menu, rect)) = current_menu {
             let dropdown_width = 180;
             let item_style = style()
@@ -120,6 +128,8 @@ fn main() {
             };
 
             for &item in drop_down {
+                //The layout shouldn't actually be walked here, I just want to draw on top...
+                //Hmmmmm.
                 if ctx.list_item(item, false, dropdown_width, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;
@@ -131,6 +141,13 @@ fn main() {
             if ctx.clicked(Rect::new(0, 0, ctx_width, ctx_height)) {
                 current_menu = None;
             }
+        }
+
+        //Sidebar.
+        {
+            begin_layout(Flow::Down);
+            ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
+            end_layout();
         }
 
         draw_cmd();

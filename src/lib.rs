@@ -114,6 +114,8 @@ impl Context {
         window.mouse_position.intersects(rect)
     }
 
+    //TODO: This should really be paint_rect or something.
+    //Users should be able to use the layout system to render rectangles.
     pub fn rect(&mut self, rect: Rect, color: u32) {
         self.commands.push(Command::Rect { rect, color });
     }

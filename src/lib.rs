@@ -61,14 +61,7 @@ pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 pub fn create_ctx(title: &str, width: usize, height: usize) -> &'static mut Context {
     unsafe {
         #[cfg(target_os = "windows")]
-        let window = create_window(
-            title,
-            0,
-            0,
-            width as i32,
-            height as i32,
-            WindowStyle::DEFAULT,
-        );
+        let window = create_window(title, 0, 0, width as i32, height as i32, WindowStyle::DEFAULT);
 
         #[cfg(target_os = "macos")]
         let window = Box::pin(Window::new(title, width, height));
@@ -93,10 +86,7 @@ pub struct Context {
 impl Context {
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
     pub fn walk_layout(&mut self, width: usize, height: usize) -> Rect {
-        let frame = self
-            .layout_stack
-            .last_mut()
-            .expect("No active layout frame");
+        let frame = self.layout_stack.last_mut().expect("No active layout frame");
         let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
 
         match frame.flow {
@@ -128,13 +118,7 @@ impl Context {
         self.commands.push(Command::Rect { rect, color });
     }
 
-    pub fn triangle(
-        &mut self,
-        a: (usize, usize),
-        b: (usize, usize),
-        c: (usize, usize),
-        color: u32,
-    ) {
+    pub fn triangle(&mut self, a: (usize, usize), b: (usize, usize), c: (usize, usize), color: u32) {
         self.commands.push(Command::Triangle { a, b, c, color });
     }
 
@@ -194,9 +178,7 @@ impl Context {
         );
 
         let padding = style.padding.unwrap_or_default();
-        let width = style
-            .width
-            .unwrap_or(text_metrics.width + padding.left + padding.right);
+        let width = style.width.unwrap_or(text_metrics.width + padding.left + padding.right);
         let height = style
             .height
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
@@ -215,19 +197,9 @@ impl Context {
             self.commands.push(Command::Rect { rect, color });
         }
 
-        self.text_aligned(
-            rect,
-            text,
-            style.fg.unwrap_or(white()),
-            font_size,
-            Alignment::Center,
-        );
+        self.text_aligned(rect, text, style.fg.unwrap_or(white()), font_size, Alignment::Center);
 
-        State {
-            clicked,
-            hovered,
-            rect,
-        }
+        State { clicked, hovered, rect }
     }
 
     pub fn list_item(
@@ -272,22 +244,14 @@ impl Context {
             Alignment::Left { pad: padding.left },
         );
 
-        State {
-            clicked,
-            hovered,
-            rect,
-        }
+        State { clicked, hovered, rect }
     }
 
     pub fn spacer(&mut self, style: Style) {
-        let frame = self
-            .layout_stack
-            .last_mut()
-            .expect("No active layout frame");
+        let frame = self.layout_stack.last_mut().expect("No active layout frame");
 
         let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-        let remaining_height =
-            (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+        let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
 
         let width = style.width.unwrap_or(remaining_width);
         let height = style.height.unwrap_or(remaining_height);
@@ -381,14 +345,7 @@ pub fn begin_layout_with_bounds(flow: Flow, explicit_bounds: Rect) {
     ctx.layout_stack.push(new_frame);
 }
 
-pub fn begin_grid_cell(
-    col: usize,
-    row: usize,
-    col_width: usize,
-    row_height: usize,
-    grid_bounds: Rect,
-    flow: Flow,
-) {
+pub fn begin_grid_cell(col: usize, row: usize, col_width: usize, row_height: usize, grid_bounds: Rect, flow: Flow) {
     let cell_x = grid_bounds.x + (col * col_width);
     let cell_y = grid_bounds.y + (row * row_height);
 
@@ -444,14 +401,11 @@ pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Align
         Alignment::TopLeft { padh, padv } => (parent.x + padh, parent.y + padv),
         Alignment::TopCenter { pad } => (mid_x(), parent.y + pad),
         Alignment::TopRight { padh, padv } => (right_edge().saturating_sub(padh), parent.y + padv),
-        Alignment::BottomLeft { padh, padv } => {
-            (parent.x + padh, bottom_edge().saturating_sub(padv))
-        }
+        Alignment::BottomLeft { padh, padv } => (parent.x + padh, bottom_edge().saturating_sub(padv)),
         Alignment::BottomCenter { pad } => (mid_x(), bottom_edge().saturating_sub(pad)),
-        Alignment::BottomRight { padh, padv } => (
-            right_edge().saturating_sub(padh),
-            bottom_edge().saturating_sub(padv),
-        ),
+        Alignment::BottomRight { padh, padv } => {
+            (right_edge().saturating_sub(padh), bottom_edge().saturating_sub(padv))
+        }
     };
 
     Rect::new(x, y, child_w, child_h)
@@ -526,18 +480,7 @@ pub fn draw_cmd() {
                 color,
             } => {
                 //
-                draw_triangle_sdf(
-                    &mut window.buffer,
-                    ctx_width,
-                    ctx_height,
-                    ax,
-                    ay,
-                    bx,
-                    by,
-                    cx,
-                    cy,
-                    color,
-                )
+                draw_triangle_sdf(&mut window.buffer, ctx_width, ctx_height, ax, ay, bx, by, cx, cy, color)
             }
         };
     }
@@ -887,9 +830,7 @@ pub fn draw_text(
                 .entry((char, font_size))
                 .or_insert_with(|| font.rasterize(char, font_size as f32));
 
-            let glyph_y = y_pos as f32
-                - (metrics.height as f32 - metrics.advance_height)
-                - metrics.ymin as f32;
+            let glyph_y = y_pos as f32 - (metrics.height as f32 - metrics.advance_height) - metrics.ymin as f32;
 
             for y_px in 0..metrics.height {
                 'x: for x_px in 0..metrics.width {
@@ -985,11 +926,7 @@ pub fn draw_text_subpixel(
                 // Boundary checks for left/right neighbors
                 let left = if i == 0 { 0 } else { bitmap[idx - 1] as u16 };
                 let center = bitmap[idx] as u16;
-                let right = if i == stride - 1 {
-                    0
-                } else {
-                    bitmap[idx + 1] as u16
-                };
+                let right = if i == stride - 1 { 0 } else { bitmap[idx + 1] as u16 };
 
                 // [1, 2, 1] weighted average
                 output[idx] = ((left + center * 2 + right) / 4) as u8;

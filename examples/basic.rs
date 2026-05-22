@@ -110,7 +110,7 @@ fn main() {
 
             begin_layout_with_bounds(Flow::Down, Rect::new(rect.x, 30, dropdown_width, 400));
 
-            let menu_items: &[&str] = match menu {
+            let drop_down: &[&str] = match menu {
                 Menu::File => &["New Project", "Open File...", "Save"],
                 Menu::Edit => &["Undo", "Redo", "Cut"],
                 Menu::View => &["Toggle Sidebar", "Zoom In"],
@@ -119,11 +119,8 @@ fn main() {
                 Menu::Help => &["Documentation", "About"],
             };
 
-            for &item in menu_items {
-                if ctx
-                    .list_item(item, false, dropdown_width, item_style)
-                    .clicked
-                {
+            for &item in drop_down {
+                if ctx.list_item(item, false, dropdown_width, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;
                 }

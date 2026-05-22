@@ -7,15 +7,7 @@ struct PlayerState {
     // playback_pos: f32,
 }
 
-fn slider(
-    ctx: &mut Context,
-    value: f32,
-    min: f32,
-    max: f32,
-    width: usize,
-    height: usize,
-    style: Style,
-) -> f32 {
+fn slider(ctx: &mut Context, value: f32, min: f32, max: f32, width: usize, height: usize, style: Style) -> f32 {
     let window = ctx.window.as_mut().unwrap();
 
     let thumb_size = (height / 2).max(10).min(16);
@@ -186,20 +178,11 @@ fn main() {
         let right_x = sidebar_w + 2;
         let meta_panel_h = 200;
 
-        begin_layout_with_bounds(
-            Flow::Down,
-            Rect::new(right_x, content_y, right_panel_w, meta_panel_h),
-        );
+        begin_layout_with_bounds(Flow::Down, Rect::new(right_x, content_y, right_panel_w, meta_panel_h));
 
-        ctx.rect(
-            Rect::new(right_x, content_y, right_panel_w, meta_panel_h),
-            panel_bg,
-        );
+        ctx.rect(Rect::new(right_x, content_y, right_panel_w, meta_panel_h), panel_bg);
 
-        ctx.button(
-            "Metadata Info Tracker",
-            style().fg(accent_blue).font_size(13),
-        );
+        ctx.button("Metadata Info Tracker", style().fg(accent_blue).font_size(13));
 
         let metadata = [
             ("Artist Name", "beabadoobee"),
@@ -220,25 +203,11 @@ fn main() {
         let col_1_width = grid_w.saturating_sub(col_0_width);
 
         for (row_idx, (prop, val)) in metadata.iter().enumerate() {
-            begin_grid_cell(
-                0,
-                row_idx,
-                col_0_width,
-                row_height,
-                meta_grid_bounds,
-                Flow::Right,
-            );
+            begin_grid_cell(0, row_idx, col_0_width, row_height, meta_grid_bounds, Flow::Right);
             ctx.button(*prop, style().fg(text_dim).font_size(13).pad(4));
             end_layout();
 
-            begin_grid_cell(
-                1,
-                row_idx,
-                col_1_width,
-                row_height,
-                meta_grid_bounds,
-                Flow::Right,
-            );
+            begin_grid_cell(1, row_idx, col_1_width, row_height, meta_grid_bounds, Flow::Right);
             let display_val = format!("{}", val);
             ctx.button(display_val, style().fg(white()).font_size(13).pad(2));
             end_layout();
@@ -254,10 +223,7 @@ fn main() {
             Flow::Down,
             Rect::new(right_x, track_y + 4, right_panel_w, track_panel_h),
         );
-        ctx.rect(
-            Rect::new(right_x, track_y + 4, right_panel_w, track_panel_h),
-            panel_bg,
-        );
+        ctx.rect(Rect::new(right_x, track_y + 4, right_panel_w, track_panel_h), panel_bg);
 
         ctx.button(
             "beabadoobee - [2020] Fake It Flowers",

@@ -67,9 +67,8 @@ pub mod macos {
             }
 
             //TODO: Modifiers don't work
-            self.event_cache.extend(convert_minifb_key(
-                &self.minifb.get_keys_pressed(KeyRepeat::Yes),
-            ));
+            self.event_cache
+                .extend(convert_minifb_key(&self.minifb.get_keys_pressed(KeyRepeat::Yes)));
 
             return self.event_cache.pop();
         }
@@ -92,9 +91,7 @@ pub mod macos {
             }
 
             self.area = Rect::new(0, 0, width, height);
-            self.minifb
-                .update_with_buffer(&self.buffer, width, height)
-                .unwrap();
+            self.minifb.update_with_buffer(&self.buffer, width, height).unwrap();
             self.drawn = true;
         }
 
@@ -397,12 +394,7 @@ pub mod macos {
 
     impl Rect {
         pub const fn new(x: usize, y: usize, width: usize, height: usize) -> Self {
-            Self {
-                x,
-                y,
-                width,
-                height,
-            }
+            Self { x, y, width, height }
         }
         pub const fn x(mut self, x: usize) -> Self {
             self.x = x;

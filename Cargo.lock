@@ -355,6 +355,11 @@ dependencies = [
 [[package]]
 name = "mini"
 version = "0.1.0"
+source = "git+https://github.com/zfphex/mini#5f2a3b76f5ecc3d09a9c821496f1e99357953e48"
+
+[[package]]
+name = "mini"
+version = "0.1.0"
 source = "git+https://github.com/zx3no/mini#5f2a3b76f5ecc3d09a9c821496f1e99357953e48"
 
 [[package]]
@@ -388,6 +393,7 @@ name = "neoui"
 version = "0.1.0"
 dependencies = [
  "fontdue",
+ "mini 0.1.0 (git+https://github.com/zfphex/mini)",
  "minifb",
  "window",
 ]
@@ -868,7 +874,7 @@ name = "window"
 version = "0.1.0"
 source = "git+https://github.com/zfphex/window#2825c450d0c8e3129618f07c29d40304b6273844"
 dependencies = [
- "mini",
+ "mini 0.1.0 (git+https://github.com/zx3no/mini)",
 ]
 
 [[package]]

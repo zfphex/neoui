@@ -1,3 +1,6 @@
+//TODO: Fix this issue in mini
+#![allow(unexpected_cfgs)]
+
 pub mod style;
 pub use style::*;
 
@@ -26,6 +29,12 @@ pub struct Frame {
 pub enum Command {
     Rect {
         rect: Rect,
+        color: u32,
+    },
+    Triangle {
+        a: (usize, usize),
+        b: (usize, usize),
+        c: (usize, usize),
         color: u32,
     },
     RectOutline {
@@ -117,6 +126,16 @@ impl Context {
 
     pub fn rect(&mut self, rect: Rect, color: u32) {
         self.commands.push(Command::Rect { rect, color });
+    }
+
+    pub fn triangle(
+        &mut self,
+        a: (usize, usize),
+        b: (usize, usize),
+        c: (usize, usize),
+        color: u32,
+    ) {
+        self.commands.push(Command::Triangle { a, b, c, color });
     }
 
     pub fn text_aligned(
@@ -453,6 +472,8 @@ pub fn exit() -> bool {
 
 pub fn draw_cmd() {
     let ctx = unsafe { &mut *(&raw mut CTX) };
+    let ctx_width = ctx.width();
+    let ctx_height = ctx.height();
     let window = ctx.window.as_mut().unwrap();
 
     for cmd in core::mem::take(&mut ctx.commands) {
@@ -462,8 +483,7 @@ pub fn draw_cmd() {
                 rect.y,
                 rect.width,
                 rect.height,
-                window.width(),
-                // window.height(),
+                ctx_width,
                 &mut window.buffer,
                 color,
             ),
@@ -472,8 +492,8 @@ pub fn draw_cmd() {
                 rect.y,
                 rect.width,
                 rect.height,
-                window.width(),
-                window.height(),
+                ctx_width,
+                ctx_height,
                 &mut window.buffer,
                 color,
             ),
@@ -492,12 +512,32 @@ pub fn draw_cmd() {
                     y,
                     size,
                     window.display_scale(),
-                    window.width(),
+                    ctx_width,
                     &mut window.buffer,
                     color,
                     false,
                     cache_map,
                 );
+            }
+            Command::Triangle {
+                a: (ax, ay),
+                b: (bx, by),
+                c: (cx, cy),
+                color,
+            } => {
+                //
+                draw_triangle_sdf(
+                    &mut window.buffer,
+                    ctx_width,
+                    ctx_height,
+                    ax,
+                    ay,
+                    bx,
+                    by,
+                    cx,
+                    cy,
+                    color,
+                )
             }
         };
     }
@@ -569,6 +609,236 @@ pub fn draw_rect_outline(
         if let Some(buffer) = buffer.get_mut(pos..=pos + width) {
             buffer.fill(color);
         }
+    }
+}
+
+pub fn draw_triangle_scanline(
+    buffer: &mut [u32],
+    window_width: usize,
+    window_height: usize,
+    mut x0: usize,
+    mut y0: usize,
+    mut x1: usize,
+    mut y1: usize,
+    mut x2: usize,
+    mut y2: usize,
+    color: u32,
+) {
+    mini::profile!();
+    if y0 > y1 {
+        std::mem::swap(&mut y0, &mut y1);
+        std::mem::swap(&mut x0, &mut x1);
+    }
+    if y0 > y2 {
+        std::mem::swap(&mut y0, &mut y2);
+        std::mem::swap(&mut x0, &mut x2);
+    }
+    if y1 > y2 {
+        std::mem::swap(&mut y1, &mut y2);
+        std::mem::swap(&mut x1, &mut x2);
+    }
+
+    if y0 >= window_height || y2 == 0 {
+        return;
+    }
+
+    let total_height = y2 - y0;
+    if total_height == 0 {
+        return;
+    }
+
+    for y in y0..=y2 {
+        if y >= window_height {
+            break;
+        }
+
+        let second_half = y > y1 || y1 == y0;
+        let segment_height = if second_half { y2 - y1 } else { y1 - y0 };
+        let alpha = (y - y0) as f32 / total_height as f32;
+        let beta = if segment_height == 0 {
+            1.0
+        } else {
+            (y - if second_half { y1 } else { y0 }) as f32 / segment_height as f32
+        };
+
+        let mut ax = x0 as f32 + (x2 as f32 - x0 as f32) * alpha;
+        let mut bx = if second_half {
+            x1 as f32 + (x2 as f32 - x1 as f32) * beta
+        } else {
+            x0 as f32 + (x1 as f32 - x0 as f32) * beta
+        };
+
+        if ax > bx {
+            std::mem::swap(&mut ax, &mut bx);
+        }
+
+        let left = (ax as usize).min(window_width);
+        let right = (bx as usize).min(window_width);
+
+        if left < right && left < window_width {
+            let row_start = y * window_width + left;
+            let row_end = y * window_width + right;
+            if let Some(slice) = buffer.get_mut(row_start..row_end) {
+                slice.fill(color);
+            }
+        }
+    }
+}
+
+pub fn draw_triangle_sdf(
+    buffer: &mut [u32],
+    window_width: usize,
+    window_height: usize,
+    mut x0: usize,
+    mut y0: usize,
+    mut x1: usize,
+    mut y1: usize,
+    mut x2: usize,
+    mut y2: usize,
+    color: u32,
+) {
+    mini::profile!();
+    if y0 > y1 {
+        std::mem::swap(&mut y0, &mut y1);
+        std::mem::swap(&mut x0, &mut x1);
+    }
+    if y0 > y2 {
+        std::mem::swap(&mut y0, &mut y2);
+        std::mem::swap(&mut x0, &mut x2);
+    }
+    if y1 > y2 {
+        std::mem::swap(&mut y1, &mut y2);
+        std::mem::swap(&mut x1, &mut x2);
+    }
+
+    if y0 >= window_height || y2 == 0 || y0 == y2 {
+        return;
+    }
+
+    let ax = x0 as f32;
+    let ay = y0 as f32;
+    let mut bx = x1 as f32;
+    let mut by = y1 as f32;
+    let mut cx = x2 as f32;
+    let mut cy = y2 as f32;
+
+    let area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if area < 0.0 {
+        std::mem::swap(&mut bx, &mut cx);
+        std::mem::swap(&mut by, &mut cy);
+    }
+
+    let dx0 = bx - ax;
+    let dy0 = by - ay;
+    let dx1 = cx - bx;
+    let dy1 = cy - by;
+    let dx2 = ax - cx;
+    let dy2 = ay - cy;
+
+    let len0 = (dx0 * dx0 + dy0 * dy0).sqrt();
+    let len1 = (dx1 * dx1 + dy1 * dy1).sqrt();
+    let len2 = (dx2 * dx2 + dy2 * dy2).sqrt();
+
+    if len0 == 0.0 || len1 == 0.0 || len2 == 0.0 {
+        return;
+    }
+
+    let src_r = ((color >> 16 & 0xFF) as f32 / 255.0).powi(2);
+    let src_g = ((color >> 8 & 0xFF) as f32 / 255.0).powi(2);
+    let src_b = ((color & 0xFF) as f32 / 255.0).powi(2);
+
+    let total_height = y2 - y0;
+    let step_long = (x2 as f32 - x0 as f32) / total_height as f32;
+    let mut x_long = x0 as f32;
+
+    let height_top = y1 - y0;
+    let step_short_top = if height_top > 0 {
+        (x1 as f32 - x0 as f32) / height_top as f32
+    } else {
+        0.0
+    };
+    let mut x_short = x0 as f32;
+
+    let pad_long = 1.5 + step_long.abs();
+
+    for y in y0..=y2 {
+        if y >= window_height {
+            break;
+        }
+        let py = y as f32 + 0.5;
+
+        if y == y1 && y1 < y2 {
+            x_short = x1 as f32;
+        }
+
+        let step_short = if y < y1 {
+            step_short_top
+        } else {
+            let height_bottom = y2 - y1;
+            if height_bottom > 0 {
+                (x2 as f32 - x1 as f32) / height_bottom as f32
+            } else {
+                0.0
+            }
+        };
+
+        let pad_short = 1.5 + step_short.abs();
+
+        let left_bound = (x_long - pad_long).min(x_short - pad_short);
+        let right_bound = (x_long + pad_long).max(x_short + pad_short);
+
+        let min_x = (left_bound.max(0.0) as usize).min(window_width);
+        let max_x = (right_bound.max(0.0) as usize).min(window_width);
+
+        let mut solid_start = window_width;
+        let mut solid_end = 0;
+
+        for x in min_x..max_x {
+            let px = x as f32 + 0.5;
+
+            let dist0 = (dx0 * (py - ay) - dy0 * (px - ax)) / len0;
+            let dist1 = (dx1 * (py - by) - dy1 * (px - bx)) / len1;
+            let dist2 = (dx2 * (py - cy) - dy2 * (px - cx)) / len2;
+
+            let cov0 = (dist0 + 0.5).clamp(0.0, 1.0);
+            let cov1 = (dist1 + 0.5).clamp(0.0, 1.0);
+            let cov2 = (dist2 + 0.5).clamp(0.0, 1.0);
+
+            let alpha = cov0 * cov1 * cov2;
+
+            if alpha >= 0.999 {
+                if solid_start == window_width {
+                    solid_start = x;
+                }
+                solid_end = x + 1;
+            } else if alpha > 0.0 {
+                let idx = y * window_width + x;
+                if let Some(bg) = buffer.get_mut(idx) {
+                    let bg_r = (((*bg >> 16) & 0xFF) as f32 / 255.0).powi(2);
+                    let bg_g = (((*bg >> 8) & 0xFF) as f32 / 255.0).powi(2);
+                    let bg_b = ((*bg & 0xFF) as f32 / 255.0).powi(2);
+
+                    let out_r = (src_r * alpha) + (bg_r * (1.0 - alpha));
+                    let out_g = (src_g * alpha) + (bg_g * (1.0 - alpha));
+                    let out_b = (src_b * alpha) + (bg_b * (1.0 - alpha));
+
+                    *bg = ((out_r.sqrt() * 255.0) as u32) << 16
+                        | ((out_g.sqrt() * 255.0) as u32) << 8
+                        | ((out_b.sqrt() * 255.0) as u32);
+                }
+            }
+        }
+
+        if solid_start < solid_end {
+            let start_idx = y * window_width + solid_start;
+            let end_idx = y * window_width + solid_end;
+            if let Some(slice) = buffer.get_mut(start_idx..end_idx) {
+                slice.fill(color);
+            }
+        }
+
+        x_long += step_long;
+        x_short += step_short;
     }
 }
 

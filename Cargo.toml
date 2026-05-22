@@ -5,6 +5,11 @@ edition = "2024"
 
 [dependencies]
 fontdue = "0.9.3"
+mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = ["profile"] }
+
+[features]
+profile = ["mini/profile"]
+
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # window = { version = "0.1.0", path = "../projects/window" }

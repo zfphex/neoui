@@ -188,7 +188,11 @@ impl Context {
         let window = self.window.as_mut().unwrap();
         let hovered = window.mouse_position.intersects(rect);
         let clicked = window.left_mouse.clicked(rect);
-        let bg = if hovered { style.hover } else { style.bg };
+        let bg = if hovered && style.hover.is_some() {
+            style.hover
+        } else {
+            style.bg
+        };
 
         if let Some(color) = bg {
             self.commands.push(Command::Rect { rect, color });

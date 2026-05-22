@@ -204,6 +204,10 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
     (r as u32) << 16 | (g as u32) << 8 | (b as u32)
 }
 
+pub fn hex(color: &str) -> u32 {
+    u32::from_str_radix(color.split_at(1).1, 16).expect("Invalid hex color")
+}
+
 pub const fn split(color: u32) -> (u8, u8, u8) {
     (
         (color >> 16 & 0xFF) as u8,

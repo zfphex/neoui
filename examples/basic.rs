@@ -14,7 +14,7 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     let rect = ctx.walk_layout(width, height);
     ctx.rect(rect, rgb(25, 25, 25));
     let window = ctx.window.as_ref().unwrap();
-    if window.left_mouse.pressed {
+    if window.mouse_position.intersects(rect) && window.left_mouse.pressed {
         let click_x = window.mouse_position.x.saturating_sub(rect.x);
         *volume = (click_x as f32 / width as f32).clamp(0.0, 1.0);
     }

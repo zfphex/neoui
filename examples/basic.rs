@@ -110,15 +110,6 @@ fn main() {
         {
             begin_layout(Flow::Down);
             // ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
-
-            let my_button_style = style().bg(hex("#0078D7")).radius(12).outline(1).pad(0);
-
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-
             end_layout();
         }
 
@@ -144,8 +135,6 @@ fn main() {
             };
 
             for &item in drop_down {
-                //The layout shouldn't actually be walked here, I just want to draw on top...
-                //Hmmmmm.
                 if ctx.list_item(item, false, dropdown_width, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;

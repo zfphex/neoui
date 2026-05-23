@@ -285,7 +285,7 @@ impl Context {
                 rect,
                 color,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.outline_thickness.unwrap_or(1),
+                outline_thickness: style.outline_thickness.unwrap_or(0),
             });
         }
 

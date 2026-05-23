@@ -146,7 +146,16 @@ fn main() {
         //Sidebar.
         {
             begin_layout(Flow::Down);
-            ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
+            // ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
+
+            let my_button_style = style().bg(hex("#0078D7")).radius(12).outline(1).pad(0);
+
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+
             end_layout();
         }
 

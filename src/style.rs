@@ -26,8 +26,10 @@ pub struct Style {
     pub selected_border: Option<u32>,
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
+    pub radius: Option<usize>,
     pub width: Option<usize>,
     pub height: Option<usize>,
+    pub outline_thickness: Option<usize>,
 }
 
 impl Style {
@@ -46,38 +48,10 @@ impl Style {
         self
     }
 
-    // pub fn pad(mut self, p: usize) -> Self {
-    //     self.padding = Some(pad(p));
-    //     self
-    // }
-
-    // pub fn padt(mut self, v: usize) -> Self {
-    //     let mut p = self.padding.unwrap_or_default();
-    //     p.top = v;
-    //     self.padding = Some(p);
-    //     self
-    // }
-
-    // pub fn padb(mut self, v: usize) -> Self {
-    //     let mut p = self.padding.unwrap_or_default();
-    //     p.bottom = v;
-    //     self.padding = Some(p);
-    //     self
-    // }
-
-    // pub fn padl(mut self, v: usize) -> Self {
-    //     let mut p = self.padding.unwrap_or_default();
-    //     p.left = v;
-    //     self.padding = Some(p);
-    //     self
-    // }
-
-    // pub fn padr(mut self, v: usize) -> Self {
-    //     let mut p = self.padding.unwrap_or_default();
-    //     p.right = v;
-    //     self.padding = Some(p);
-    //     self
-    // }
+    pub fn radius(mut self, r: usize) -> Self {
+        self.radius = Some(r);
+        self
+    }
 
     pub fn font_size(mut self, font_size: usize) -> Self {
         self.font_size = Some(font_size);
@@ -111,6 +85,11 @@ impl Style {
 
     pub fn height(mut self, h: usize) -> Self {
         self.height = Some(h);
+        self
+    }
+
+    pub fn outline(mut self, outline_thickness: usize) -> Self {
+        self.outline_thickness = Some(outline_thickness);
         self
     }
 }

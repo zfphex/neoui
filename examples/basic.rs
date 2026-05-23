@@ -106,6 +106,22 @@ fn main() {
             end_layout();
         }
 
+        //Sidebar.
+        {
+            begin_layout(Flow::Down);
+            // ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
+
+            let my_button_style = style().bg(hex("#0078D7")).radius(12).outline(1).pad(0);
+
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+            ctx.button("Click Me", my_button_style);
+
+            end_layout();
+        }
+
         //Drop down menu
         if let Some((menu, rect)) = current_menu {
             let dropdown_width = 180;
@@ -136,27 +152,11 @@ fn main() {
                 }
             }
 
-            end_layout();
+            end_layout_absolute();
 
             if ctx.clicked(Rect::new(0, 0, ctx_width, ctx_height)) {
                 current_menu = None;
             }
-        }
-
-        //Sidebar.
-        {
-            begin_layout(Flow::Down);
-            // ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
-
-            let my_button_style = style().bg(hex("#0078D7")).radius(12).outline(1).pad(0);
-
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-            ctx.button("Click Me", my_button_style);
-
-            end_layout();
         }
 
         draw_cmd();

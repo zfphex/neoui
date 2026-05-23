@@ -388,6 +388,12 @@ pub fn begin_grid_cell(col: usize, row: usize, col_width: usize, row_height: usi
     begin_layout_with_bounds(flow, Rect::new(cell_x, cell_y, cell_w, cell_h));
 }
 
+/// End layout without walking the max_child_width/height
+pub fn end_layout_absolute() {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    ctx.layout_stack.pop().expect("Layout underflow");
+}
+
 pub fn end_layout() {
     let ctx = unsafe { &mut *(&raw mut CTX) };
     let finished = ctx.layout_stack.pop().expect("Layout underflow");
@@ -540,4 +546,3 @@ pub const fn scale(value: usize, scale: f32) -> usize {
 pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
     ((color as f32 * alpha as f32 + bg_color as f32 * bg_alpha as f32) / 255.0).round() as u8
 }
-

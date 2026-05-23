@@ -106,10 +106,90 @@ fn main() {
             end_layout();
         }
 
+        let dark_bg = rgb(15, 15, 15);
+        let panel_bg = rgb(10, 10, 10);
+        let border_color = rgb(45, 45, 45);
+        let accent_blue = rgb(0, 102, 204);
+        let text_dim = rgb(170, 170, 170);
+
+        let content_y = 30;
+        let content_h = ctx_height.saturating_sub(content_y);
+        let sidebar_w = 260;
+        let right_panel_w = ctx_width.saturating_sub(sidebar_w);
+        let right_x = sidebar_w + 2;
+        let meta_panel_h = 200;
+
+        let player_row_style = style()
+            .font_size(13)
+            .pad(8)
+            .bg(panel_bg)
+            .hover(rgb(35, 35, 35))
+            .hover_border(rgb(90, 90, 90))
+            .selection(rgb(82, 82, 82))
+            .selection_border(rgb(170, 170, 170));
+
         //Sidebar.
         {
-            begin_layout(Flow::Down);
+            // begin_layout(Flow::Down);
             // ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
+            // end_layout();
+
+            begin_layout_with_bounds(Flow::Down, Rect::new(0, content_y, sidebar_w, content_h));
+            ctx.rect(Rect::new(0, content_y, sidebar_w, content_h), panel_bg);
+
+            ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
+
+            let artists = [
+                "  Arca",
+                "  BADBADNOTGOOD",
+                "  beabadoobee",
+                "  Björk",
+                "  black midi",
+                "  Bonobo",
+                "  C418",
+                "  Daft Punk",
+                "  Death Grips ",
+                "  Duster ",
+                "  Flume",
+            ];
+
+            for artist in artists {
+                ctx.list_item(artist, false, sidebar_w - 10, player_row_style);
+            }
+
+            end_layout();
+        }
+
+        {
+            let track_y = content_y + meta_panel_h;
+            let track_panel_h = content_h.saturating_sub(meta_panel_h);
+            ctx.rect(Rect::new(right_x, track_y, right_panel_w, 2), border_color);
+
+            begin_layout_with_bounds(
+                Flow::Down,
+                Rect::new(right_x, track_y + 4, right_panel_w, track_panel_h),
+            );
+            ctx.rect(Rect::new(right_x, track_y + 4, right_panel_w, track_panel_h), panel_bg);
+
+            ctx.button(
+                "beabadoobee - Fake It Flowers (2020)",
+                style().fg(accent_blue).font_size(14).padl(8).padb(4),
+            );
+
+            let tracklist = [
+                "1.01  Care",
+                "1.02  Worth It",
+                "1.04  Back To Mars",
+                "1.05  Charlie Brown",
+                "1.06  Emo Song",
+                "1.07  Sorry",
+                "1.08  Further Away",
+            ];
+
+            for track in tracklist {
+                ctx.list_item(track, false, right_panel_w - 20, player_row_style);
+            }
+
             end_layout();
         }
 
@@ -134,6 +214,7 @@ fn main() {
                 Menu::Help => &["Documentation", "About"],
             };
 
+            //TODO: hit testing on overlayed widgets does not work :(
             for &item in drop_down {
                 if ctx.list_item(item, false, dropdown_width, item_style).clicked {
                     println!("{}", item);

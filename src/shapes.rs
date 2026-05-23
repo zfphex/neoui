@@ -495,12 +495,12 @@ pub fn draw_text(
     let x = scale(x, display_scale);
     let y = scale(y, display_scale);
     let font_size = scale(font_size, display_scale);
+    let line_metrics = font.horizontal_line_metrics(font_size as f32).unwrap();
 
     let mut area = Rect::new(x, y, 0, 0);
     let mut y_pos = area.y;
 
-    let mut max_x = 0;
-    let mut max_y = 0;
+    let mut max_glyph_x = x as f32;
 
     let (r1, g1, b1) = split(color);
 
@@ -531,18 +531,10 @@ pub fn draw_text(
                         continue;
                     }
 
-                    let offset = font_size as f32 + glyph_y + y_px as f32;
+                    let offset = line_metrics.ascent + glyph_y + y_px as f32;
 
                     if offset < 0.0 {
                         continue;
-                    }
-
-                    if max_x < screen_x {
-                        max_x = screen_x;
-                    }
-
-                    if max_y < offset as usize {
-                        max_y = offset as usize;
                     }
 
                     if skip_draw {
@@ -574,11 +566,15 @@ pub fn draw_text(
             }
         }
 
-        y_pos += font_size;
+        if glyph_x > max_glyph_x {
+            max_glyph_x = glyph_x;
+        }
+
+        y_pos += line_metrics.new_line_size.round() as usize;
     }
 
-    area.height = max_y + 1 - area.y;
-    area.width = max_x + 1 - area.x;
+    area.height = y_pos - area.y;
+    area.width = (max_glyph_x - x as f32).round() as usize;
     area
 }
 
@@ -625,18 +621,18 @@ pub fn draw_text_subpixel(
     let y_start = scale(y, display_scale);
     let font_size = scale(font_size, display_scale);
 
+    let line_metrics = font.horizontal_line_metrics(font_size as f32).unwrap();
+
     let mut area = Rect::new(x_start, y_start, 0, 0);
     let mut y_pos = area.y;
 
-    let mut max_x = 0;
-    let mut max_y = 0;
+    let mut max_glyph_x = x_start as f32;
 
     let (r, g, b) = split(color);
 
     let txt_r_lin = (r as f32 / 255.0).powi(2);
     let txt_g_lin = (g as f32 / 255.0).powi(2);
     let txt_b_lin = (b as f32 / 255.0).powi(2);
-    let line_metrics = font.horizontal_line_metrics(font_size as f32).unwrap();
 
     'line: for line in text.lines() {
         let mut glyph_x = x_start as f32;
@@ -647,10 +643,11 @@ pub fn draw_text_subpixel(
                 let bitmap = apply_lcd_filter(&bitmap, metrics.width, metrics.height);
                 (metrics, bitmap)
             });
+
             let glyph_y = y_pos as f32 - metrics.bounds.height - metrics.bounds.ymin;
 
             for y_px in 0..metrics.height {
-                let offset = line_metrics.ascent as f32 + glyph_y + y_px as f32;
+                let offset = line_metrics.ascent + glyph_y + y_px as f32;
 
                 if offset < 0.0 {
                     continue;
@@ -677,14 +674,6 @@ pub fn draw_text_subpixel(
 
                     if mask_r == 0.0 && mask_g == 0.0 && mask_b == 0.0 {
                         continue;
-                    }
-
-                    if max_x < screen_x {
-                        max_x = screen_x;
-                    }
-
-                    if max_y < screen_y {
-                        max_y = screen_y;
                     }
 
                     if skip_draw {
@@ -722,11 +711,15 @@ pub fn draw_text_subpixel(
             }
         }
 
-        y_pos += font_size;
+        if glyph_x > max_glyph_x {
+            max_glyph_x = glyph_x;
+        }
+
+        y_pos += line_metrics.new_line_size.round() as usize;
     }
 
-    area.height = max_y + 1 - area.y;
-    area.width = max_x + 1 - area.x;
+    area.height = y_pos - area.y;
+    area.width = (max_glyph_x - x_start as f32).round() as usize;
 
     area
 }

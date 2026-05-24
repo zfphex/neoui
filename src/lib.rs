@@ -460,9 +460,9 @@ pub enum Alignment {
 }
 
 pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
-    let mid_x =  parent.x + (parent.width / 2) - (child_w / 2);
-    let mid_y =  parent.y + (parent.height / 2) - (child_h / 2);
-    let right_edge =  parent.x + parent.width - child_w;
+    let mid_x = parent.x + (parent.width / 2) - (child_w / 2);
+    let mid_y = parent.y + (parent.height / 2) - (child_h / 2);
+    let right_edge = parent.x + parent.width - child_w;
     let bottom_edge = parent.y + parent.height - child_h;
 
     let (x, y) = match alignment {
@@ -474,9 +474,7 @@ pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Align
         Alignment::TopRight { padh, padv } => (right_edge.saturating_sub(padh), parent.y + padv),
         Alignment::BottomLeft { padh, padv } => (parent.x + padh, bottom_edge.saturating_sub(padv)),
         Alignment::BottomCenter { pad } => (mid_x, bottom_edge.saturating_sub(pad)),
-        Alignment::BottomRight { padh, padv } => {
-            (right_edge.saturating_sub(padh), bottom_edge.saturating_sub(padv))
-        }
+        Alignment::BottomRight { padh, padv } => (right_edge.saturating_sub(padh), bottom_edge.saturating_sub(padv)),
     };
 
     Rect::new(x, y, child_w, child_h)

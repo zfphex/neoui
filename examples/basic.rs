@@ -59,10 +59,9 @@ fn main() {
 
         //Menu Items
         {
-            let height = 30;
             let menu_style = style()
                 .font_size(13)
-                .height(height)
+                .height(top_nav_rect.height)
                 .padl(14)
                 .padr(14)
                 .bg(rgb(25, 25, 25))
@@ -92,7 +91,7 @@ fn main() {
                 }
             }
 
-            let bar_style = style().width(1).height(height).bg(hex("#424242"));
+            let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
             let gap = bar_style.bg(rgb(25, 25, 25)).width(120);
             ctx.spacer(bar_style);
             ctx.spacer(gap);
@@ -101,8 +100,7 @@ fn main() {
             ctx.spacer(bar_style);
             let frame = ctx.layout_stack.last().unwrap();
             ctx.spacer(gap.width(ctx_width - frame.cursor_x - 200 - 14));
-            volume_slider(ctx, &mut volume, 200, height);
-
+            volume_slider(ctx, &mut volume, 200, top_nav_rect.height);
             ctx.spacer(menu_style);
 
             end_layout();
@@ -113,7 +111,6 @@ fn main() {
         let border_color = rgb(45, 45, 45);
         let accent_blue = rgb(0, 102, 204);
         let text_dim = rgb(170, 170, 170);
-        let sidebar_w = 260;
         let player_row_style = style()
             .font_size(13)
             .pad(8)
@@ -124,7 +121,7 @@ fn main() {
             .selection(rgb(82, 82, 82))
             .selection_border(rgb(170, 170, 170));
 
-        let (sidebar_rect, right_panel_rect) = ctx.split_h(sidebar_w);
+        let (sidebar_rect, right_panel_rect) = ctx.split_h(260);
 
         //Sidebar
         {
@@ -192,7 +189,7 @@ fn main() {
                 .bg(rgb(35, 35, 35))
                 .hover(rgb(60, 60, 60));
 
-            begin_layout_with_bounds(Flow::Down, Rect::new(rect.x, 30, dropdown_width, 400));
+            begin_layout_with_bounds(Flow::Down, Rect::new(rect.x, top_nav_rect.height, dropdown_width, 400));
 
             let drop_down: &[&str] = match menu {
                 Menu::File => &["New Project", "Open File...", "Save"],

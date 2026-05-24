@@ -55,6 +55,8 @@ fn main() {
 
         begin_ui(black());
 
+        let (top_nav_rect, _) = ctx.split_v(30);
+
         //Menu Items
         {
             let height = 30;
@@ -66,7 +68,7 @@ fn main() {
                 .bg(rgb(25, 25, 25))
                 .hover(rgb(45, 45, 45));
 
-            begin_layout(Flow::Right);
+            begin_layout_with_bounds(Flow::Right, top_nav_rect);
 
             let items = [
                 ("File", Menu::File),
@@ -111,65 +113,52 @@ fn main() {
         let border_color = rgb(45, 45, 45);
         let accent_blue = rgb(0, 102, 204);
         let text_dim = rgb(170, 170, 170);
-
-        let content_y = 30;
-        let content_h = ctx_height.saturating_sub(content_y);
         let sidebar_w = 260;
-        let right_panel_w = ctx_width.saturating_sub(sidebar_w);
-        let right_x = sidebar_w + 2;
-        let meta_panel_h = 200;
-
         let player_row_style = style()
             .font_size(13)
             .pad(8)
+            .padl(12)
             .bg(panel_bg)
             .hover(rgb(35, 35, 35))
             .hover_border(rgb(90, 90, 90))
             .selection(rgb(82, 82, 82))
             .selection_border(rgb(170, 170, 170));
 
-        //Sidebar.
-        {
-            // begin_layout(Flow::Down);
-            // ctx.spacer(style().width(260).bg(rgb(10, 10, 10)));
-            // end_layout();
+        let (sidebar_rect, right_panel_rect) = ctx.split_h(sidebar_w);
 
-            begin_layout_with_bounds(Flow::Down, Rect::new(0, content_y, sidebar_w, content_h));
-            ctx.rect(Rect::new(0, content_y, sidebar_w, content_h), panel_bg);
+        //Sidebar
+        {
+            begin_layout_with_bounds(Flow::Down, sidebar_rect);
+            ctx.rect(sidebar_rect, panel_bg);
 
             ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
 
             let artists = [
-                "  Arca",
-                "  BADBADNOTGOOD",
-                "  beabadoobee",
-                "  Björk",
-                "  black midi",
-                "  Bonobo",
-                "  C418",
-                "  Daft Punk",
-                "  Death Grips ",
-                "  Duster ",
-                "  Flume",
+                "Arca",
+                "BADBADNOTGOOD",
+                "beabadoobee",
+                "Björk",
+                "black midi",
+                "Bonobo",
+                "C418",
+                "Daft Punk",
+                "Death Grips ",
+                "Duster ",
+                "Flume",
             ];
 
             for artist in artists {
-                ctx.list_item(artist, false, sidebar_w - 10, player_row_style);
+                ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
             }
 
             end_layout();
         }
 
+        //Main panel
         {
-            let track_y = content_y + meta_panel_h;
-            let track_panel_h = content_h.saturating_sub(meta_panel_h);
-            ctx.rect(Rect::new(right_x, track_y, right_panel_w, 2), border_color);
+            begin_layout_with_bounds(Flow::Down, right_panel_rect);
 
-            begin_layout_with_bounds(
-                Flow::Down,
-                Rect::new(right_x, track_y + 4, right_panel_w, track_panel_h),
-            );
-            ctx.rect(Rect::new(right_x, track_y + 4, right_panel_w, track_panel_h), panel_bg);
+            ctx.rect(right_panel_rect, panel_bg);
 
             ctx.button(
                 "beabadoobee - Fake It Flowers (2020)",
@@ -177,17 +166,17 @@ fn main() {
             );
 
             let tracklist = [
-                "1.01  Care",
-                "1.02  Worth It",
-                "1.04  Back To Mars",
-                "1.05  Charlie Brown",
-                "1.06  Emo Song",
-                "1.07  Sorry",
-                "1.08  Further Away",
+                "1.01   Care",
+                "1.02   Worth It",
+                "1.04   Back To Mars",
+                "1.05   Charlie Brown",
+                "1.06   Emo Song",
+                "1.07   Sorry",
+                "1.08   Further Away",
             ];
 
             for track in tracklist {
-                ctx.list_item(track, false, right_panel_w - 20, player_row_style);
+                ctx.list_item(track, false, right_panel_rect.width - 20, player_row_style);
             }
 
             end_layout();

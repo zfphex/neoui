@@ -40,10 +40,26 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     ctx.rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), thumb_color);
 }
 
+fn dropdown_items(menu: Menu) -> &'static [&'static str] {
+    match menu {
+        Menu::File => &["New Project", "Open File...", "Save"],
+        Menu::Edit => &["Undo", "Redo", "Cut"],
+        Menu::View => &["Toggle Sidebar", "Zoom In"],
+        Menu::Playback => &["Play / Pause", "Stop"],
+        Menu::Library => &["Scan Folders..."],
+        Menu::Help => &["Documentation", "About"],
+    }
+}
+
 fn main() {
     let ctx = create_ctx("Basic", 1000, 700);
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut volume = 0.5;
+
+    let dropdown_width = 180;
+    let dropdown_item_font_size = 13;
+    let dropdown_item_padtb = 8;
+    let dropdown_item_height = dropdown_item_font_size + dropdown_item_padtb * 2;
 
     loop {
         if exit() {
@@ -56,6 +72,18 @@ fn main() {
         begin_ui(black());
 
         let (top_nav_rect, _) = ctx.split_v(30);
+
+        // Reserve the open dropdown's screen region as an input blocker BEFORE
+        // any widgets are processed this frame. While the cursor is over this
+        // rect, only widgets fully inside it (i.e. the dropdown items) will
+        // pass `can_hit`, so the sidebar/main panel can't steal the click.
+        let dropdown_rect = current_menu.map(|(menu, button_rect)| {
+            let h = dropdown_items(menu).len() * dropdown_item_height;
+            Rect::new(button_rect.x, top_nav_rect.height, dropdown_width, h)
+        });
+        if let Some(rect) = dropdown_rect {
+            ctx.block_input(rect);
+        }
 
         //Menu Items
         {
@@ -180,35 +208,24 @@ fn main() {
         }
 
         //Drop down menu
-        if let Some((menu, rect)) = current_menu {
-            let dropdown_width = 180;
+        if let (Some((menu, _)), Some(rect)) = (current_menu, dropdown_rect) {
             let item_style = style()
-                .font_size(13)
+                .font_size(dropdown_item_font_size)
                 .padlr(12)
-                .padtb(8)
+                .padtb(dropdown_item_padtb)
                 .bg(rgb(35, 35, 35))
                 .hover(rgb(60, 60, 60));
 
-            begin_layout_with_bounds(Flow::Down, Rect::new(rect.x, top_nav_rect.height, dropdown_width, 400));
+            begin_overlay(Flow::Down, rect);
 
-            let drop_down: &[&str] = match menu {
-                Menu::File => &["New Project", "Open File...", "Save"],
-                Menu::Edit => &["Undo", "Redo", "Cut"],
-                Menu::View => &["Toggle Sidebar", "Zoom In"],
-                Menu::Playback => &["Play / Pause", "Stop"],
-                Menu::Library => &["Scan Folders..."],
-                Menu::Help => &["Documentation", "About"],
-            };
-
-            //TODO: hit testing on overlayed widgets does not work :(
-            for &item in drop_down {
+            for &item in dropdown_items(menu) {
                 if ctx.list_item(item, false, dropdown_width, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;
                 }
             }
 
-            end_layout_absolute();
+            end_overlay();
 
             if ctx.clicked(Rect::new(0, 0, ctx_width, ctx_height)) {
                 current_menu = None;

@@ -82,6 +82,8 @@ pub static mut CTX: Context = Context {
     glyph_cache: None,
     glyph_cache_subpixel: None,
     default_font_size: 32,
+    input_blockers: Vec::new(),
+    overlay: false,
 };
 
 pub struct Context {
@@ -92,6 +94,8 @@ pub struct Context {
     pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub glyph_cache_subpixel: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub default_font_size: usize,
+    pub input_blockers: Vec<Rect>,
+    pub overlay: bool,
 }
 
 impl Context {
@@ -116,13 +120,34 @@ impl Context {
     }
 
     pub fn clicked(&mut self, rect: Rect) -> bool {
+        if !self.can_hit() {
+            return false;
+        }
         let window = self.window.as_mut().unwrap();
         window.left_mouse.clicked(rect)
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
+        if !self.can_hit() {
+            return false;
+        }
         let window = self.window.as_ref().unwrap();
         window.mouse_position.intersects(rect)
+    }
+
+    pub fn block_input(&mut self, rect: Rect) {
+        self.input_blockers.push(rect);
+    }
+
+    pub fn can_hit(&self) -> bool {
+        if self.overlay {
+            return true;
+        }
+        let Some(blocker) = self.input_blockers.last() else {
+            return true;
+        };
+        let mouse = self.window.as_ref().unwrap().mouse_position;
+        !mouse.intersects(*blocker)
     }
 
     //TODO: This should really be paint_rect or something.
@@ -202,9 +227,9 @@ impl Context {
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
         let rect = self.walk_layout(width, height);
-        let window = self.window.as_mut().unwrap();
-        let hovered = window.mouse_position.intersects(rect);
-        let clicked = window.left_mouse.clicked(rect);
+        let clicked = self.clicked(rect);
+        let hovered = self.hovered(rect);
+
         let bg = if hovered && style.hover.is_some() {
             style.hover
         } else {
@@ -237,9 +262,8 @@ impl Context {
         let padding = style.padding.unwrap_or_default();
         let allocated_h = font_size + padding.top + padding.bottom;
         let rect = self.walk_layout(width_override, allocated_h);
-        let window = self.window.as_mut().unwrap();
-        let hovered = window.mouse_position.intersects(rect);
-        let clicked = window.left_mouse.clicked(rect);
+        let clicked = self.clicked(rect);
+        let hovered = self.hovered(rect);
 
         let bg = if selected {
             style.selected
@@ -368,6 +392,8 @@ pub fn begin_ui(fill_color: u32) {
     let bounds = Rect::new(0, 0, ctx.width(), ctx.height());
     ctx.fill(fill_color);
     ctx.layout_stack.clear();
+    ctx.input_blockers.clear();
+    ctx.overlay = false;
     ctx.layout_stack.push(Frame {
         bounds,
         flow: Flow::Down,
@@ -395,6 +421,18 @@ pub fn begin_layout(flow: Flow) {
         max_child_height: 0,
     };
     ctx.layout_stack.push(new_frame);
+}
+
+pub fn begin_overlay(flow: Flow, explicit_bounds: Rect) {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    ctx.overlay = true;
+    begin_layout_with_bounds(flow, explicit_bounds);
+}
+
+pub fn end_overlay() {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    ctx.overlay = false;
+    end_layout_absolute();
 }
 
 pub fn begin_layout_with_bounds(flow: Flow, explicit_bounds: Rect) {

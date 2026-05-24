@@ -1,5 +1,13 @@
 use crate::*;
 
+pub const fn scale(value: usize, scale: f32) -> usize {
+    (value as f32 * scale).round() as usize
+}
+
+pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
+    ((color as f32 * alpha as f32 + bg_color as f32 * bg_alpha as f32) / 255.0).round() as u8
+}
+
 pub fn draw_rect(
     buffer: &mut [u32],
     x: usize,

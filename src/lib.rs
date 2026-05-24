@@ -74,6 +74,16 @@ pub fn create_ctx(title: &str, width: usize, height: usize) -> &'static mut Cont
     }
 }
 
+pub static mut CTX: Context = Context {
+    commands: Vec::new(),
+    font: None,
+    window: None,
+    layout_stack: Vec::new(),
+    glyph_cache: None,
+    glyph_cache_subpixel: None,
+    default_font_size: 32,
+};
+
 pub struct Context {
     pub commands: Vec<Command>,
     pub font: Option<fontdue::Font>,
@@ -353,16 +363,6 @@ impl Context {
     }
 }
 
-pub static mut CTX: Context = Context {
-    commands: Vec::new(),
-    font: None,
-    window: None,
-    layout_stack: Vec::new(),
-    glyph_cache: None,
-    glyph_cache_subpixel: None,
-    default_font_size: 32,
-};
-
 pub fn begin_ui(fill_color: u32) {
     let ctx = unsafe { &mut *(&raw mut CTX) };
     let bounds = Rect::new(0, 0, ctx.width(), ctx.height());
@@ -460,39 +460,26 @@ pub enum Alignment {
 }
 
 pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
-    let mid_x = || parent.x + (parent.width / 2) - (child_w / 2);
-    let mid_y = || parent.y + (parent.height / 2) - (child_h / 2);
-    let right_edge = || parent.x + parent.width - child_w;
-    let bottom_edge = || parent.y + parent.height - child_h;
+    let mid_x =  parent.x + (parent.width / 2) - (child_w / 2);
+    let mid_y =  parent.y + (parent.height / 2) - (child_h / 2);
+    let right_edge =  parent.x + parent.width - child_w;
+    let bottom_edge = parent.y + parent.height - child_h;
 
     let (x, y) = match alignment {
-        Alignment::Left { pad } => (parent.x + pad, mid_y()),
-        Alignment::Center => (mid_x(), mid_y()),
-        Alignment::Right { pad } => (right_edge().saturating_sub(pad), mid_y()),
+        Alignment::Left { pad } => (parent.x + pad, mid_y),
+        Alignment::Center => (mid_x, mid_y),
+        Alignment::Right { pad } => (right_edge.saturating_sub(pad), mid_y),
         Alignment::TopLeft { padh, padv } => (parent.x + padh, parent.y + padv),
-        Alignment::TopCenter { pad } => (mid_x(), parent.y + pad),
-        Alignment::TopRight { padh, padv } => (right_edge().saturating_sub(padh), parent.y + padv),
-        Alignment::BottomLeft { padh, padv } => (parent.x + padh, bottom_edge().saturating_sub(padv)),
-        Alignment::BottomCenter { pad } => (mid_x(), bottom_edge().saturating_sub(pad)),
+        Alignment::TopCenter { pad } => (mid_x, parent.y + pad),
+        Alignment::TopRight { padh, padv } => (right_edge.saturating_sub(padh), parent.y + padv),
+        Alignment::BottomLeft { padh, padv } => (parent.x + padh, bottom_edge.saturating_sub(padv)),
+        Alignment::BottomCenter { pad } => (mid_x, bottom_edge.saturating_sub(pad)),
         Alignment::BottomRight { padh, padv } => {
-            (right_edge().saturating_sub(padh), bottom_edge().saturating_sub(padv))
+            (right_edge.saturating_sub(padh), bottom_edge.saturating_sub(padv))
         }
     };
 
     Rect::new(x, y, child_w, child_h)
-}
-
-pub fn exit() -> bool {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let window = ctx.window.as_mut().unwrap();
-
-    if let Some(event) = window.event() {
-        return match event {
-            Event::Quit | Event::Input(Key::Escape, _) => true,
-            _ => false,
-        };
-    }
-    false
 }
 
 pub fn draw_cmd() {
@@ -571,10 +558,15 @@ pub fn draw_cmd() {
     }
 }
 
-pub const fn scale(value: usize, scale: f32) -> usize {
-    (value as f32 * scale).round() as usize
-}
+pub fn exit() -> bool {
+    let ctx = unsafe { &mut *(&raw mut CTX) };
+    let window = ctx.window.as_mut().unwrap();
 
-pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
-    ((color as f32 * alpha as f32 + bg_color as f32 * bg_alpha as f32) / 255.0).round() as u8
+    if let Some(event) = window.event() {
+        return match event {
+            Event::Quit | Event::Input(Key::Escape, _) => true,
+            _ => false,
+        };
+    }
+    false
 }

@@ -73,14 +73,11 @@ fn main() {
 
         let (top_nav_rect, _) = ctx.split_v(30);
 
-        // Reserve the open dropdown's screen region as an input blocker BEFORE
-        // any widgets are processed this frame. While the cursor is over this
-        // rect, only widgets fully inside it (i.e. the dropdown items) will
-        // pass `can_hit`, so the sidebar/main panel can't steal the click.
         let dropdown_rect = current_menu.map(|(menu, button_rect)| {
             let h = dropdown_items(menu).len() * dropdown_item_height;
             Rect::new(button_rect.x, top_nav_rect.height, dropdown_width, h)
         });
+
         if let Some(rect) = dropdown_rect {
             ctx.block_input(rect);
         }
@@ -203,6 +200,8 @@ fn main() {
             for track in tracklist {
                 ctx.list_item(track, false, right_panel_rect.width - 20, player_row_style);
             }
+
+            ctx.rect(right_panel_rect.width(1), border_color);
 
             end_layout();
         }

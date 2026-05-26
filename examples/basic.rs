@@ -91,9 +91,6 @@ fn main() {
                 .padr(14)
                 .bg(rgb(25, 25, 25))
                 .hover(rgb(45, 45, 45));
-
-            begin_layout_with_bounds(Flow::Right, top_nav_rect);
-
             let items = [
                 ("File", Menu::File),
                 ("Edit", Menu::Edit),
@@ -103,32 +100,70 @@ fn main() {
                 ("Help", Menu::Help),
             ];
 
-            for (label, menu) in items {
-                let state = ctx.button(label, menu_style);
-                if state.clicked {
-                    if let Some((cm, _)) = current_menu
-                        && cm == menu
-                    {
-                        current_menu = None;
-                    } else {
-                        current_menu = Some((menu, state.rect));
+            ctx.flow_right(top_nav_rect, |ctx| {
+                for (label, menu) in items {
+                    let state = ctx.button(label, menu_style);
+                    if state.clicked {
+                        if let Some((cm, _)) = current_menu
+                            && cm == menu
+                        {
+                            current_menu = None;
+                        } else {
+                            current_menu = Some((menu, state.rect));
+                        }
                     }
                 }
-            }
 
-            let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
-            let gap = bar_style.bg(rgb(25, 25, 25)).width(120);
-            ctx.spacer(bar_style);
-            ctx.spacer(gap);
-            ctx.spacer(bar_style);
-            ctx.spacer(gap);
-            ctx.spacer(bar_style);
-            let frame = ctx.layout_stack.last().unwrap();
-            ctx.spacer(gap.width(ctx_width - frame.cursor_x - 200 - 14));
-            volume_slider(ctx, &mut volume, 200, top_nav_rect.height);
-            ctx.spacer(menu_style);
+                let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
+                let gap = bar_style.bg(rgb(25, 25, 25)).width(120);
+                ctx.spacer(bar_style);
+                ctx.spacer(gap);
+                ctx.spacer(bar_style);
+                ctx.spacer(gap);
+                ctx.spacer(bar_style);
+                let frame = ctx.layout_stack.last().unwrap();
+                ctx.spacer(gap.width(ctx_width - frame.cursor_x - 200 - 14));
+                volume_slider(ctx, &mut volume, 200, top_nav_rect.height);
+                ctx.spacer(menu_style);
+            });
 
-            end_layout();
+            // begin_layout_with_bounds(Flow::Right, top_nav_rect);
+
+            // let items = [
+            //     ("File", Menu::File),
+            //     ("Edit", Menu::Edit),
+            //     ("View", Menu::View),
+            //     ("Playback", Menu::Playback),
+            //     ("Library", Menu::Library),
+            //     ("Help", Menu::Help),
+            // ];
+
+            // for (label, menu) in items {
+            //     let state = ctx.button(label, menu_style);
+            //     if state.clicked {
+            //         if let Some((cm, _)) = current_menu
+            //             && cm == menu
+            //         {
+            //             current_menu = None;
+            //         } else {
+            //             current_menu = Some((menu, state.rect));
+            //         }
+            //     }
+            // }
+
+            // let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
+            // let gap = bar_style.bg(rgb(25, 25, 25)).width(120);
+            // ctx.spacer(bar_style);
+            // ctx.spacer(gap);
+            // ctx.spacer(bar_style);
+            // ctx.spacer(gap);
+            // ctx.spacer(bar_style);
+            // let frame = ctx.layout_stack.last().unwrap();
+            // ctx.spacer(gap.width(ctx_width - frame.cursor_x - 200 - 14));
+            // volume_slider(ctx, &mut volume, 200, top_nav_rect.height);
+            // ctx.spacer(menu_style);
+
+            // end_layout();
         }
 
         let dark_bg = rgb(15, 15, 15);

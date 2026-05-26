@@ -365,6 +365,73 @@ impl Context {
         (top_rect, bottom_rect)
     }
 
+    pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.begin_layout_with_bounds(Flow::Down, bounds);
+        let result = ui(self);
+        self.end_layout();
+        result
+    }
+
+    pub fn flow_right<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.begin_layout_with_bounds(Flow::Right, bounds);
+        let result = ui(self);
+        self.end_layout();
+        result
+    }
+
+    pub fn begin_layout_with_bounds(&mut self, flow: Flow, bounds: Rect) {
+        let ctx = unsafe { &mut *(&raw mut CTX) };
+        let new_frame = Frame {
+            bounds: bounds,
+            flow,
+            cursor_x: bounds.x,
+            cursor_y: bounds.y,
+            max_child_width: 0,
+            max_child_height: 0,
+        };
+        ctx.layout_stack.push(new_frame);
+    }
+
+    pub fn begin_layout(&mut self, flow: Flow) {
+        let parent = self.layout_stack.last().expect("Layout stack empty");
+        let new_frame = Frame {
+            bounds: Rect::new(
+                parent.cursor_x,
+                parent.cursor_y,
+                parent.bounds.width,
+                parent.bounds.height,
+            ),
+            flow,
+            cursor_x: parent.cursor_x,
+            cursor_y: parent.cursor_y,
+            max_child_width: 0,
+            max_child_height: 0,
+        };
+        self.layout_stack.push(new_frame);
+    }
+
+    pub fn end_layout(&mut self) {
+        let finished = self.layout_stack.pop().expect("Layout underflow");
+        if let Some(parent) = self.layout_stack.last_mut() {
+            match parent.flow {
+                Flow::Down => {
+                    parent.cursor_y += finished.max_child_height;
+                    parent.max_child_width = parent.max_child_width.max(finished.max_child_width);
+                    parent.max_child_height += finished.max_child_height;
+                }
+                Flow::Right => {
+                    parent.cursor_x += finished.max_child_width;
+                    parent.max_child_width += finished.max_child_width;
+                    parent.max_child_height = parent.max_child_height.max(finished.max_child_height);
+                }
+            }
+        }
+    }
+
+    pub fn end_layout_absolute(&mut self) {
+        self.layout_stack.pop().expect("Layout underflow");
+    }
+
     pub fn fill(&mut self, color: u32) {
         let window = self.window.as_mut().unwrap();
         window.buffer.fill(color);

@@ -91,6 +91,7 @@ fn main() {
                 .padr(14)
                 .bg(rgb(25, 25, 25))
                 .hover(rgb(45, 45, 45));
+
             let items = [
                 ("File", Menu::File),
                 ("Edit", Menu::Edit),
@@ -101,15 +102,6 @@ fn main() {
             ];
 
             ctx.begin_layout_with_bounds(Flow::Right, top_nav_rect);
-
-            let items = [
-                ("File", Menu::File),
-                ("Edit", Menu::Edit),
-                ("View", Menu::View),
-                ("Playback", Menu::Playback),
-                ("Library", Menu::Library),
-                ("Help", Menu::Help),
-            ];
 
             for (label, menu) in items {
                 let state = ctx.button(label, menu_style);
@@ -125,6 +117,7 @@ fn main() {
             }
 
             let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
+
             let gap = bar_style.bg(rgb(25, 25, 25)).width(120);
             ctx.spacer(bar_style);
             ctx.spacer(gap);
@@ -139,7 +132,7 @@ fn main() {
             ctx.end_layout();
         }
 
-        let dark_bg = rgb(15, 15, 15);
+        // let dark_bg = rgb(15, 15, 15);
         let panel_bg = rgb(10, 10, 10);
         let border_color = rgb(45, 45, 45);
         let accent_blue = rgb(0, 102, 204);
@@ -185,6 +178,8 @@ fn main() {
         }
 
         //Main panel
+
+        //TODO: Allow for scrolling the track list.
         {
             ctx.begin_layout_with_bounds(Flow::Down, right_panel_rect);
 

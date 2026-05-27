@@ -59,32 +59,25 @@ pub struct State {
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
-pub fn create_ctx(title: &str, width: usize, height: usize) -> &'static mut Context {
-    unsafe {
-        #[cfg(target_os = "windows")]
-        let window = create_window(title, 0, 0, width as i32, height as i32, WindowStyle::DEFAULT);
+pub fn ctx(title: &str, width: usize, height: usize) -> Context {
+    #[cfg(target_os = "windows")]
+    let window = create_window(title, 0, 0, width as i32, height as i32, WindowStyle::DEFAULT);
 
-        #[cfg(target_os = "macos")]
-        let window = Box::pin(Window::new(title, width, height));
+    #[cfg(target_os = "macos")]
+    let window = Box::pin(Window::new(title, width, height));
 
-        CTX.window = Some(window);
-        CTX.font = Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap());
-
-        &mut *(&raw mut CTX)
+    Context {
+        commands: Vec::new(),
+        font: Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()),
+        window: Some(window),
+        layout_stack: Vec::new(),
+        glyph_cache: None,
+        glyph_cache_subpixel: None,
+        default_font_size: 32,
+        input_blockers: Vec::new(),
+        overlay: false,
     }
 }
-
-pub static mut CTX: Context = Context {
-    commands: Vec::new(),
-    font: None,
-    window: None,
-    layout_stack: Vec::new(),
-    glyph_cache: None,
-    glyph_cache_subpixel: None,
-    default_font_size: 32,
-    input_blockers: Vec::new(),
-    overlay: false,
-};
 
 pub struct Context {
     pub commands: Vec<Command>,
@@ -379,8 +372,23 @@ impl Context {
         result
     }
 
+    pub fn begin_ui(&mut self, fill_color: u32) {
+        let bounds = Rect::new(0, 0, self.width(), self.height());
+        self.fill(fill_color);
+        self.layout_stack.clear();
+        self.input_blockers.clear();
+        self.overlay = false;
+        self.layout_stack.push(Frame {
+            bounds,
+            flow: Flow::Down,
+            cursor_x: 0,
+            cursor_y: 0,
+            max_child_width: 0,
+            max_child_height: 0,
+        });
+    }
+
     pub fn begin_layout_with_bounds(&mut self, flow: Flow, bounds: Rect) {
-        let ctx = unsafe { &mut *(&raw mut CTX) };
         let new_frame = Frame {
             bounds: bounds,
             flow,
@@ -389,7 +397,7 @@ impl Context {
             max_child_width: 0,
             max_child_height: 0,
         };
-        ctx.layout_stack.push(new_frame);
+        self.layout_stack.push(new_frame);
     }
 
     pub fn begin_layout(&mut self, flow: Flow) {
@@ -428,8 +436,37 @@ impl Context {
         }
     }
 
+    /// End layout without walking the max_child_width/height
     pub fn end_layout_absolute(&mut self) {
         self.layout_stack.pop().expect("Layout underflow");
+    }
+
+    pub fn begin_overlay(&mut self, flow: Flow, explicit_bounds: Rect) {
+        self.overlay = true;
+        self.begin_layout_with_bounds(flow, explicit_bounds);
+    }
+
+    pub fn begin_grid_cell(
+        &mut self,
+        col: usize,
+        row: usize,
+        col_width: usize,
+        row_height: usize,
+        grid_bounds: Rect,
+        flow: Flow,
+    ) {
+        let cell_x = grid_bounds.x + (col * col_width);
+        let cell_y = grid_bounds.y + (row * row_height);
+
+        let cell_w = col_width.min(grid_bounds.width.saturating_sub(col * col_width));
+        let cell_h = row_height.min(grid_bounds.height.saturating_sub(row * row_height));
+
+        self.begin_layout_with_bounds(flow, Rect::new(cell_x, cell_y, cell_w, cell_h));
+    }
+
+    pub fn end_overlay(&mut self) {
+        self.overlay = false;
+        self.end_layout_absolute();
     }
 
     pub fn fill(&mut self, color: u32) {
@@ -438,7 +475,90 @@ impl Context {
     }
 
     pub fn draw(&mut self) {
+        let self_width = self.width();
+        let self_height = self.height();
         let window = self.window.as_mut().unwrap();
+
+        for cmd in core::mem::take(&mut self.commands) {
+            match cmd {
+                Command::Rect {
+                    rect,
+                    color,
+                    radius,
+                    outline_thickness,
+                } => {
+                    if outline_thickness == 0 {
+                        draw_rounded_rect(
+                            &mut window.buffer,
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            self_width,
+                            self_height,
+                            radius,
+                            color,
+                        )
+                    } else {
+                        draw_rounded_rect_outline(
+                            &mut window.buffer,
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            self_width,
+                            self_height,
+                            radius,
+                            outline_thickness,
+                            color,
+                        )
+                    }
+                }
+                Command::Text {
+                    text,
+                    x,
+                    y,
+                    color,
+                    size,
+                } => {
+                    let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+                    draw_text_subpixel(
+                        &text,
+                        self.font.as_ref().unwrap(),
+                        x,
+                        y,
+                        size,
+                        window.display_scale(),
+                        self_width,
+                        &mut window.buffer,
+                        color,
+                        false,
+                        cache_map,
+                    );
+                }
+                Command::Triangle {
+                    a: (ax, ay),
+                    b: (bx, by),
+                    c: (cx, cy),
+                    color,
+                } => {
+                    //
+                    draw_triangle_sdf(
+                        &mut window.buffer,
+                        self_width,
+                        self_height,
+                        ax,
+                        ay,
+                        bx,
+                        by,
+                        cx,
+                        cy,
+                        color,
+                    )
+                }
+            };
+        }
+
         window.draw();
         window.vsync();
     }
@@ -452,224 +572,16 @@ impl Context {
         let window = self.window.as_ref().unwrap();
         window.height()
     }
-}
 
-pub fn begin_ui(fill_color: u32) {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let bounds = Rect::new(0, 0, ctx.width(), ctx.height());
-    ctx.fill(fill_color);
-    ctx.layout_stack.clear();
-    ctx.input_blockers.clear();
-    ctx.overlay = false;
-    ctx.layout_stack.push(Frame {
-        bounds,
-        flow: Flow::Down,
-        cursor_x: 0,
-        cursor_y: 0,
-        max_child_width: 0,
-        max_child_height: 0,
-    });
-}
+    pub fn exit(&mut self) -> bool {
+        let window = self.window.as_mut().unwrap();
 
-pub fn begin_layout(flow: Flow) {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let parent = ctx.layout_stack.last().expect("Layout stack empty");
-    let new_frame = Frame {
-        bounds: Rect::new(
-            parent.cursor_x,
-            parent.cursor_y,
-            parent.bounds.width,
-            parent.bounds.height,
-        ),
-        flow,
-        cursor_x: parent.cursor_x,
-        cursor_y: parent.cursor_y,
-        max_child_width: 0,
-        max_child_height: 0,
-    };
-    ctx.layout_stack.push(new_frame);
-}
-
-pub fn begin_overlay(flow: Flow, explicit_bounds: Rect) {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    ctx.overlay = true;
-    begin_layout_with_bounds(flow, explicit_bounds);
-}
-
-pub fn end_overlay() {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    ctx.overlay = false;
-    end_layout_absolute();
-}
-
-pub fn begin_layout_with_bounds(flow: Flow, explicit_bounds: Rect) {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let new_frame = Frame {
-        bounds: explicit_bounds,
-        flow,
-        cursor_x: explicit_bounds.x,
-        cursor_y: explicit_bounds.y,
-        max_child_width: 0,
-        max_child_height: 0,
-    };
-    ctx.layout_stack.push(new_frame);
-}
-
-pub fn begin_grid_cell(col: usize, row: usize, col_width: usize, row_height: usize, grid_bounds: Rect, flow: Flow) {
-    let cell_x = grid_bounds.x + (col * col_width);
-    let cell_y = grid_bounds.y + (row * row_height);
-
-    let cell_w = col_width.min(grid_bounds.width.saturating_sub(col * col_width));
-    let cell_h = row_height.min(grid_bounds.height.saturating_sub(row * row_height));
-
-    begin_layout_with_bounds(flow, Rect::new(cell_x, cell_y, cell_w, cell_h));
-}
-
-/// End layout without walking the max_child_width/height
-pub fn end_layout_absolute() {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    ctx.layout_stack.pop().expect("Layout underflow");
-}
-
-pub fn end_layout() {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let finished = ctx.layout_stack.pop().expect("Layout underflow");
-
-    if let Some(parent) = ctx.layout_stack.last_mut() {
-        match parent.flow {
-            Flow::Down => {
-                parent.cursor_y += finished.max_child_height;
-                parent.max_child_width = parent.max_child_width.max(finished.max_child_width);
-                parent.max_child_height += finished.max_child_height;
-            }
-            Flow::Right => {
-                parent.cursor_x += finished.max_child_width;
-                parent.max_child_width += finished.max_child_width;
-                parent.max_child_height = parent.max_child_height.max(finished.max_child_height);
-            }
+        if let Some(event) = window.event() {
+            return match event {
+                Event::Quit | Event::Input(Key::Escape, _) => true,
+                _ => false,
+            };
         }
+        false
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Alignment {
-    Left { pad: usize },
-    Center,
-    Right { pad: usize },
-    TopLeft { padh: usize, padv: usize },
-    TopCenter { pad: usize },
-    TopRight { padh: usize, padv: usize },
-    BottomLeft { padh: usize, padv: usize },
-    BottomCenter { pad: usize },
-    BottomRight { padh: usize, padv: usize },
-}
-
-pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
-    let mid_x = parent.x + (parent.width / 2) - (child_w / 2);
-    let mid_y = parent.y + (parent.height / 2) - (child_h / 2);
-    let right_edge = parent.x + parent.width - child_w;
-    let bottom_edge = parent.y + parent.height - child_h;
-
-    let (x, y) = match alignment {
-        Alignment::Left { pad } => (parent.x + pad, mid_y),
-        Alignment::Center => (mid_x, mid_y),
-        Alignment::Right { pad } => (right_edge.saturating_sub(pad), mid_y),
-        Alignment::TopLeft { padh, padv } => (parent.x + padh, parent.y + padv),
-        Alignment::TopCenter { pad } => (mid_x, parent.y + pad),
-        Alignment::TopRight { padh, padv } => (right_edge.saturating_sub(padh), parent.y + padv),
-        Alignment::BottomLeft { padh, padv } => (parent.x + padh, bottom_edge.saturating_sub(padv)),
-        Alignment::BottomCenter { pad } => (mid_x, bottom_edge.saturating_sub(pad)),
-        Alignment::BottomRight { padh, padv } => (right_edge.saturating_sub(padh), bottom_edge.saturating_sub(padv)),
-    };
-
-    Rect::new(x, y, child_w, child_h)
-}
-
-pub fn draw_cmd() {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let ctx_width = ctx.width();
-    let ctx_height = ctx.height();
-    let window = ctx.window.as_mut().unwrap();
-
-    for cmd in core::mem::take(&mut ctx.commands) {
-        match cmd {
-            Command::Rect {
-                rect,
-                color,
-                radius,
-                outline_thickness,
-            } => {
-                if outline_thickness == 0 {
-                    draw_rounded_rect(
-                        &mut window.buffer,
-                        rect.x,
-                        rect.y,
-                        rect.width,
-                        rect.height,
-                        ctx_width,
-                        ctx_height,
-                        radius,
-                        color,
-                    )
-                } else {
-                    draw_rounded_rect_outline(
-                        &mut window.buffer,
-                        rect.x,
-                        rect.y,
-                        rect.width,
-                        rect.height,
-                        ctx_width,
-                        ctx_height,
-                        radius,
-                        outline_thickness,
-                        color,
-                    )
-                }
-            }
-            Command::Text {
-                text,
-                x,
-                y,
-                color,
-                size,
-            } => {
-                let cache_map = ctx.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
-                draw_text_subpixel(
-                    &text,
-                    ctx.font.as_ref().unwrap(),
-                    x,
-                    y,
-                    size,
-                    window.display_scale(),
-                    ctx_width,
-                    &mut window.buffer,
-                    color,
-                    false,
-                    cache_map,
-                );
-            }
-            Command::Triangle {
-                a: (ax, ay),
-                b: (bx, by),
-                c: (cx, cy),
-                color,
-            } => {
-                //
-                draw_triangle_sdf(&mut window.buffer, ctx_width, ctx_height, ax, ay, bx, by, cx, cy, color)
-            }
-        };
-    }
-}
-
-pub fn exit() -> bool {
-    let ctx = unsafe { &mut *(&raw mut CTX) };
-    let window = ctx.window.as_mut().unwrap();
-
-    if let Some(event) = window.event() {
-        return match event {
-            Event::Quit | Event::Input(Key::Escape, _) => true,
-            _ => false,
-        };
-    }
-    false
 }

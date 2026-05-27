@@ -8,6 +8,40 @@ pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
     ((color as f32 * alpha as f32 + bg_color as f32 * bg_alpha as f32) / 255.0).round() as u8
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Alignment {
+    Left { pad: usize },
+    Center,
+    Right { pad: usize },
+    TopLeft { padh: usize, padv: usize },
+    TopCenter { pad: usize },
+    TopRight { padh: usize, padv: usize },
+    BottomLeft { padh: usize, padv: usize },
+    BottomCenter { pad: usize },
+    BottomRight { padh: usize, padv: usize },
+}
+
+pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
+    let mid_x = parent.x + (parent.width / 2) - (child_w / 2);
+    let mid_y = parent.y + (parent.height / 2) - (child_h / 2);
+    let right_edge = parent.x + parent.width - child_w;
+    let bottom_edge = parent.y + parent.height - child_h;
+
+    let (x, y) = match alignment {
+        Alignment::Left { pad } => (parent.x + pad, mid_y),
+        Alignment::Center => (mid_x, mid_y),
+        Alignment::Right { pad } => (right_edge.saturating_sub(pad), mid_y),
+        Alignment::TopLeft { padh, padv } => (parent.x + padh, parent.y + padv),
+        Alignment::TopCenter { pad } => (mid_x, parent.y + pad),
+        Alignment::TopRight { padh, padv } => (right_edge.saturating_sub(padh), parent.y + padv),
+        Alignment::BottomLeft { padh, padv } => (parent.x + padh, bottom_edge.saturating_sub(padv)),
+        Alignment::BottomCenter { pad } => (mid_x, bottom_edge.saturating_sub(pad)),
+        Alignment::BottomRight { padh, padv } => (right_edge.saturating_sub(padh), bottom_edge.saturating_sub(padv)),
+    };
+
+    Rect::new(x, y, child_w, child_h)
+}
+
 pub fn draw_rect(
     buffer: &mut [u32],
     x: usize,

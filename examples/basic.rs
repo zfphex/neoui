@@ -52,7 +52,7 @@ fn dropdown_items(menu: Menu) -> &'static [&'static str] {
 }
 
 fn main() {
-    let ctx = create_ctx("Basic", 1000, 700);
+    let mut ctx = ctx("Basic", 1000, 700);
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut volume = 0.5;
 
@@ -62,14 +62,14 @@ fn main() {
     let dropdown_item_height = dropdown_item_font_size + dropdown_item_padtb * 2;
 
     loop {
-        if exit() {
+        if ctx.exit() {
             break;
         }
 
         let ctx_width = ctx.width();
         let ctx_height = ctx.height();
 
-        begin_ui(black());
+        ctx.begin_ui(black());
 
         let (top_nav_rect, _) = ctx.split_v(30);
 
@@ -185,7 +185,7 @@ fn main() {
 
         //Sidebar
         {
-            begin_layout_with_bounds(Flow::Down, sidebar_rect);
+            ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
             ctx.rect(sidebar_rect, panel_bg);
 
             ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
@@ -208,12 +208,12 @@ fn main() {
                 ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
             }
 
-            end_layout();
+            ctx.end_layout();
         }
 
         //Main panel
         {
-            begin_layout_with_bounds(Flow::Down, right_panel_rect);
+            ctx.begin_layout_with_bounds(Flow::Down, right_panel_rect);
 
             ctx.rect(right_panel_rect, panel_bg);
 
@@ -238,7 +238,7 @@ fn main() {
 
             ctx.rect(right_panel_rect.width(1), border_color);
 
-            end_layout();
+            ctx.end_layout();
         }
 
         //Drop down menu
@@ -250,7 +250,7 @@ fn main() {
                 .bg(rgb(35, 35, 35))
                 .hover(rgb(60, 60, 60));
 
-            begin_overlay(Flow::Down, rect);
+            ctx.begin_overlay(Flow::Down, rect);
 
             for &item in dropdown_items(menu) {
                 if ctx.list_item(item, false, dropdown_width, item_style).clicked {
@@ -259,14 +259,13 @@ fn main() {
                 }
             }
 
-            end_overlay();
+            ctx.end_overlay();
 
             if ctx.clicked(Rect::new(0, 0, ctx_width, ctx_height)) {
                 current_menu = None;
             }
         }
 
-        draw_cmd();
         ctx.draw();
     }
 }

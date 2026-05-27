@@ -29,7 +29,7 @@ pub struct Frame {
     pub max_child_height: usize,
 }
 
-pub enum Command {
+pub enum Command<'a> {
     Rect {
         rect: Rect,
         color: u32,
@@ -43,7 +43,7 @@ pub enum Command {
         color: u32,
     },
     Text {
-        text: Cow<'static, str>,
+        text: Cow<'a, str>,
         x: usize,
         y: usize,
         color: u32,
@@ -59,7 +59,7 @@ pub struct State {
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
-pub fn ctx(title: &str, width: usize, height: usize) -> Context {
+pub fn ctx<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
     #[cfg(target_os = "windows")]
     let window = create_window(title, 0, 0, width as i32, height as i32, WindowStyle::DEFAULT);
 
@@ -79,8 +79,8 @@ pub fn ctx(title: &str, width: usize, height: usize) -> Context {
     }
 }
 
-pub struct Context {
-    pub commands: Vec<Command>,
+pub struct Context<'a> {
+    pub commands: Vec<Command<'a>>,
     pub font: Option<fontdue::Font>,
     pub window: Option<std::pin::Pin<Box<Window>>>,
     pub layout_stack: Vec<Frame>,
@@ -91,7 +91,7 @@ pub struct Context {
     pub overlay: bool,
 }
 
-impl Context {
+impl<'a> Context<'a> {
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
     pub fn walk_layout(&mut self, width: usize, height: usize) -> Rect {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
@@ -161,7 +161,7 @@ impl Context {
     pub fn text_aligned(
         &mut self,
         dest: Rect,
-        text: impl Into<Cow<'static, str>>,
+        text: impl Into<Cow<'a, str>>,
         color: u32,
         font_size: usize,
         alignment: Alignment,
@@ -194,7 +194,7 @@ impl Context {
         });
     }
 
-    pub fn button<'a>(&mut self, text: impl Into<Cow<'static, str>>, style: Style) -> State {
+    pub fn button(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         let text = text.into();
         let width_ctx = self.width();
         let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
@@ -245,7 +245,7 @@ impl Context {
 
     pub fn list_item(
         &mut self,
-        text: impl Into<Cow<'static, str>>,
+        text: impl Into<Cow<'a, str>>,
         selected: bool,
         width_override: usize,
         style: Style,
@@ -500,16 +500,17 @@ impl Context {
                             color,
                         )
                     } else {
-                        draw_rounded_rect_outline(
+                        //rounded rect outline doesn't work for 1px outlines??
+                        draw_rect_outline(
                             &mut window.buffer,
                             rect.x,
                             rect.y,
                             rect.width,
                             rect.height,
                             self_width,
-                            self_height,
-                            radius,
-                            outline_thickness,
+                            // self_height,
+                            // radius,
+                            // outline_thickness,
                             color,
                         )
                     }

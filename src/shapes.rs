@@ -21,6 +21,7 @@ pub enum Alignment {
     BottomRight { padh: usize, padv: usize },
 }
 
+#[track_caller]
 pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
     let mid_x = parent.x + (parent.width / 2) - (child_w / 2);
     let mid_y = parent.y + (parent.height / 2) - (child_h / 2);

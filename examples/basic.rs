@@ -52,6 +52,7 @@ fn dropdown_items(menu: Menu) -> &'static [&'static str] {
 }
 
 fn main() {
+    defer_results!();
     let mut ctx = ctx("Basic", 1000, 700);
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut volume = 0.5;

@@ -300,7 +300,7 @@ pub fn draw_triangle_scanline(
     mut y2: usize,
     color: u32,
 ) {
-    mini::profile!();
+    profile!();
     if y0 > y1 {
         std::mem::swap(&mut y0, &mut y1);
         std::mem::swap(&mut x0, &mut x1);
@@ -373,7 +373,7 @@ pub fn draw_triangle_sdf(
     mut y2: usize,
     color: u32,
 ) {
-    mini::profile!();
+    profile!();
     if y0 > y1 {
         std::mem::swap(&mut y0, &mut y1);
         std::mem::swap(&mut x0, &mut x1);

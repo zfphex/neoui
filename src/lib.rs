@@ -10,6 +10,8 @@ pub use platform::*;
 pub mod shapes;
 pub use shapes::*;
 
+pub use mini::*;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -469,7 +471,7 @@ impl<'a> Context<'a> {
 
     pub fn begin_layout_with_bounds(&mut self, flow: Flow, bounds: Rect) {
         let new_frame = Frame {
-            bounds: bounds,
+            bounds,
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,

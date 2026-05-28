@@ -13,13 +13,14 @@ pub use shapes::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum Flow {
+    #[default]
     Down,
     Right,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Frame {
     pub bounds: Rect,
     pub flow: Flow,
@@ -27,6 +28,7 @@ pub struct Frame {
     pub cursor_y: usize,
     pub max_child_width: usize,
     pub max_child_height: usize,
+    pub scroll_y: usize,
 }
 
 pub enum Command<'a> {
@@ -51,6 +53,7 @@ pub enum Command<'a> {
     },
 }
 
+#[derive(Debug, Clone)]
 pub struct State {
     pub clicked: bool,
     pub hovered: bool,
@@ -109,23 +112,98 @@ impl<'a> Context<'a> {
                 frame.max_child_height = frame.max_child_height.max(height);
             }
         }
-        rect
+
+        if frame.scroll_y == 0 {
+            return rect;
+        }
+
+        // Calculate the scroll position.
+
+        //  0 --------+
+        //            |
+        //            | <-- `frame.scroll_y`
+        //            |
+        //  0 ========|========= <--  Screen top
+        //            |        |
+        //            |        | <-- `y` = prev_y - scroll_y
+        //            |        |     (Distance from screen top)
+        //  prev_y -> +------+ |
+        //            | ITEM | |
+        //            +------+ |
+        //                     |
+        //            VIEWPORT |
+        //  ====================
+        let y = rect.y as i32 - frame.scroll_y as i32;
+
+        // Check if the current item underflows the viewport.
+        //
+        //    +---------+
+        //    | ITEM    |
+        //    +---------+     <-- y + height
+        //
+        // ================== <-- frame.bounds.y
+        // |                |
+        // |    VIEWPORT    |
+        // |                |
+        // ==================
+
+        if y + height as i32 <= frame.bounds.y as i32 {
+            return Rect::new(0, 0, 0, 0);
+        }
+
+        // Check if the current item overflows the viewport.
+        //
+        // ==================
+        // |                |
+        // |    VIEWPORT    |
+        // |                |
+        // ================== <-- frame.bounds.y + frame.bounds.height
+        //
+        //    +---------+     <-- y
+        //    | ITEM    |
+        //    +---------+
+
+        if y >= (frame.bounds.y + frame.bounds.height) as i32 {
+            return Rect::new(0, 0, 0, 0);
+        }
+
+        // Clip partially offscreen elements relative to the viewport's bounds.
+        //     +---------+     <-- y
+        //     | Clipped |
+        // ====|=========|==== <-- frame.bounds.y
+        // |   | Visible |   |
+        // |   +---------+   | <-- height - (frame.bounds.y - y)
+        // |                 |
+        // |    VIEWPORT
+        // ==================
+
+        if y < frame.bounds.y as i32 {
+            // The height of the clipped section.
+            let clip_height = (frame.bounds.y as i32 - y) as usize;
+            // Take the clipped height from the total item height.
+            let visible_height = height - clip_height;
+            return Rect::new(rect.x, frame.bounds.y, width, visible_height);
+        }
+
+        Rect::new(rect.x, y as usize, width, height)
     }
 
     pub fn clicked(&mut self, rect: Rect) -> bool {
         if !self.can_hit() {
             return false;
         }
+        let frame = self.layout_stack.last().expect("No active frame");
         let window = self.window.as_mut().unwrap();
-        window.left_mouse.clicked(rect)
+        window.left_mouse.clicked(rect) && window.mouse_position.intersects(frame.bounds)
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
         if !self.can_hit() {
             return false;
         }
+        let frame = self.layout_stack.last().expect("No active frame");
         let window = self.window.as_ref().unwrap();
-        window.mouse_position.intersects(rect)
+        window.mouse_position.intersects(rect) && window.mouse_position.intersects(frame.bounds)
     }
 
     pub fn block_input(&mut self, rect: Rect) {
@@ -166,6 +244,10 @@ impl<'a> Context<'a> {
         font_size: usize,
         alignment: Alignment,
     ) {
+        if dest.width == 0 || dest.height == 0 {
+            return;
+        }
+
         let text = text.into();
         let window = self.window.as_mut().unwrap();
         let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
@@ -381,10 +463,7 @@ impl<'a> Context<'a> {
         self.layout_stack.push(Frame {
             bounds,
             flow: Flow::Down,
-            cursor_x: 0,
-            cursor_y: 0,
-            max_child_width: 0,
-            max_child_height: 0,
+            ..Default::default()
         });
     }
 
@@ -394,8 +473,7 @@ impl<'a> Context<'a> {
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
-            max_child_width: 0,
-            max_child_height: 0,
+            ..Default::default()
         };
         self.layout_stack.push(new_frame);
     }
@@ -412,8 +490,7 @@ impl<'a> Context<'a> {
             flow,
             cursor_x: parent.cursor_x,
             cursor_y: parent.cursor_y,
-            max_child_width: 0,
-            max_child_height: 0,
+            ..Default::default()
         };
         self.layout_stack.push(new_frame);
     }
@@ -441,11 +518,6 @@ impl<'a> Context<'a> {
         self.layout_stack.pop().expect("Layout underflow");
     }
 
-    pub fn begin_overlay(&mut self, flow: Flow, explicit_bounds: Rect) {
-        self.overlay = true;
-        self.begin_layout_with_bounds(flow, explicit_bounds);
-    }
-
     pub fn begin_grid_cell(
         &mut self,
         col: usize,
@@ -464,9 +536,47 @@ impl<'a> Context<'a> {
         self.begin_layout_with_bounds(flow, Rect::new(cell_x, cell_y, cell_w, cell_h));
     }
 
+    pub fn begin_overlay(&mut self, flow: Flow, explicit_bounds: Rect) {
+        self.overlay = true;
+        self.begin_layout_with_bounds(flow, explicit_bounds);
+    }
+
     pub fn end_overlay(&mut self) {
         self.overlay = false;
         self.end_layout_absolute();
+    }
+
+    pub fn begin_scroll_view(&mut self, bounds: Rect, scroll_y: usize) {
+        let new_frame = Frame {
+            bounds,
+            flow: Flow::Down,
+            cursor_x: bounds.x,
+            cursor_y: bounds.y,
+            max_child_width: 0,
+            max_child_height: 0,
+            scroll_y,
+        };
+        self.layout_stack.push(new_frame);
+    }
+
+    pub fn end_scroll_view(&mut self) -> usize {
+        let frame = self.layout_stack.pop().expect("Layout underflow");
+        if let Some(parent) = self.layout_stack.last_mut() {
+            match parent.flow {
+                Flow::Down => {
+                    parent.cursor_y += frame.bounds.height;
+                    parent.max_child_width = parent.max_child_width.max(frame.bounds.width);
+                    parent.max_child_height += frame.bounds.height;
+                }
+                Flow::Right => {
+                    parent.cursor_x += frame.bounds.width;
+                    parent.max_child_width += frame.bounds.width;
+                    parent.max_child_height = parent.max_child_height.max(frame.bounds.height);
+                }
+            }
+        }
+
+        frame.max_child_height
     }
 
     pub fn fill(&mut self, color: u32) {

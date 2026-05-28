@@ -61,9 +61,36 @@ fn main() {
     let dropdown_item_padtb = 8;
     let dropdown_item_height = dropdown_item_font_size + dropdown_item_padtb * 2;
 
+    let mut track_scroll_y = 0;
+    let mut scroll_amt = 0;
+    let mut total_track_content_height: usize = 0;
+
+    // let dark_bg = rgb(15, 15, 15);
+    let panel_bg = rgb(10, 10, 10);
+    let border_color = rgb(45, 45, 45);
+    let accent_blue = rgb(0, 102, 204);
+    let text_dim = rgb(170, 170, 170);
+    let player_row_style = style()
+        .font_size(13)
+        .pad(8)
+        .padl(12)
+        .bg(panel_bg)
+        .hover(rgb(35, 35, 35))
+        .hover_border(rgb(90, 90, 90))
+        .selection(rgb(82, 82, 82))
+        .selection_border(rgb(170, 170, 170));
+
     loop {
-        if ctx.exit() {
-            break;
+        let mut scroll_direction = 0;
+        match ctx.window.as_mut().unwrap().event() {
+            Some(event) => match event {
+                Event::Quit => return,
+                Event::Input(Key::Escape, _) => return,
+                Event::Input(Key::ScrollDown, _) => scroll_direction = 1,
+                Event::Input(Key::ScrollUp, _) => scroll_direction = -1,
+                _ => {}
+            },
+            None => {}
         }
 
         let ctx_width = ctx.width();
@@ -71,7 +98,15 @@ fn main() {
 
         ctx.begin_ui(black());
 
-        let (top_nav_rect, _) = ctx.split_v(30);
+        let (top_nav_rect, bottom_rect) = ctx.split_v(30);
+
+        let sidebar_rect = Rect::new(bottom_rect.x, bottom_rect.y, 260, bottom_rect.height);
+        let right_panel_rect = Rect::new(
+            bottom_rect.x + 260,
+            bottom_rect.y,
+            bottom_rect.width.saturating_sub(260),
+            bottom_rect.height,
+        );
 
         let dropdown_rect = current_menu.map(|(menu, button_rect)| {
             let h = dropdown_items(menu).len() * dropdown_item_height;
@@ -80,6 +115,75 @@ fn main() {
 
         if let Some(rect) = dropdown_rect {
             ctx.block_input(rect);
+        }
+
+        {
+            ctx.begin_layout_with_bounds(Flow::Down, right_panel_rect);
+
+            let (album_header_rect, scroll_viewport) = ctx.split_v(35);
+
+            ctx.begin_overlay(Flow::Down, scroll_viewport);
+
+            let window = ctx.window.as_mut().unwrap();
+            if window.mouse_position.intersects(right_panel_rect) && scroll_direction != 0 {
+                //Scroll 3 boxes at a time
+                let target = track_scroll_y as i32 + (scroll_direction * scroll_amt as i32 * 3);
+                let max_scroll = (total_track_content_height as i32 - scroll_viewport.height as i32).max(0);
+                track_scroll_y = target.clamp(0, max_scroll) as usize;
+            }
+
+            //Draw the panel background
+            ctx.rect(right_panel_rect, panel_bg);
+
+            ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
+            let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
+            for track in tracklist {
+                ctx.list_item(track, false, scroll_viewport.width - 20, player_row_style);
+            }
+            total_track_content_height = ctx.end_scroll_view();
+            //TODO: This is pretty bad?
+            scroll_amt = total_track_content_height / 100;
+            ctx.end_overlay();
+
+            ctx.begin_overlay(Flow::Down, album_header_rect);
+
+            ctx.button(
+                "beabadoobee - Fake It Flowers (2020)",
+                style().fg(accent_blue).font_size(14).padl(8).padb(4),
+            );
+
+            ctx.end_overlay();
+
+            ctx.rect(right_panel_rect.width(1), border_color);
+            ctx.end_layout();
+        }
+
+        //Sidebar
+        {
+            ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
+            ctx.rect(sidebar_rect, panel_bg);
+
+            ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
+
+            let artists = [
+                "Arca",
+                "BADBADNOTGOOD",
+                "beabadoobee",
+                "Björk",
+                "black midi",
+                "Bonobo",
+                "C418",
+                "Daft Punk",
+                "Death Grips ",
+                "Duster ",
+                "Flume",
+            ];
+
+            for artist in artists {
+                ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
+            }
+
+            ctx.end_layout();
         }
 
         //Menu Items
@@ -128,83 +232,6 @@ fn main() {
             ctx.spacer(gap.width(ctx_width - frame.cursor_x - 200 - 14));
             volume_slider(&mut ctx, &mut volume, 200, top_nav_rect.height);
             ctx.spacer(menu_style);
-
-            ctx.end_layout();
-        }
-
-        // let dark_bg = rgb(15, 15, 15);
-        let panel_bg = rgb(10, 10, 10);
-        let border_color = rgb(45, 45, 45);
-        let accent_blue = rgb(0, 102, 204);
-        let text_dim = rgb(170, 170, 170);
-        let player_row_style = style()
-            .font_size(13)
-            .pad(8)
-            .padl(12)
-            .bg(panel_bg)
-            .hover(rgb(35, 35, 35))
-            .hover_border(rgb(90, 90, 90))
-            .selection(rgb(82, 82, 82))
-            .selection_border(rgb(170, 170, 170));
-
-        let (sidebar_rect, right_panel_rect) = ctx.split_h(260);
-
-        //Sidebar
-        {
-            ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
-            ctx.rect(sidebar_rect, panel_bg);
-
-            ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
-
-            let artists = [
-                "Arca",
-                "BADBADNOTGOOD",
-                "beabadoobee",
-                "Björk",
-                "black midi",
-                "Bonobo",
-                "C418",
-                "Daft Punk",
-                "Death Grips ",
-                "Duster ",
-                "Flume",
-            ];
-
-            for artist in artists {
-                ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
-            }
-
-            ctx.end_layout();
-        }
-
-        //Main panel
-
-        //TODO: Allow for scrolling the track list.
-        {
-            ctx.begin_layout_with_bounds(Flow::Down, right_panel_rect);
-
-            ctx.rect(right_panel_rect, panel_bg);
-
-            ctx.button(
-                "beabadoobee - Fake It Flowers (2020)",
-                style().fg(accent_blue).font_size(14).padl(8).padb(4),
-            );
-
-            let tracklist = [
-                "1.01   Care",
-                "1.02   Worth It",
-                "1.04   Back To Mars",
-                "1.05   Charlie Brown",
-                "1.06   Emo Song",
-                "1.07   Sorry",
-                "1.08   Further Away",
-            ];
-
-            for track in tracklist {
-                ctx.list_item(track, false, right_panel_rect.width - 20, player_row_style);
-            }
-
-            ctx.rect(right_panel_rect.width(1), border_color);
 
             ctx.end_layout();
         }

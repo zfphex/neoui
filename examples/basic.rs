@@ -109,85 +109,42 @@ fn main() {
             bottom_rect.height,
         );
 
-        let dropdown_rect = current_menu.map(|(menu, button_rect)| {
-            let h = dropdown_items(menu).len() * dropdown_item_height;
-            Rect::new(button_rect.x, top_nav_rect.height, dropdown_width, h)
-        });
+        if let Some((menu, rect)) = current_menu {
+            let item_style = style()
+                .font_size(dropdown_item_font_size)
+                .padlr(12)
+                .padtb(dropdown_item_padtb)
+                .bg(rgb(35, 35, 35))
+                .hover(rgb(60, 60, 60))
+                .depth(1);
 
-        if let Some(rect) = dropdown_rect {
-            ctx.block_input(rect);
-        }
+            let total_dropdown_height = dropdown_items(menu).len() * dropdown_item_height;
+            let dropdown = Rect::new(rect.x, top_nav_rect.height, dropdown_width, total_dropdown_height);
 
-        {
-            ctx.begin_layout_with_bounds(Flow::Down, right_panel_rect);
+            ctx.begin_layout_with_bounds(Flow::Down, dropdown);
 
-            let (album_header_rect, scroll_viewport) = ctx.split_v(35);
+            for &item in dropdown_items(menu) {
+                if ctx.list_item(item, false, dropdown_width, item_style).clicked {
+                    println!("{}", item);
+                    current_menu = None;
+                }
+            }
 
-            ctx.begin_overlay(Flow::Down, scroll_viewport);
+            ctx.end_layout_absolute();
 
             let window = ctx.window.as_mut().unwrap();
-            if window.mouse_position.intersects(right_panel_rect) && scroll_direction != 0 {
-                //Scroll 3 boxes at a time
-                let target = track_scroll_y as i32 + (scroll_direction * scroll_amt as i32 * 3);
-                let max_scroll = (total_track_content_height as i32 - scroll_viewport.height as i32).max(0);
-                track_scroll_y = target.clamp(0, max_scroll) as usize;
+            let left = &mut window.left_mouse;
+            if let Some(inital) = left.inital_position
+                && let Some(release) = left.release_position
+            {
+                if left.released && !inital.intersects(rect) && !release.intersects(rect) {
+                    left.position = None;
+                    left.released = false;
+                    current_menu = None;
+                }
             }
-
-            //Draw the panel background
-            ctx.rect(right_panel_rect, panel_bg);
-
-            ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
-            let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
-            for track in tracklist {
-                ctx.list_item(track, false, scroll_viewport.width - 20, player_row_style);
-            }
-            total_track_content_height = ctx.end_scroll_view();
-            //TODO: This is pretty bad?
-            scroll_amt = total_track_content_height / 100;
-            ctx.end_overlay();
-
-            ctx.begin_overlay(Flow::Down, album_header_rect);
-
-            ctx.button(
-                "beabadoobee - Fake It Flowers (2020)",
-                style().fg(accent_blue).font_size(14).padl(8).padb(4),
-            );
-
-            ctx.end_overlay();
-
-            ctx.rect(right_panel_rect.width(1), border_color);
-            ctx.end_layout();
         }
 
-        //Sidebar
-        {
-            ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
-            ctx.rect(sidebar_rect, panel_bg);
-
-            ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
-
-            let artists = [
-                "Arca",
-                "BADBADNOTGOOD",
-                "beabadoobee",
-                "Björk",
-                "black midi",
-                "Bonobo",
-                "C418",
-                "Daft Punk",
-                "Death Grips ",
-                "Duster ",
-                "Flume",
-            ];
-
-            for artist in artists {
-                ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
-            }
-
-            ctx.end_layout();
-        }
-
-        //Menu Items
         {
             let menu_style = style()
                 .font_size(13)
@@ -237,31 +194,78 @@ fn main() {
             ctx.end_layout();
         }
 
-        //Drop down menu
-        if let (Some((menu, _)), Some(rect)) = (current_menu, dropdown_rect) {
-            let item_style = style()
-                .font_size(dropdown_item_font_size)
-                .padlr(12)
-                .padtb(dropdown_item_padtb)
-                .bg(rgb(35, 35, 35))
-                .hover(rgb(60, 60, 60));
+        {
+            ctx.begin_layout_with_bounds(Flow::Down, right_panel_rect);
 
-            ctx.begin_overlay(Flow::Down, rect);
+            let (album_header_rect, scroll_viewport) = ctx.split_v(35);
 
-            for &item in dropdown_items(menu) {
-                if ctx.list_item(item, false, dropdown_width, item_style).clicked {
-                    println!("{}", item);
-                    current_menu = None;
+            ctx.begin_layout_with_bounds(Flow::Down, scroll_viewport);
+
+            let window = ctx.window.as_mut().unwrap();
+            if window.mouse_position.intersects(right_panel_rect) && scroll_direction != 0 {
+                //Scroll 3 boxes at a time
+                let target = track_scroll_y as i32 + (scroll_direction * scroll_amt as i32 * 3);
+                let max_scroll = (total_track_content_height as i32 - scroll_viewport.height as i32).max(0);
+                track_scroll_y = target.clamp(0, max_scroll) as usize;
+            }
+
+            //Draw the panel background
+            ctx.rect(right_panel_rect, panel_bg);
+
+            ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
+            let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
+            for (idx, track) in tracklist.into_iter().enumerate() {
+                if ctx
+                    .list_item(track, false, scroll_viewport.width - 20, player_row_style)
+                    .clicked
+                {
+                    println!("Clicked item {idx}")
                 }
             }
+            total_track_content_height = ctx.end_scroll_view();
+            //TODO: This is pretty bad?
+            scroll_amt = total_track_content_height / 100;
+            ctx.end_layout();
 
-            ctx.end_overlay();
+            ctx.begin_layout_with_bounds(Flow::Down, album_header_rect);
 
-            //IDK this doesn't work
-            let window = ctx.window.as_mut().unwrap();
-            if window.left_mouse.clicked(Rect::new(0, 0, ctx_width, ctx_height)) {
-                current_menu = None;
+            ctx.button(
+                "beabadoobee - Fake It Flowers (2020)",
+                style().fg(accent_blue).font_size(14).padl(8).padb(4),
+            );
+
+            ctx.end_layout();
+
+            ctx.rect(right_panel_rect.width(1), border_color);
+            ctx.end_layout();
+        }
+
+        //Sidebar
+        {
+            ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
+            ctx.rect(sidebar_rect, panel_bg);
+
+            ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
+
+            let artists = [
+                "Arca",
+                "BADBADNOTGOOD",
+                "beabadoobee",
+                "Björk",
+                "black midi",
+                "Bonobo",
+                "C418",
+                "Daft Punk",
+                "Death Grips ",
+                "Duster ",
+                "Flume",
+            ];
+
+            for artist in artists {
+                ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
             }
+
+            ctx.end_layout();
         }
 
         ctx.draw();

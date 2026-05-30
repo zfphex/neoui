@@ -72,28 +72,24 @@ pub fn ctx<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
     let window = Box::pin(Window::new(title, width, height));
 
     Context {
-        commands: Vec::new(),
+        commands: [const { Vec::new() }; 16],
         font: Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()),
         window: Some(window),
         layout_stack: Vec::new(),
         glyph_cache: None,
         glyph_cache_subpixel: None,
         default_font_size: 32,
-        input_blockers: Vec::new(),
-        overlay: false,
     }
 }
 
 pub struct Context<'a> {
-    pub commands: Vec<Command<'a>>,
+    pub commands: [Vec<Command<'a>>; 16],
     pub font: Option<fontdue::Font>,
     pub window: Option<std::pin::Pin<Box<Window>>>,
     pub layout_stack: Vec<Frame>,
     pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub glyph_cache_subpixel: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub default_font_size: usize,
-    pub input_blockers: Vec<Rect>,
-    pub overlay: bool,
 }
 
 impl<'a> Context<'a> {
@@ -191,42 +187,21 @@ impl<'a> Context<'a> {
     }
 
     pub fn clicked(&mut self, rect: Rect) -> bool {
-        if !self.can_hit() {
-            return false;
-        }
         let frame = self.layout_stack.last().expect("No active frame");
         let window = self.window.as_mut().unwrap();
         window.left_mouse.clicked(rect) && window.mouse_position.intersects(frame.bounds)
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
-        if !self.can_hit() {
-            return false;
-        }
         let frame = self.layout_stack.last().expect("No active frame");
         let window = self.window.as_ref().unwrap();
         window.mouse_position.intersects(rect) && window.mouse_position.intersects(frame.bounds)
     }
 
-    pub fn block_input(&mut self, rect: Rect) {
-        self.input_blockers.push(rect);
-    }
-
-    pub fn can_hit(&self) -> bool {
-        if self.overlay {
-            return true;
-        }
-        let Some(blocker) = self.input_blockers.last() else {
-            return true;
-        };
-        let mouse = self.window.as_ref().unwrap().mouse_position;
-        !mouse.intersects(*blocker)
-    }
-
     //TODO: This should really be paint_rect or something.
     //Users should be able to use the layout system to render rectangles.
     pub fn rect(&mut self, rect: Rect, color: u32) {
-        self.commands.push(Command::Rect {
+        self.commands[0].push(Command::Rect {
             rect,
             color,
             radius: 0,
@@ -235,7 +210,7 @@ impl<'a> Context<'a> {
     }
 
     pub fn triangle(&mut self, a: (usize, usize), b: (usize, usize), c: (usize, usize), color: u32) {
-        self.commands.push(Command::Triangle { a, b, c, color });
+        self.commands[0].push(Command::Triangle { a, b, c, color });
     }
 
     pub fn text_aligned(
@@ -245,6 +220,7 @@ impl<'a> Context<'a> {
         color: u32,
         font_size: usize,
         alignment: Alignment,
+        depth: usize,
     ) {
         if dest.width == 0 || dest.height == 0 {
             return;
@@ -269,7 +245,7 @@ impl<'a> Context<'a> {
         );
 
         let rect = align_rect(dest, text_metrics.width, text_metrics.height, alignment);
-        self.commands.push(Command::Text {
+        self.commands[depth].push(Command::Text {
             text,
             x: rect.x,
             y: rect.y,
@@ -314,7 +290,7 @@ impl<'a> Context<'a> {
         };
 
         if let Some(color) = bg {
-            self.commands.push(Command::Rect {
+            self.commands[0].push(Command::Rect {
                 rect,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -322,7 +298,7 @@ impl<'a> Context<'a> {
             });
         }
 
-        self.text_aligned(rect, text, style.fg.unwrap_or(white()), font_size, Alignment::Center);
+        self.text_aligned(rect, text, style.fg.unwrap_or(white()), font_size, Alignment::Center, 0);
 
         State { clicked, hovered, rect }
     }
@@ -342,6 +318,14 @@ impl<'a> Context<'a> {
         let clicked = self.clicked(rect);
         let hovered = self.hovered(rect);
 
+        if rect.width == 0 || rect.height == 0 {
+            return State {
+                clicked: false,
+                hovered: false,
+                rect,
+            };
+        }
+
         let bg = if selected {
             style.selected
         } else if hovered {
@@ -350,8 +334,10 @@ impl<'a> Context<'a> {
             style.bg
         };
 
+        let depth = style.depth.unwrap_or(0);
+
         if let Some(color) = bg {
-            self.commands.push(Command::Rect {
+            self.commands[depth].push(Command::Rect {
                 rect,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -361,7 +347,7 @@ impl<'a> Context<'a> {
 
         if selected {
             if let Some(color) = style.selected_border {
-                self.commands.push(Command::Rect {
+                self.commands[depth].push(Command::Rect {
                     rect,
                     color,
                     radius: style.radius.unwrap_or(0),
@@ -376,6 +362,7 @@ impl<'a> Context<'a> {
             style.fg.unwrap_or(white()),
             font_size,
             Alignment::Left { pad: padding.left },
+            depth,
         );
 
         State { clicked, hovered, rect }
@@ -392,7 +379,7 @@ impl<'a> Context<'a> {
         let rect = self.walk_layout(width, height);
 
         if let Some(color) = style.bg {
-            self.commands.push(Command::Rect {
+            self.commands[0].push(Command::Rect {
                 rect,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -401,7 +388,7 @@ impl<'a> Context<'a> {
         }
 
         if let Some(color) = style.border {
-            self.commands.push(Command::Rect {
+            self.commands[0].push(Command::Rect {
                 rect,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -460,8 +447,6 @@ impl<'a> Context<'a> {
         let bounds = Rect::new(0, 0, self.width(), self.height());
         self.fill(fill_color);
         self.layout_stack.clear();
-        self.input_blockers.clear();
-        self.overlay = false;
         self.layout_stack.push(Frame {
             bounds,
             flow: Flow::Down,
@@ -538,25 +523,14 @@ impl<'a> Context<'a> {
         self.begin_layout_with_bounds(flow, Rect::new(cell_x, cell_y, cell_w, cell_h));
     }
 
-    pub fn begin_overlay(&mut self, flow: Flow, explicit_bounds: Rect) {
-        self.overlay = true;
-        self.begin_layout_with_bounds(flow, explicit_bounds);
-    }
-
-    pub fn end_overlay(&mut self) {
-        self.overlay = false;
-        self.end_layout_absolute();
-    }
-
     pub fn begin_scroll_view(&mut self, bounds: Rect, scroll_y: usize) {
         let new_frame = Frame {
             bounds,
             flow: Flow::Down,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
-            max_child_width: 0,
-            max_child_height: 0,
             scroll_y,
+            ..Default::default()
         };
         self.layout_stack.push(new_frame);
     }
@@ -591,85 +565,87 @@ impl<'a> Context<'a> {
         let self_height = self.height();
         let window = self.window.as_mut().unwrap();
 
-        for cmd in core::mem::take(&mut self.commands) {
-            match cmd {
-                Command::Rect {
-                    rect,
-                    color,
-                    radius,
-                    outline_thickness,
-                } => {
-                    if outline_thickness == 0 {
-                        draw_rounded_rect(
+        for layer in &mut self.commands {
+            for cmd in core::mem::take(layer) {
+                match cmd {
+                    Command::Rect {
+                        rect,
+                        color,
+                        radius,
+                        outline_thickness,
+                    } => {
+                        if outline_thickness == 0 {
+                            draw_rounded_rect(
+                                &mut window.buffer,
+                                rect.x,
+                                rect.y,
+                                rect.width,
+                                rect.height,
+                                self_width,
+                                self_height,
+                                radius,
+                                color,
+                            )
+                        } else {
+                            //rounded rect outline doesn't work for 1px outlines??
+                            draw_rect_outline(
+                                &mut window.buffer,
+                                rect.x,
+                                rect.y,
+                                rect.width,
+                                rect.height,
+                                self_width,
+                                // self_height,
+                                // radius,
+                                // outline_thickness,
+                                color,
+                            )
+                        }
+                    }
+                    Command::Text {
+                        text,
+                        x,
+                        y,
+                        color,
+                        size,
+                    } => {
+                        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+                        draw_text_subpixel(
+                            &text,
+                            self.font.as_ref().unwrap(),
+                            x,
+                            y,
+                            size,
+                            window.display_scale(),
+                            self_width,
                             &mut window.buffer,
-                            rect.x,
-                            rect.y,
-                            rect.width,
-                            rect.height,
+                            color,
+                            false,
+                            cache_map,
+                        );
+                    }
+                    Command::Triangle {
+                        a: (ax, ay),
+                        b: (bx, by),
+                        c: (cx, cy),
+                        color,
+                    } => {
+                        //
+                        draw_triangle_sdf(
+                            &mut window.buffer,
                             self_width,
                             self_height,
-                            radius,
-                            color,
-                        )
-                    } else {
-                        //rounded rect outline doesn't work for 1px outlines??
-                        draw_rect_outline(
-                            &mut window.buffer,
-                            rect.x,
-                            rect.y,
-                            rect.width,
-                            rect.height,
-                            self_width,
-                            // self_height,
-                            // radius,
-                            // outline_thickness,
+                            ax,
+                            ay,
+                            bx,
+                            by,
+                            cx,
+                            cy,
                             color,
                         )
                     }
-                }
-                Command::Text {
-                    text,
-                    x,
-                    y,
-                    color,
-                    size,
-                } => {
-                    let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
-                    draw_text_subpixel(
-                        &text,
-                        self.font.as_ref().unwrap(),
-                        x,
-                        y,
-                        size,
-                        window.display_scale(),
-                        self_width,
-                        &mut window.buffer,
-                        color,
-                        false,
-                        cache_map,
-                    );
-                }
-                Command::Triangle {
-                    a: (ax, ay),
-                    b: (bx, by),
-                    c: (cx, cy),
-                    color,
-                } => {
-                    //
-                    draw_triangle_sdf(
-                        &mut window.buffer,
-                        self_width,
-                        self_height,
-                        ax,
-                        ay,
-                        bx,
-                        by,
-                        cx,
-                        cy,
-                        color,
-                    )
-                }
-            };
+                };
+            }
         }
 
         window.draw();

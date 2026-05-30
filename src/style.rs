@@ -30,6 +30,7 @@ pub struct Style {
     pub width: Option<usize>,
     pub height: Option<usize>,
     pub outline_thickness: Option<usize>,
+    pub depth: Option<usize>,
 }
 
 impl Style {
@@ -90,6 +91,11 @@ impl Style {
 
     pub fn outline(mut self, outline_thickness: usize) -> Self {
         self.outline_thickness = Some(outline_thickness);
+        self
+    }
+
+    pub fn depth(mut self, depth: usize) -> Self {
+        self.depth = Some(depth);
         self
     }
 }

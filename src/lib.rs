@@ -33,6 +33,7 @@ pub struct Frame {
     pub scroll_y: usize,
 }
 
+#[derive(Debug)]
 pub enum Command<'a> {
     Rect {
         rect: Rect,
@@ -561,12 +562,13 @@ impl<'a> Context<'a> {
     }
 
     pub fn draw(&mut self) {
+        profile!();
         let self_width = self.width();
         let self_height = self.height();
         let window = self.window.as_mut().unwrap();
 
         for layer in &mut self.commands {
-            for cmd in core::mem::take(layer) {
+            for cmd in layer.drain(..) {
                 match cmd {
                     Command::Rect {
                         rect,

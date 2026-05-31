@@ -12,7 +12,7 @@ enum Menu {
 
 fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usize) {
     let rect = ctx.walk_layout(width, height);
-    ctx.rect(rect, bg(rgb(25, 25, 25)));
+    ctx.paint_rect(rect, bg(rgb(25, 25, 25)));
     let window = ctx.window.as_ref().unwrap();
     if let Some(inital) = window.left_mouse.inital_position
         && window.left_mouse.pressed
@@ -26,12 +26,11 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     let max_track_h = 6;
     let cy = rect.y + height / 2;
 
-    ctx.triangle(
+    ctx.paint_triangle(
         (rect.x, cy + max_track_h),
         (rect.x + width, cy + max_track_h),
         (rect.x + width, cy - max_track_h),
-        0,
-        hex("#000000"),
+        bg(hex("#000000")),
     );
 
     let thumb_w = 12;
@@ -42,7 +41,7 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
 
     let thumb_color = hex("#0078D7");
-    ctx.rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
+    ctx.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
 }
 
 fn scrollbar(ctx: &mut Context, viewport: Rect, content_height: usize, scroll_y: &mut usize, scroll_direction: i32) {
@@ -96,7 +95,7 @@ fn scrollbar(ctx: &mut Context, viewport: Rect, content_height: usize, scroll_y:
     };
     let thumb_y = viewport.y + (ratio * track_h as f32) as usize;
 
-    ctx.rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
+    ctx.paint_rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
 }
 
 fn dropdown_items(menu: Menu) -> &'static [&'static str] {
@@ -136,8 +135,8 @@ fn main() {
         .bg(panel_bg)
         .hover(rgb(35, 35, 35))
         .hover_border(rgb(90, 90, 90))
-        .selection(rgb(82, 82, 82))
-        .selection_border(rgb(170, 170, 170));
+        .selected(rgb(82, 82, 82))
+        .selected_border(rgb(170, 170, 170));
 
     loop {
         let mut scroll_direction = 0;
@@ -259,7 +258,7 @@ fn main() {
             ctx.begin_layout_with_bounds(Flow::Down, scroll_viewport);
 
             //Draw the panel background
-            ctx.rect(right_panel_rect, bg(panel_bg));
+            ctx.paint_rect(right_panel_rect, bg(panel_bg));
 
             scrollbar(
                 &mut ctx,
@@ -293,14 +292,14 @@ fn main() {
 
             ctx.end_layout();
 
-            ctx.rect(right_panel_rect.width(1), bg(border_color));
+            ctx.paint_rect(right_panel_rect.width(1), bg(border_color));
             ctx.end_layout();
         }
 
         //Sidebar
         {
             ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
-            ctx.rect(sidebar_rect, bg(panel_bg));
+            ctx.paint_rect(sidebar_rect, bg(panel_bg));
 
             ctx.button("All Music", style().fg(text_dim).pad(6));
 

@@ -173,6 +173,62 @@ impl<'a> Context<'a> {
         Rect::new(rect.x, y as usize, width, height)
     }
 
+    /// Splits the current frame's remaining space horizontally.
+    pub fn split_h(&self, left_width: impl Into<Size>) -> (Rect, Rect) {
+        let left_width = self.resolve_size(left_width.into(), true);
+        let frame = self.layout_stack.last().expect("No active frame");
+
+        let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
+        let total_h = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+
+        let left_w = left_width.min(total_w);
+        let right_w = total_w.saturating_sub(left_w);
+
+        let left_rect = Rect::new(frame.cursor_x, frame.cursor_y, left_w, total_h);
+        let right_rect = Rect::new(frame.cursor_x + left_w, frame.cursor_y, right_w, total_h);
+
+        (left_rect, right_rect)
+    }
+
+    /// Splits the current frame's remaining space vertically.
+    pub fn split_v(&self, top_height: impl Into<Size>) -> (Rect, Rect) {
+        let top_height = self.resolve_size(top_height.into(), false);
+        let frame = self.layout_stack.last().expect("No active frame");
+
+        let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
+        let total_h = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+
+        let top_h = top_height.min(total_h);
+        let bottom_h = total_h.saturating_sub(top_h);
+
+        let top_rect = Rect::new(frame.cursor_x, frame.cursor_y, total_w, top_h);
+        let bottom_rect = Rect::new(frame.cursor_x, frame.cursor_y + top_h, total_w, bottom_h);
+
+        (top_rect, bottom_rect)
+    }
+
+    pub fn resolve_size(&self, size: Size, horizontal: bool) -> usize {
+        let frame = self.layout_stack.last().expect("No active frame");
+        match size {
+            Size::Pixel(px) => px,
+            Size::Percentage(pct) => {
+                let total = if horizontal {
+                    frame.bounds.width
+                } else {
+                    frame.bounds.height
+                };
+                (total as f32 * pct) as usize
+            }
+            Size::Remaining => {
+                if horizontal {
+                    (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x)
+                } else {
+                    (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y)
+                }
+            }
+        }
+    }
+
     pub fn clicked(&mut self, rect: Rect) -> bool {
         let frame = self.layout_stack.last().expect("No active frame");
         let window = self.window.as_mut().unwrap();
@@ -187,7 +243,7 @@ impl<'a> Context<'a> {
 
     //TODO: This should really be paint_rect or something.
     //Users should be able to use the layout system to render rectangles.
-    pub fn rect(&mut self, rect: Rect, style: Style) {
+    pub fn paint_rect(&mut self, rect: Rect, style: Style) {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
         if let Some(color) = style.bg {
@@ -201,10 +257,33 @@ impl<'a> Context<'a> {
         }
     }
 
-    //TODO: Take in style
-    pub fn triangle(&mut self, a: (usize, usize), b: (usize, usize), c: (usize, usize), depth: usize, color: u32) {
+    pub fn paint_triangle(&mut self, a: (usize, usize), b: (usize, usize), c: (usize, usize), style: Style) {
         let clip = self.layout_stack.last().expect("No active frame").clip;
-        self.commands[depth].push(Command::Triangle { a, b, c, clip, color });
+        let depth = style.depth.unwrap_or(0);
+        if let Some(color) = style.bg {
+            self.commands[depth].push(Command::Triangle { a, b, c, clip, color });
+        }
+    }
+
+    pub fn measure_text(&mut self, text: &str, font_size: usize) -> Rect {
+        let width = self.width();
+        let font = self.font.as_ref().expect("Font missing");
+        let cache = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+
+        draw_text_subpixel(
+            text,
+            font,
+            0,
+            0,
+            font_size,
+            1.0,
+            width,
+            &mut [],
+            0,
+            true,
+            cache,
+            Rect::new(0, 0, usize::MAX, usize::MAX),
+        )
     }
 
     pub fn text_aligned(
@@ -221,24 +300,7 @@ impl<'a> Context<'a> {
         }
 
         let text = text.into();
-        let window = self.window.as_mut().unwrap();
-        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
-        let font = self.font.as_ref().expect("Font asset missing from Context");
-        let text_metrics = draw_text_subpixel(
-            &text,
-            font,
-            0,
-            0,
-            font_size,
-            1.0,
-            window.width(),
-            &mut [],
-            color,
-            true,
-            cache_map,
-            Rect::new(0, 0, usize::MAX, usize::MAX),
-        );
-
+        let text_metrics = self.measure_text(&text, font_size);
         let rect = align_rect(dest, text_metrics.width, text_metrics.height, alignment);
         let clip = self.layout_stack.last().expect("No active frame").clip;
         self.commands[depth].push(Command::Text {
@@ -251,26 +313,41 @@ impl<'a> Context<'a> {
         });
     }
 
+    pub fn rect(&mut self, style: Style) -> State {
+        let padding = style.padding.unwrap_or_default();
+        let width = style.width.map(|w| w + padding.left + padding.right).unwrap_or(0);
+        let height = style.height.map(|h| h + padding.top + padding.bottom).unwrap_or(0);
+
+        let rect = self.walk_layout(width, height);
+        let clicked = self.clicked(rect);
+        let hovered = self.hovered(rect);
+        let depth = style.depth.unwrap_or(0);
+
+        let bg = if hovered && style.hover.is_some() {
+            style.hover
+        } else {
+            style.bg
+        };
+
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+
+        if let Some(color) = bg {
+            self.commands[depth].push(Command::Rect {
+                rect,
+                clip,
+                color,
+                radius: style.radius.unwrap_or(0),
+                outline_thickness: style.outline_thickness.unwrap_or(0),
+            });
+        }
+
+        State { clicked, hovered, rect }
+    }
+
     pub fn button(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         let text = text.into();
-        let width_ctx = self.width();
-        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let text_metrics = draw_text_subpixel(
-            &text,
-            self.font.as_ref().unwrap(),
-            0,
-            0,
-            font_size,
-            1.0,
-            width_ctx,
-            &mut [],
-            white(),
-            true,
-            cache_map,
-            Rect::new(0, 0, usize::MAX, usize::MAX),
-        );
-
+        let text_metrics = self.measure_text(&text, font_size);
         let padding = style.padding.unwrap_or_default();
         let width = style.width.unwrap_or(text_metrics.width + padding.left + padding.right);
         let height = style
@@ -350,11 +427,21 @@ impl<'a> Context<'a> {
         }
 
         if selected {
-            if let Some(color) = style.selected_border {
+            if let Some(color) = style.selected {
                 self.commands[depth].push(Command::Rect {
                     rect,
                     clip,
                     color,
+                    radius: style.radius.unwrap_or(0),
+                    outline_thickness: 0,
+                });
+            }
+
+            if let Some(border) = style.selected_border {
+                self.commands[depth].push(Command::Rect {
+                    rect,
+                    clip,
+                    color: border,
                     radius: style.radius.unwrap_or(0),
                     outline_thickness: style.outline_thickness.unwrap_or(1),
                 });
@@ -406,38 +493,6 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Splits the current frame's remaining space horizontally.
-    pub fn split_h(&self, left_width: usize) -> (Rect, Rect) {
-        let frame = self.layout_stack.last().expect("No active frame");
-
-        let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-        let total_h = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
-
-        let left_w = left_width.min(total_w);
-        let right_w = total_w.saturating_sub(left_w);
-
-        let left_rect = Rect::new(frame.cursor_x, frame.cursor_y, left_w, total_h);
-        let right_rect = Rect::new(frame.cursor_x + left_w, frame.cursor_y, right_w, total_h);
-
-        (left_rect, right_rect)
-    }
-
-    /// Splits the current frame's remaining space vertically.
-    pub fn split_v(&self, top_height: usize) -> (Rect, Rect) {
-        let frame = self.layout_stack.last().expect("No active frame");
-
-        let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-        let total_h = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
-
-        let top_h = top_height.min(total_h);
-        let bottom_h = total_h.saturating_sub(top_h);
-
-        let top_rect = Rect::new(frame.cursor_x, frame.cursor_y, total_w, top_h);
-        let bottom_rect = Rect::new(frame.cursor_x, frame.cursor_y + top_h, total_w, bottom_h);
-
-        (top_rect, bottom_rect)
-    }
-
     pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
         self.begin_layout_with_bounds(Flow::Down, bounds);
         let result = ui(self);
@@ -468,7 +523,7 @@ impl<'a> Context<'a> {
         let parent_clip = self.layout_stack.last().map(|p| p.clip).unwrap_or(bounds);
         let new_frame = Frame {
             bounds,
-            clip: parent_clip,
+            clip: parent_clip.intersection(bounds),
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,

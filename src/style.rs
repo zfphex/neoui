@@ -1,3 +1,29 @@
+#[derive(Debug, Clone, Copy)]
+pub enum Size {
+    Pixel(usize),
+    ///0.0 to 1.0 of parent's total space
+    Percentage(f32),
+    Remaining,
+}
+
+impl Default for Size {
+    fn default() -> Self {
+        Size::Pixel(0)
+    }
+}
+
+impl Into<Size> for usize {
+    fn into(self) -> Size {
+        Size::Pixel(self)
+    }
+}
+
+impl Into<Size> for f32 {
+    fn into(self) -> Size {
+        Size::Percentage(self)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Padding {
     pub top: usize,
@@ -59,12 +85,12 @@ impl Style {
         self
     }
 
-    pub fn selection(mut self, color: u32) -> Self {
+    pub fn selected(mut self, color: u32) -> Self {
         self.selected = Some(color);
         self
     }
 
-    pub fn selection_border(mut self, color: u32) -> Self {
+    pub fn selected_border(mut self, color: u32) -> Self {
         self.selected_border = Some(color);
         self
     }
@@ -178,9 +204,11 @@ pub const fn black() -> u32 {
 pub const fn red() -> u32 {
     rgb(255, 0, 0)
 }
+
 pub const fn green() -> u32 {
     rgb(0, 255, 0)
 }
+
 pub const fn blue() -> u32 {
     rgb(0, 0, 255)
 }

@@ -41,6 +41,58 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     ctx.rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), 0, thumb_color);
 }
 
+fn scrollbar(
+    ctx: &mut Context,
+    viewport: Rect,
+    content_height: usize,
+    scroll_y: &mut usize,
+    scroll_direction: i32,
+) {
+    if content_height <= viewport.height {
+        return;
+    }
+
+    let w = 6;
+    let pad = 4;
+    let min_thumb_h = 20.0;
+    let x = viewport.x + viewport.width - w - pad;
+    let hitbox = Rect::new(x.saturating_sub(pad), viewport.y, w + pad * 2, viewport.height);
+    let max_scroll = content_height.saturating_sub(viewport.height);
+
+    let window = ctx.window.as_mut().unwrap();
+    let mut handled = false;
+
+    if window.left_mouse.pressed && window.left_mouse.inital_position.is_some_and(|p| p.intersects(hitbox)) {
+        let click_y = window.mouse_position.y.saturating_sub(viewport.y);
+        let visible_ratio = viewport.height as f32 / content_height as f32;
+        let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
+        let track_h = viewport.height.saturating_sub(thumb_h);
+        let thumb_y = click_y.saturating_sub(thumb_h / 2);
+        
+        let ratio = if track_h > 0 { thumb_y as f32 / track_h as f32 } else { 0.0 };
+        *scroll_y = (ratio * max_scroll as f32).round() as usize;
+        handled = true;
+    }
+
+    if !handled && scroll_direction != 0 && window.mouse_position.intersects(viewport) {
+        if scroll_direction > 0 {
+            *scroll_y = (*scroll_y + 50).min(max_scroll);
+        } else {
+            *scroll_y = scroll_y.saturating_sub(50);
+        }
+    }
+
+    *scroll_y = (*scroll_y).clamp(0, max_scroll);
+
+    let visible_ratio = viewport.height as f32 / content_height as f32;
+    let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
+    let track_h = viewport.height.saturating_sub(thumb_h);
+    let ratio = if max_scroll > 0 { *scroll_y as f32 / max_scroll as f32 } else { 0.0 };
+    let thumb_y = viewport.y + (ratio * track_h as f32) as usize;
+
+    ctx.rect(Rect::new(x, thumb_y, w, thumb_h), 0, rgb(80, 80, 80));
+}
+
 fn dropdown_items(menu: Menu) -> &'static [&'static str] {
     match menu {
         Menu::File => &["New Project", "Open File...", "Save"],
@@ -64,7 +116,7 @@ fn main() {
     let dropdown_item_height = ctx.default_font_size + dropdown_item_padtb * 2;
 
     let mut track_scroll_y = 0;
-    const SCROLL_SPEED: usize = 50;
+
     let mut total_track_content_height: usize = 0;
 
     // let dark_bg = rgb(15, 15, 15);
@@ -200,43 +252,10 @@ fn main() {
 
             ctx.begin_layout_with_bounds(Flow::Down, scroll_viewport);
 
-            let window = ctx.window.as_mut().unwrap();
-            let max_scroll = total_track_content_height.saturating_sub(scroll_viewport.height);
-
-            let scrollbar_w = 6;
-            let scrollbar_x = scroll_viewport.x + scroll_viewport.width - scrollbar_w - 4;
-            let scrollbar_rect = Rect::new(scrollbar_x.saturating_sub(4), scroll_viewport.y, scrollbar_w + 8, scroll_viewport.height);
-
-            let mut dragging_scrollbar = false;
-            if window.left_mouse.pressed {
-                if let Some(initial) = window.left_mouse.inital_position {
-                    if initial.intersects(scrollbar_rect) {
-                        dragging_scrollbar = true;
-                    }
-                }
-            }
-
-            if dragging_scrollbar {
-                let click_y = window.mouse_position.y.saturating_sub(scroll_viewport.y);
-                let visible_ratio = scroll_viewport.height as f32 / total_track_content_height.max(1) as f32;
-                let thumb_h = (scroll_viewport.height as f32 * visible_ratio).max(20.0) as usize;
-                
-                let track_h = scroll_viewport.height.saturating_sub(thumb_h);
-                let thumb_y = click_y.saturating_sub(thumb_h / 2);
-                let scroll_ratio = if track_h > 0 { thumb_y as f32 / track_h as f32 } else { 0.0 };
-                
-                track_scroll_y = (scroll_ratio * max_scroll as f32).round() as usize;
-                track_scroll_y = track_scroll_y.clamp(0, max_scroll);
-            } else if window.mouse_position.intersects(right_panel_rect) && scroll_direction != 0 {
-                if scroll_direction > 0 {
-                    track_scroll_y = (track_scroll_y + SCROLL_SPEED).min(max_scroll);
-                } else {
-                    track_scroll_y = track_scroll_y.saturating_sub(SCROLL_SPEED);
-                }
-            }
-
             //Draw the panel background
             ctx.rect(right_panel_rect, 0, panel_bg);
+            
+            scrollbar(&mut ctx, scroll_viewport, total_track_content_height, &mut track_scroll_y, scroll_direction);
 
             ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
             let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
@@ -250,19 +269,6 @@ fn main() {
             }
 
             total_track_content_height = ctx.end_scroll_view();
-
-            if total_track_content_height > scroll_viewport.height {
-                let scrollbar_w = 6;
-                let scrollbar_x = scroll_viewport.x + scroll_viewport.width - scrollbar_w - 4;
-                let visible_ratio = scroll_viewport.height as f32 / total_track_content_height as f32;
-                let thumb_h = (scroll_viewport.height as f32 * visible_ratio).max(20.0) as usize;
-                
-                let max_scroll = total_track_content_height.saturating_sub(scroll_viewport.height);
-                let scroll_ratio = if max_scroll > 0 { track_scroll_y as f32 / max_scroll as f32 } else { 0.0 };
-                let thumb_y = scroll_viewport.y + (scroll_ratio * (scroll_viewport.height.saturating_sub(thumb_h)) as f32) as usize;
-
-                ctx.rect(Rect::new(scrollbar_x, thumb_y, scrollbar_w, thumb_h), 1, rgb(80, 80, 80));
-            }
 
             ctx.end_layout();
 

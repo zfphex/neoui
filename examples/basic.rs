@@ -54,16 +54,16 @@ fn dropdown_items(menu: Menu) -> &'static [&'static str] {
 fn main() {
     defer_results!();
     let mut ctx = ctx("Basic", 1000, 700);
+    ctx.default_font_size = 13;
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut volume = 0.5;
 
     let dropdown_width = 180;
-    let dropdown_item_font_size = 13;
     let dropdown_item_padtb = 8;
-    let dropdown_item_height = dropdown_item_font_size + dropdown_item_padtb * 2;
+    let dropdown_item_height = ctx.default_font_size + dropdown_item_padtb * 2;
 
     let mut track_scroll_y = 0;
-    let mut scroll_amt = 0;
+    const SCROLL_SPEED: usize = 40;
     let mut total_track_content_height: usize = 0;
 
     // let dark_bg = rgb(15, 15, 15);
@@ -72,7 +72,6 @@ fn main() {
     let accent_blue = rgb(0, 102, 204);
     let text_dim = rgb(170, 170, 170);
     let player_row_style = style()
-        .font_size(13)
         .pad(8)
         .padl(12)
         .bg(panel_bg)
@@ -95,6 +94,7 @@ fn main() {
         }
 
         let ctx_width = ctx.width();
+        #[allow(unused)]
         let ctx_height = ctx.height();
 
         ctx.begin_ui(black());
@@ -111,7 +111,6 @@ fn main() {
 
         if let Some((menu, rect)) = current_menu {
             let item_style = style()
-                .font_size(dropdown_item_font_size)
                 .padlr(12)
                 .padtb(dropdown_item_padtb)
                 .bg(rgb(35, 35, 35))
@@ -147,7 +146,6 @@ fn main() {
 
         {
             let menu_style = style()
-                .font_size(13)
                 .height(top_nav_rect.height)
                 .padl(14)
                 .padr(14)
@@ -203,10 +201,13 @@ fn main() {
 
             let window = ctx.window.as_mut().unwrap();
             if window.mouse_position.intersects(right_panel_rect) && scroll_direction != 0 {
-                //Scroll 3 boxes at a time
-                let target = track_scroll_y as i32 + (scroll_direction * scroll_amt as i32 * 3);
-                let max_scroll = (total_track_content_height as i32 - scroll_viewport.height as i32).max(0);
-                track_scroll_y = target.clamp(0, max_scroll) as usize;
+                let max_scroll = total_track_content_height.saturating_sub(scroll_viewport.height);
+
+                if scroll_direction > 0 {
+                    track_scroll_y = (track_scroll_y + SCROLL_SPEED).min(max_scroll);
+                } else {
+                    track_scroll_y = track_scroll_y.saturating_sub(SCROLL_SPEED);
+                }
             }
 
             //Draw the panel background
@@ -222,9 +223,9 @@ fn main() {
                     println!("Clicked item {idx}")
                 }
             }
+
             total_track_content_height = ctx.end_scroll_view();
-            //TODO: This is pretty bad?
-            scroll_amt = total_track_content_height / 100;
+
             ctx.end_layout();
 
             ctx.begin_layout_with_bounds(Flow::Down, album_header_rect);
@@ -245,7 +246,7 @@ fn main() {
             ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
             ctx.rect(sidebar_rect, panel_bg);
 
-            ctx.button("All Music", style().fg(text_dim).font_size(13).pad(6));
+            ctx.button("All Music", style().fg(text_dim).pad(6));
 
             let artists = [
                 "Arca",

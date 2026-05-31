@@ -10,7 +10,6 @@ mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = [
 [features]
 profile = ["mini/profile"]
 
-
 [target.'cfg(target_os = "windows")'.dependencies]
 window = { version = "0.1.0", path = "../projects/window" }
 # window = { git = "https://github.com/zfphex/window", version = "0.1.0" }

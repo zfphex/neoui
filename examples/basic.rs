@@ -44,40 +44,46 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     ctx.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
 }
 
-fn scrollbar(ctx: &mut Context, viewport: Rect, content_height: usize, scroll_y: &mut usize, scroll_direction: i32) {
+pub fn scrollbar(
+    ctx: &mut Context,
+    viewport: Rect,
+    content_height: usize,
+    scroll_y: &mut usize,
+    scroll_direction: i32,
+) {
     if content_height <= viewport.height {
         return;
     }
 
-    let w = 6;
-    let pad = 4;
+    let max_scroll = content_height.saturating_sub(viewport.height);
+    let visible_ratio = viewport.height as f32 / content_height as f32;
     let min_thumb_h = 20.0;
+
+    let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
+    let track_h = viewport.height.saturating_sub(thumb_h);
+
+    let w = 8;
+    let pad = 4;
     let x = viewport.x + viewport.width - w - pad;
     let hitbox = Rect::new(x.saturating_sub(pad), viewport.y, w + pad * 2, viewport.height);
-    let max_scroll = content_height.saturating_sub(viewport.height);
 
     let window = ctx.window.as_mut().unwrap();
     let mut handled = false;
 
     if window.left_mouse.pressed && window.left_mouse.inital_position.is_some_and(|p| p.intersects(hitbox)) {
-        let click_y = window.mouse_position.y.saturating_sub(viewport.y);
-        let visible_ratio = viewport.height as f32 / content_height as f32;
-        let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
-        let track_h = viewport.height.saturating_sub(thumb_h);
-        let thumb_y = click_y.saturating_sub(thumb_h / 2);
+        let click_y = window.mouse_position.y.saturating_sub(viewport.y) as f32;
 
-        let ratio = if track_h > 0 {
-            thumb_y as f32 / track_h as f32
-        } else {
-            0.0
-        };
+        // This maps the mouse position to a 0.0 - 1.0 ratio of the entire track,
+        // preventing the thumb from jumping to the cursor center.
+        let ratio = (click_y / viewport.height as f32).clamp(0.0, 1.0);
         *scroll_y = (ratio * max_scroll as f32).round() as usize;
+
         handled = true;
     }
 
     if !handled && scroll_direction != 0 && window.mouse_position.intersects(viewport) {
         if scroll_direction > 0 {
-            *scroll_y = (*scroll_y + 50).min(max_scroll);
+            *scroll_y = scroll_y.saturating_add(50);
         } else {
             *scroll_y = scroll_y.saturating_sub(50);
         }
@@ -85,9 +91,6 @@ fn scrollbar(ctx: &mut Context, viewport: Rect, content_height: usize, scroll_y:
 
     *scroll_y = (*scroll_y).clamp(0, max_scroll);
 
-    let visible_ratio = viewport.height as f32 / content_height as f32;
-    let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
-    let track_h = viewport.height.saturating_sub(thumb_h);
     let ratio = if max_scroll > 0 {
         *scroll_y as f32 / max_scroll as f32
     } else {
@@ -285,6 +288,7 @@ fn main() {
 
             ctx.begin_layout_with_bounds(Flow::Down, album_header_rect);
 
+            ctx.paint_rect(album_header_rect, bg(panel_bg));
             ctx.button(
                 "beabadoobee - Fake It Flowers (2020)",
                 style().fg(accent_blue).font_size(14).padl(8).padb(4),

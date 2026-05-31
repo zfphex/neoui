@@ -187,16 +187,18 @@ impl<'a> Context<'a> {
 
     //TODO: This should really be paint_rect or something.
     //Users should be able to use the layout system to render rectangles.
-    //TODO: Take in style
-    pub fn rect(&mut self, rect: Rect, depth: usize, color: u32) {
+    pub fn rect(&mut self, rect: Rect, style: Style) {
         let clip = self.layout_stack.last().expect("No active frame").clip;
-        self.commands[depth].push(Command::Rect {
-            rect,
-            clip,
-            color,
-            radius: 0,
-            outline_thickness: 0,
-        });
+        let depth = style.depth.unwrap_or(0);
+        if let Some(color) = style.bg {
+            self.commands[depth].push(Command::Rect {
+                rect,
+                clip,
+                color,
+                radius: style.radius.unwrap_or(0),
+                outline_thickness: style.outline_thickness.unwrap_or(0),
+            });
+        }
     }
 
     //TODO: Take in style

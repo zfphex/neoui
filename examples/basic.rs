@@ -12,11 +12,15 @@ enum Menu {
 
 fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usize) {
     let rect = ctx.walk_layout(width, height);
-    ctx.rect(rect, 0, rgb(25, 25, 25));
+    ctx.rect(rect, bg(rgb(25, 25, 25)));
     let window = ctx.window.as_ref().unwrap();
-    if window.mouse_position.intersects(rect) && window.left_mouse.pressed {
-        let click_x = window.mouse_position.x.saturating_sub(rect.x);
-        *volume = (click_x as f32 / width as f32).clamp(0.0, 1.0);
+    if let Some(inital) = window.left_mouse.inital_position
+        && window.left_mouse.pressed
+    {
+        if inital.intersects(rect) {
+            let click_x = window.mouse_position.x.saturating_sub(rect.x);
+            *volume = (click_x as f32 / width as f32).clamp(0.0, 1.0);
+        }
     }
 
     let max_track_h = 6;
@@ -38,16 +42,10 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
 
     let thumb_color = hex("#0078D7");
-    ctx.rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), 0, thumb_color);
+    ctx.rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
 }
 
-fn scrollbar(
-    ctx: &mut Context,
-    viewport: Rect,
-    content_height: usize,
-    scroll_y: &mut usize,
-    scroll_direction: i32,
-) {
+fn scrollbar(ctx: &mut Context, viewport: Rect, content_height: usize, scroll_y: &mut usize, scroll_direction: i32) {
     if content_height <= viewport.height {
         return;
     }
@@ -68,8 +66,12 @@ fn scrollbar(
         let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
         let track_h = viewport.height.saturating_sub(thumb_h);
         let thumb_y = click_y.saturating_sub(thumb_h / 2);
-        
-        let ratio = if track_h > 0 { thumb_y as f32 / track_h as f32 } else { 0.0 };
+
+        let ratio = if track_h > 0 {
+            thumb_y as f32 / track_h as f32
+        } else {
+            0.0
+        };
         *scroll_y = (ratio * max_scroll as f32).round() as usize;
         handled = true;
     }
@@ -87,10 +89,14 @@ fn scrollbar(
     let visible_ratio = viewport.height as f32 / content_height as f32;
     let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
     let track_h = viewport.height.saturating_sub(thumb_h);
-    let ratio = if max_scroll > 0 { *scroll_y as f32 / max_scroll as f32 } else { 0.0 };
+    let ratio = if max_scroll > 0 {
+        *scroll_y as f32 / max_scroll as f32
+    } else {
+        0.0
+    };
     let thumb_y = viewport.y + (ratio * track_h as f32) as usize;
 
-    ctx.rect(Rect::new(x, thumb_y, w, thumb_h), 0, rgb(80, 80, 80));
+    ctx.rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
 }
 
 fn dropdown_items(menu: Menu) -> &'static [&'static str] {
@@ -253,9 +259,15 @@ fn main() {
             ctx.begin_layout_with_bounds(Flow::Down, scroll_viewport);
 
             //Draw the panel background
-            ctx.rect(right_panel_rect, 0, panel_bg);
-            
-            scrollbar(&mut ctx, scroll_viewport, total_track_content_height, &mut track_scroll_y, scroll_direction);
+            ctx.rect(right_panel_rect, bg(panel_bg));
+
+            scrollbar(
+                &mut ctx,
+                scroll_viewport,
+                total_track_content_height,
+                &mut track_scroll_y,
+                scroll_direction,
+            );
 
             ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
             let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
@@ -281,14 +293,14 @@ fn main() {
 
             ctx.end_layout();
 
-            ctx.rect(right_panel_rect.width(1), 0, border_color);
+            ctx.rect(right_panel_rect.width(1), bg(border_color));
             ctx.end_layout();
         }
 
         //Sidebar
         {
             ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
-            ctx.rect(sidebar_rect, 0, panel_bg);
+            ctx.rect(sidebar_rect, bg(panel_bg));
 
             ctx.button("All Music", style().fg(text_dim).pad(6));
 

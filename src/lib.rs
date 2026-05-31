@@ -25,6 +25,7 @@ pub enum Flow {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Frame {
     pub bounds: Rect,
+    pub clip: Rect,
     pub flow: Flow,
     pub cursor_x: usize,
     pub cursor_y: usize,
@@ -37,6 +38,7 @@ pub struct Frame {
 pub enum Command<'a> {
     Rect {
         rect: Rect,
+        clip: Rect,
         color: u32,
         radius: usize,
         outline_thickness: usize,
@@ -45,10 +47,12 @@ pub enum Command<'a> {
         a: (usize, usize),
         b: (usize, usize),
         c: (usize, usize),
+        clip: Rect,
         color: u32,
     },
     Text {
         text: Cow<'a, str>,
+        clip: Rect,
         x: usize,
         y: usize,
         color: u32,
@@ -166,24 +170,6 @@ impl<'a> Context<'a> {
             return Rect::new(0, 0, 0, 0);
         }
 
-        // Clip partially offscreen elements relative to the viewport's bounds.
-        //     +---------+     <-- y
-        //     | Clipped |
-        // ====|=========|==== <-- frame.bounds.y
-        // |   | Visible |   |
-        // |   +---------+   | <-- height - (frame.bounds.y - y)
-        // |                 |
-        // |    VIEWPORT
-        // ==================
-
-        if y < frame.bounds.y as i32 {
-            // The height of the clipped section.
-            let clip_height = (frame.bounds.y as i32 - y) as usize;
-            // Take the clipped height from the total item height.
-            let visible_height = height - clip_height;
-            return Rect::new(rect.x, frame.bounds.y, width, visible_height);
-        }
-
         Rect::new(rect.x, y as usize, width, height)
     }
 
@@ -201,17 +187,22 @@ impl<'a> Context<'a> {
 
     //TODO: This should really be paint_rect or something.
     //Users should be able to use the layout system to render rectangles.
-    pub fn rect(&mut self, rect: Rect, color: u32) {
-        self.commands[0].push(Command::Rect {
+    //TODO: Take in style
+    pub fn rect(&mut self, rect: Rect, depth: usize, color: u32) {
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+        self.commands[depth].push(Command::Rect {
             rect,
+            clip,
             color,
             radius: 0,
             outline_thickness: 0,
         });
     }
 
-    pub fn triangle(&mut self, a: (usize, usize), b: (usize, usize), c: (usize, usize), color: u32) {
-        self.commands[0].push(Command::Triangle { a, b, c, color });
+    //TODO: Take in style
+    pub fn triangle(&mut self, a: (usize, usize), b: (usize, usize), c: (usize, usize), depth: usize, color: u32) {
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+        self.commands[depth].push(Command::Triangle { a, b, c, clip, color });
     }
 
     pub fn text_aligned(
@@ -243,11 +234,14 @@ impl<'a> Context<'a> {
             color,
             true,
             cache_map,
+            Rect::new(0, 0, usize::MAX, usize::MAX),
         );
 
         let rect = align_rect(dest, text_metrics.width, text_metrics.height, alignment);
+        let clip = self.layout_stack.last().expect("No active frame").clip;
         self.commands[depth].push(Command::Text {
             text,
+            clip,
             x: rect.x,
             y: rect.y,
             color,
@@ -272,6 +266,7 @@ impl<'a> Context<'a> {
             white(),
             true,
             cache_map,
+            Rect::new(0, 0, usize::MAX, usize::MAX),
         );
 
         let padding = style.padding.unwrap_or_default();
@@ -283,6 +278,7 @@ impl<'a> Context<'a> {
         let rect = self.walk_layout(width, height);
         let clicked = self.clicked(rect);
         let hovered = self.hovered(rect);
+        let depth = style.depth.unwrap_or(0);
 
         let bg = if hovered && style.hover.is_some() {
             style.hover
@@ -290,9 +286,12 @@ impl<'a> Context<'a> {
             style.bg
         };
 
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+
         if let Some(color) = bg {
-            self.commands[0].push(Command::Rect {
+            self.commands[depth].push(Command::Rect {
                 rect,
+                clip,
                 color,
                 radius: style.radius.unwrap_or(0),
                 outline_thickness: style.outline_thickness.unwrap_or(0),
@@ -318,6 +317,7 @@ impl<'a> Context<'a> {
         let rect = self.walk_layout(width_override, allocated_h);
         let clicked = self.clicked(rect);
         let hovered = self.hovered(rect);
+        let depth = style.depth.unwrap_or(0);
 
         if rect.width == 0 || rect.height == 0 {
             return State {
@@ -335,11 +335,12 @@ impl<'a> Context<'a> {
             style.bg
         };
 
-        let depth = style.depth.unwrap_or(0);
+        let clip = self.layout_stack.last().expect("No active frame").clip;
 
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
                 rect,
+                clip,
                 color,
                 radius: style.radius.unwrap_or(0),
                 outline_thickness: style.outline_thickness.unwrap_or(0),
@@ -350,6 +351,7 @@ impl<'a> Context<'a> {
             if let Some(color) = style.selected_border {
                 self.commands[depth].push(Command::Rect {
                     rect,
+                    clip,
                     color,
                     radius: style.radius.unwrap_or(0),
                     outline_thickness: style.outline_thickness.unwrap_or(1),
@@ -378,10 +380,13 @@ impl<'a> Context<'a> {
         let width = style.width.unwrap_or(remaining_width);
         let height = style.height.unwrap_or(remaining_height);
         let rect = self.walk_layout(width, height);
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+        let depth = style.depth.unwrap_or(0);
 
         if let Some(color) = style.bg {
-            self.commands[0].push(Command::Rect {
+            self.commands[depth].push(Command::Rect {
                 rect,
+                clip,
                 color,
                 radius: style.radius.unwrap_or(0),
                 outline_thickness: style.outline_thickness.unwrap_or(0),
@@ -389,8 +394,9 @@ impl<'a> Context<'a> {
         }
 
         if let Some(color) = style.border {
-            self.commands[0].push(Command::Rect {
+            self.commands[depth].push(Command::Rect {
                 rect,
+                clip,
                 color,
                 radius: style.radius.unwrap_or(0),
                 outline_thickness: style.outline_thickness.unwrap_or(1),
@@ -450,14 +456,17 @@ impl<'a> Context<'a> {
         self.layout_stack.clear();
         self.layout_stack.push(Frame {
             bounds,
+            clip: bounds,
             flow: Flow::Down,
             ..Default::default()
         });
     }
 
     pub fn begin_layout_with_bounds(&mut self, flow: Flow, bounds: Rect) {
+        let parent_clip = self.layout_stack.last().map(|p| p.clip).unwrap_or(bounds);
         let new_frame = Frame {
             bounds,
+            clip: parent_clip,
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
@@ -475,6 +484,7 @@ impl<'a> Context<'a> {
                 parent.bounds.width,
                 parent.bounds.height,
             ),
+            clip: parent.clip,
             flow,
             cursor_x: parent.cursor_x,
             cursor_y: parent.cursor_y,
@@ -525,8 +535,10 @@ impl<'a> Context<'a> {
     }
 
     pub fn begin_scroll_view(&mut self, bounds: Rect, scroll_y: usize) {
+        let parent_clip = self.layout_stack.last().map(|p| p.clip).unwrap_or(bounds);
         let new_frame = Frame {
             bounds,
+            clip: parent_clip.intersection(bounds),
             flow: Flow::Down,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
@@ -572,6 +584,7 @@ impl<'a> Context<'a> {
                 match cmd {
                     Command::Rect {
                         rect,
+                        clip,
                         color,
                         radius,
                         outline_thickness,
@@ -587,6 +600,7 @@ impl<'a> Context<'a> {
                                 self_height,
                                 radius,
                                 color,
+                                clip,
                             )
                         } else {
                             //rounded rect outline doesn't work for 1px outlines??
@@ -597,15 +611,14 @@ impl<'a> Context<'a> {
                                 rect.width,
                                 rect.height,
                                 self_width,
-                                // self_height,
-                                // radius,
-                                // outline_thickness,
                                 color,
+                                clip,
                             )
                         }
                     }
                     Command::Text {
                         text,
+                        clip,
                         x,
                         y,
                         color,
@@ -624,12 +637,14 @@ impl<'a> Context<'a> {
                             color,
                             false,
                             cache_map,
+                            clip,
                         );
                     }
                     Command::Triangle {
                         a: (ax, ay),
                         b: (bx, by),
                         c: (cx, cy),
+                        clip,
                         color,
                     } => {
                         //
@@ -644,6 +659,7 @@ impl<'a> Context<'a> {
                             cx,
                             cy,
                             color,
+                            clip,
                         )
                     }
                 };

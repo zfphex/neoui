@@ -79,35 +79,37 @@ pub fn draw_rect_outline(
     height: usize,
     window_width: usize,
     color: u32,
+    clip: Rect,
 ) {
     if height == 0 || width == 0 {
         return;
     }
-    //Draw the first line
-    let pos = x + window_width * y;
-    if let Some(buffer) = buffer.get_mut(pos..=pos + width) {
-        buffer.fill(color);
-    }
 
-    //Draw the middle pixels
-    //Skip the first line.
-    for i in (y + 1)..(y + height - 1) {
-        let left = x + window_width * i;
-        if let Some(buffer) = buffer.get_mut(left) {
-            *buffer = color;
-        }
+    let min_y = y.max(clip.y);
+    let max_y = (y + height).min(clip.y + clip.height);
+    let min_x = x.max(clip.x);
+    let max_x = (x + width + 1).min(clip.x + clip.width);
 
-        let right = x + width + window_width * i;
-        if let Some(buffer) = buffer.get_mut(right) {
-            *buffer = color;
-        }
-    }
-
-    //Draw the last line
-    if height > 1 {
-        let pos = x + window_width * (y + height - 1);
-        if let Some(buffer) = buffer.get_mut(pos..=pos + width) {
-            buffer.fill(color);
+    for py in min_y..max_y {
+        if py == y || py == y + height - 1 {
+            let row_start = py * window_width + min_x;
+            let row_end = py * window_width + max_x;
+            if min_x < max_x {
+                if let Some(slice) = buffer.get_mut(row_start..row_end) {
+                    slice.fill(color);
+                }
+            }
+        } else {
+            if x >= min_x && x < max_x {
+                if let Some(b) = buffer.get_mut(py * window_width + x) {
+                    *b = color;
+                }
+            }
+            if x + width >= min_x && x + width < max_x {
+                if let Some(b) = buffer.get_mut(py * window_width + x + width) {
+                    *b = color;
+                }
+            }
         }
     }
 }
@@ -122,16 +124,17 @@ pub fn draw_rounded_rect(
     window_height: usize,
     radius: usize,
     color: u32,
+    clip: Rect,
 ) {
     if width == 0 || height == 0 {
         return;
     }
 
     let radius = radius.min(width / 2).min(height / 2);
-    let min_y = y.min(window_height);
-    let max_y = (y + height).min(window_height);
-    let min_x = x.min(window_width);
-    let max_x = (x + width).min(window_width);
+    let min_y = y.max(clip.y).min(window_height);
+    let max_y = (y + height).min(clip.y + clip.height).min(window_height);
+    let min_x = x.max(clip.x).min(window_width);
+    let max_x = (x + width).min(clip.x + clip.width).min(window_width);
 
     if radius == 0 {
         for py in min_y..max_y {
@@ -217,13 +220,14 @@ pub fn draw_rounded_rect_outline(
     radius: usize,
     thickness: usize,
     color: u32,
+    clip: Rect,
 ) {
     if width == 0 || height == 0 || thickness == 0 {
         return;
     }
 
     if radius == 0 {
-        draw_rect_outline(buffer, x, y, width, height, window_width, color);
+        draw_rect_outline(buffer, x, y, width, height, window_width, color, clip);
     }
 
     let radius = radius.min(width / 2).min(height / 2);
@@ -372,6 +376,7 @@ pub fn draw_triangle_sdf(
     mut x2: usize,
     mut y2: usize,
     color: u32,
+    clip: Rect,
 ) {
     profile!();
     if y0 > y1 {
@@ -458,13 +463,19 @@ pub fn draw_triangle_sdf(
             }
         };
 
+        if y < clip.y || y >= clip.y + clip.height {
+            x_long += step_long;
+            x_short += step_short;
+            continue;
+        }
+
         let pad_short = 1.5 + step_short.abs();
 
         let left_bound = (x_long - pad_long).min(x_short - pad_short);
         let right_bound = (x_long + pad_long).max(x_short + pad_short);
 
-        let min_x = (left_bound.max(0.0) as usize).min(window_width);
-        let max_x = (right_bound.max(0.0) as usize).min(window_width);
+        let min_x = (left_bound.max(0.0) as usize).max(clip.x).min(window_width);
+        let max_x = (right_bound.max(0.0) as usize).min(clip.x + clip.width).min(window_width);
 
         let mut solid_start = window_width;
         let mut solid_end = 0;
@@ -620,8 +631,8 @@ pub fn draw_text(
         y_pos += font_size;
     }
 
-    area.height = max_y + 1 - area.y;
-    area.width = max_x + 1 - area.x;
+    area.height = if max_y >= area.y { max_y + 1 - area.y } else { 0 };
+    area.width = if max_x >= area.x { max_x + 1 - area.x } else { 0 };
     area
 }
 
@@ -637,6 +648,7 @@ pub fn draw_text_subpixel(
     color: u32,
     skip_draw: bool,
     cache_map: &mut HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+    clip: Rect,
 ) -> Rect {
     pub fn apply_lcd_filter(bitmap: &[u8], width: usize, height: usize) -> Vec<u8> {
         let stride = width * 3;
@@ -700,6 +712,9 @@ pub fn draw_text_subpixel(
                 }
 
                 let screen_y = offset as usize;
+                if screen_y < clip.y || screen_y >= clip.y + clip.height {
+                    continue;
+                }
 
                 'x: for x_px in 0..metrics.width {
                     let screen_x_i32 = glyph_x.round() as i32 + metrics.xmin + x_px as i32;
@@ -708,7 +723,7 @@ pub fn draw_text_subpixel(
                     }
 
                     let screen_x = screen_x_i32 as usize;
-                    if screen_x >= window_width {
+                    if screen_x >= window_width || screen_x < clip.x || screen_x >= clip.x + clip.width {
                         continue;
                     }
 
@@ -768,8 +783,8 @@ pub fn draw_text_subpixel(
         y_pos += font_size;
     }
 
-    area.height = max_y + 1 - area.y;
-    area.width = max_x + 1 - area.x;
+    area.height = if max_y >= area.y { max_y + 1 - area.y } else { 0 };
+    area.width = if max_x >= area.x { max_x + 1 - area.x } else { 0 };
 
     area
 }

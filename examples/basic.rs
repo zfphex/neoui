@@ -12,7 +12,7 @@ enum Menu {
 
 fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usize) {
     let rect = ctx.walk_layout(width, height);
-    ctx.rect(rect, rgb(25, 25, 25));
+    ctx.rect(rect, 0, rgb(25, 25, 25));
     let window = ctx.window.as_ref().unwrap();
     if window.mouse_position.intersects(rect) && window.left_mouse.pressed {
         let click_x = window.mouse_position.x.saturating_sub(rect.x);
@@ -26,6 +26,7 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
         (rect.x, cy + max_track_h),
         (rect.x + width, cy + max_track_h),
         (rect.x + width, cy - max_track_h),
+        0,
         hex("#000000"),
     );
 
@@ -37,7 +38,7 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
 
     let thumb_color = hex("#0078D7");
-    ctx.rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), thumb_color);
+    ctx.rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), 0, thumb_color);
 }
 
 fn dropdown_items(menu: Menu) -> &'static [&'static str] {
@@ -63,7 +64,7 @@ fn main() {
     let dropdown_item_height = ctx.default_font_size + dropdown_item_padtb * 2;
 
     let mut track_scroll_y = 0;
-    const SCROLL_SPEED: usize = 40;
+    const SCROLL_SPEED: usize = 50;
     let mut total_track_content_height: usize = 0;
 
     // let dark_bg = rgb(15, 15, 15);
@@ -200,9 +201,33 @@ fn main() {
             ctx.begin_layout_with_bounds(Flow::Down, scroll_viewport);
 
             let window = ctx.window.as_mut().unwrap();
-            if window.mouse_position.intersects(right_panel_rect) && scroll_direction != 0 {
-                let max_scroll = total_track_content_height.saturating_sub(scroll_viewport.height);
+            let max_scroll = total_track_content_height.saturating_sub(scroll_viewport.height);
 
+            let scrollbar_w = 6;
+            let scrollbar_x = scroll_viewport.x + scroll_viewport.width - scrollbar_w - 4;
+            let scrollbar_rect = Rect::new(scrollbar_x.saturating_sub(4), scroll_viewport.y, scrollbar_w + 8, scroll_viewport.height);
+
+            let mut dragging_scrollbar = false;
+            if window.left_mouse.pressed {
+                if let Some(initial) = window.left_mouse.inital_position {
+                    if initial.intersects(scrollbar_rect) {
+                        dragging_scrollbar = true;
+                    }
+                }
+            }
+
+            if dragging_scrollbar {
+                let click_y = window.mouse_position.y.saturating_sub(scroll_viewport.y);
+                let visible_ratio = scroll_viewport.height as f32 / total_track_content_height.max(1) as f32;
+                let thumb_h = (scroll_viewport.height as f32 * visible_ratio).max(20.0) as usize;
+                
+                let track_h = scroll_viewport.height.saturating_sub(thumb_h);
+                let thumb_y = click_y.saturating_sub(thumb_h / 2);
+                let scroll_ratio = if track_h > 0 { thumb_y as f32 / track_h as f32 } else { 0.0 };
+                
+                track_scroll_y = (scroll_ratio * max_scroll as f32).round() as usize;
+                track_scroll_y = track_scroll_y.clamp(0, max_scroll);
+            } else if window.mouse_position.intersects(right_panel_rect) && scroll_direction != 0 {
                 if scroll_direction > 0 {
                     track_scroll_y = (track_scroll_y + SCROLL_SPEED).min(max_scroll);
                 } else {
@@ -211,7 +236,7 @@ fn main() {
             }
 
             //Draw the panel background
-            ctx.rect(right_panel_rect, panel_bg);
+            ctx.rect(right_panel_rect, 0, panel_bg);
 
             ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
             let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
@@ -226,6 +251,19 @@ fn main() {
 
             total_track_content_height = ctx.end_scroll_view();
 
+            if total_track_content_height > scroll_viewport.height {
+                let scrollbar_w = 6;
+                let scrollbar_x = scroll_viewport.x + scroll_viewport.width - scrollbar_w - 4;
+                let visible_ratio = scroll_viewport.height as f32 / total_track_content_height as f32;
+                let thumb_h = (scroll_viewport.height as f32 * visible_ratio).max(20.0) as usize;
+                
+                let max_scroll = total_track_content_height.saturating_sub(scroll_viewport.height);
+                let scroll_ratio = if max_scroll > 0 { track_scroll_y as f32 / max_scroll as f32 } else { 0.0 };
+                let thumb_y = scroll_viewport.y + (scroll_ratio * (scroll_viewport.height.saturating_sub(thumb_h)) as f32) as usize;
+
+                ctx.rect(Rect::new(scrollbar_x, thumb_y, scrollbar_w, thumb_h), 1, rgb(80, 80, 80));
+            }
+
             ctx.end_layout();
 
             ctx.begin_layout_with_bounds(Flow::Down, album_header_rect);
@@ -237,14 +275,14 @@ fn main() {
 
             ctx.end_layout();
 
-            ctx.rect(right_panel_rect.width(1), border_color);
+            ctx.rect(right_panel_rect.width(1), 0, border_color);
             ctx.end_layout();
         }
 
         //Sidebar
         {
             ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
-            ctx.rect(sidebar_rect, panel_bg);
+            ctx.rect(sidebar_rect, 0, panel_bg);
 
             ctx.button("All Music", style().fg(text_dim).pad(6));
 

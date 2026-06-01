@@ -119,12 +119,7 @@ fn main() {
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut volume = 0.5;
 
-    let dropdown_width = 180;
-    let dropdown_item_padtb = 8;
-    let dropdown_item_height = ctx.default_font_size + dropdown_item_padtb * 2;
-
     let mut track_scroll_y = 0;
-
     let mut total_track_content_height: usize = 0;
 
     // let dark_bg = rgb(15, 15, 15);
@@ -175,18 +170,20 @@ fn main() {
         if let Some((menu, rect)) = current_menu {
             let item_style = style()
                 .padlr(12)
-                .padtb(dropdown_item_padtb)
+                .padtb(8)
                 .bg(rgb(35, 35, 35))
                 .hover(rgb(60, 60, 60))
                 .depth(1);
 
-            let total_dropdown_height = dropdown_items(menu).len() * dropdown_item_height;
-            let dropdown = Rect::new(rect.x, top_nav_rect.height, dropdown_width, total_dropdown_height);
+            ctx.begin_layout(Flow::Down);
 
-            ctx.begin_layout_with_bounds(Flow::Down, dropdown);
+            //Update the postion and height. TODO: Should make this easier to do.
+            let last = ctx.layout_stack.last_mut().unwrap();
+            last.cursor_x = rect.x;
+            last.cursor_y = top_nav_rect.height;
 
             for &item in dropdown_items(menu) {
-                if ctx.list_item(item, false, dropdown_width, item_style).clicked {
+                if ctx.list_item(item, false, 120, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;
                 }

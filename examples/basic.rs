@@ -200,7 +200,7 @@ fn main() {
                 && let Some(release) = left.release_position
             {
                 if left.released && !inital.intersects(rect) && !release.intersects(rect) {
-                    left.position = None;
+                    left.inital_position = None;
                     left.released = false;
                     current_menu = None;
                 }

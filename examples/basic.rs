@@ -141,6 +141,15 @@ fn main() {
         .selected(rgb(82, 82, 82))
         .selected_border(rgb(170, 170, 170));
 
+    let items = [
+        ("File", Menu::File),
+        ("Edit", Menu::Edit),
+        ("View", Menu::View),
+        ("Playback", Menu::Playback),
+        ("Library", Menu::Library),
+        ("Help", Menu::Help),
+    ];
+
     loop {
         let mut scroll_direction = 0;
         match ctx.window.as_mut().unwrap().event() {
@@ -160,15 +169,8 @@ fn main() {
 
         ctx.begin_ui(black());
 
-        let (top_nav_rect, bottom_rect) = ctx.split_v(30);
-
-        let sidebar_rect = Rect::new(bottom_rect.x, bottom_rect.y, 260, bottom_rect.height);
-        let right_panel_rect = Rect::new(
-            bottom_rect.x + 260,
-            bottom_rect.y,
-            bottom_rect.width.saturating_sub(260),
-            bottom_rect.height,
-        );
+        let (top_nav_rect, body) = ctx.split_v(30);
+        let (sidebar_rect, track_rect) = body.split_h(260);
 
         if let Some((menu, rect)) = current_menu {
             let item_style = style()
@@ -205,25 +207,15 @@ fn main() {
             }
         }
 
+        let menu_style = style()
+            .height(top_nav_rect.height)
+            .padl(14)
+            .padr(14)
+            .bg(rgb(25, 25, 25))
+            .hover(rgb(45, 45, 45));
+
+        ctx.begin_layout_with_bounds(Flow::Right, top_nav_rect);
         {
-            let menu_style = style()
-                .height(top_nav_rect.height)
-                .padl(14)
-                .padr(14)
-                .bg(rgb(25, 25, 25))
-                .hover(rgb(45, 45, 45));
-
-            let items = [
-                ("File", Menu::File),
-                ("Edit", Menu::Edit),
-                ("View", Menu::View),
-                ("Playback", Menu::Playback),
-                ("Library", Menu::Library),
-                ("Help", Menu::Help),
-            ];
-
-            ctx.begin_layout_with_bounds(Flow::Right, top_nav_rect);
-
             for (label, menu) in items {
                 let state = ctx.button(label, menu_style);
                 if state.clicked {
@@ -239,6 +231,7 @@ fn main() {
 
             let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
 
+            //TODO: Left, right, top, bottom borders.
             let gap = bar_style.bg(rgb(25, 25, 25)).width(120);
             ctx.spacer(bar_style);
             ctx.spacer(gap);
@@ -249,19 +242,25 @@ fn main() {
             ctx.spacer(gap.width(ctx_width - frame.cursor_x - 200 - 14));
             volume_slider(&mut ctx, &mut volume, 200, top_nav_rect.height);
             ctx.spacer(menu_style);
-
-            ctx.end_layout();
         }
+        ctx.end_layout();
 
+        ctx.begin_layout_with_bounds(Flow::Down, track_rect);
         {
-            ctx.begin_layout_with_bounds(Flow::Down, right_panel_rect);
+            //TODO: I want to create this header which is based on the font size and not some fixed pixel width.
+            let (album_header_rect, scroll_viewport) = ctx.split_v(24);
 
-            let (album_header_rect, scroll_viewport) = ctx.split_v(35);
+            ctx.begin_layout_with_bounds(Flow::Down, album_header_rect);
+            {
+                ctx.paint_rect(album_header_rect, bg(panel_bg));
+                ctx.button(
+                    "beabadoobee - Fake It Flowers (2020)",
+                    style().fg(accent_blue).font_size(14).padl(8).padb(4),
+                );
+            }
+            ctx.end_layout();
 
             ctx.begin_layout_with_bounds(Flow::Down, scroll_viewport);
-
-            //Draw the panel background
-            ctx.paint_rect(right_panel_rect, bg(panel_bg));
 
             scrollbar(
                 &mut ctx,
@@ -286,23 +285,12 @@ fn main() {
 
             ctx.end_layout();
 
-            ctx.begin_layout_with_bounds(Flow::Down, album_header_rect);
-
-            ctx.paint_rect(album_header_rect, bg(panel_bg));
-            ctx.button(
-                "beabadoobee - Fake It Flowers (2020)",
-                style().fg(accent_blue).font_size(14).padl(8).padb(4),
-            );
-
-            ctx.end_layout();
-
-            ctx.paint_rect(right_panel_rect.width(1), bg(border_color));
-            ctx.end_layout();
+            ctx.paint_rect(track_rect.width(1), bg(border_color));
         }
+        ctx.end_layout();
 
-        //Sidebar
+        ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
         {
-            ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
             ctx.paint_rect(sidebar_rect, bg(panel_bg));
 
             ctx.button("All Music", style().fg(text_dim).pad(6));
@@ -324,9 +312,8 @@ fn main() {
             for artist in artists {
                 ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
             }
-
-            ctx.end_layout();
         }
+        ctx.end_layout();
 
         ctx.draw();
     }

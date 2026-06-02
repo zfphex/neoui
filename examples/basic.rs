@@ -113,6 +113,7 @@ fn main() {
     ui.default_font_size = 13;
 
     let mut current_menu: Option<(Menu, Rect)> = None;
+    let mut selected_song = 0;
     let mut volume = 0.5;
 
     let mut track_scroll_y = 0;
@@ -206,17 +207,19 @@ fn main() {
             }
         }
 
-        let menu_style = style()
-            .height(top_nav_rect.height)
-            .padl(14)
-            .padr(14)
-            .bg(menu_bg)
-            .hover(menu_hover);
-
         ui.flow_right(top_nav_rect, |ui| {
             ui.paint_rect(top_nav_rect, bg(menu_bg));
             for (label, menu) in items {
-                let state = ui.text(label, menu_style);
+                let state = ui.text(
+                    label,
+                    style()
+                        .height(top_nav_rect.height)
+                        .padl(14)
+                        .padr(14)
+                        .bg(menu_bg)
+                        .hover(menu_hover),
+                );
+
                 if state.clicked {
                     if let Some((cm, _)) = current_menu
                         && cm == menu
@@ -239,7 +242,7 @@ fn main() {
             volume_slider(ui, &mut volume, 200, top_nav_rect.height);
         });
 
-        let player_row_style = style()
+        let row_style = style()
             .pad(8)
             .padl(12)
             .hover(rgb(35, 35, 35))
@@ -253,7 +256,7 @@ fn main() {
             ui.text("All Music", style().fg(text_dim).pad(6));
 
             for artist in artists {
-                ui.list_item(artist, false, player_row_style);
+                ui.list_item(artist, false, row_style);
             }
         });
 
@@ -276,16 +279,39 @@ fn main() {
                 );
 
                 let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
-                let player_row_style = player_row_style.width(ui.resolve_size(Size::RemainingMinus(20), true));
+                let row_style = row_style
+                    // .align(Alignment::Left { pad: 12 })
+                    .width(ui.resolve_size(Size::RemainingMinus(20), true));
                 for (idx, track) in tracklist.into_iter().enumerate() {
-                    if ui.list_item(track, false, player_row_style).clicked {
-                        println!("Clicked item {idx}")
+                    if ui.list_item(track, idx == selected_song, row_style).clicked {
+                        selected_song = idx;
+                        println!("Clicked item {idx}");
                     }
+
+                    // Technically we can remove list item's in favour of just using text.
+                    // TODO: Allow for None backgrounds.
+                    // TODO: How to handle when text is hovered AND selected.
+                    // The selected color should take precedence, but it does
+                    // not know the selected state...
+
+                    // let bg = if idx == selected_song {
+                    //     rgb(82, 82, 82)
+                    // } else {
+                    //     panel_bg
+                    // };
+
+                    // if ui.text(track, row_style.bg(bg)).clicked {
+                    //     selected_song = idx;
+                    //     println!("Clicked item {idx}");
+                    // }
                 }
             });
         });
 
-        ui.paint_rect(track_rect.width(1), bg(border_color));
+        //TODO: How can I do this better?
+        let mut divider = track_rect;
+        divider.x = divider.x.saturating_sub(1);
+        ui.paint_rect(divider.width(1), bg(border_color));
 
         ui.draw_frame();
     }

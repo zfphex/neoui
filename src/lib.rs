@@ -234,6 +234,7 @@ impl<'a> Context<'a> {
                 };
                 remaining.saturating_sub(sub.abs() as usize)
             }
+            Size::Fit => todo!(),
         }
     }
 
@@ -260,7 +261,7 @@ impl<'a> Context<'a> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.outline_thickness.unwrap_or(0),
+                outline_thickness: style.border_thickness.unwrap_or(0),
             });
         }
     }
@@ -353,11 +354,18 @@ impl<'a> Context<'a> {
                 clip: self.layout_stack.last().expect("No active frame").clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.outline_thickness.unwrap_or(0),
+                outline_thickness: style.border_thickness.unwrap_or(0),
             });
         }
 
-        self.text_aligned(rect, text, style.fg.unwrap_or(white()), font_size, Alignment::Center, 0);
+        self.text_aligned(
+            rect,
+            text,
+            style.fg.unwrap_or(white()),
+            font_size,
+            style.alignment.unwrap_or(Alignment::Center),
+            0,
+        );
 
         State { clicked, hovered, rect }
     }
@@ -400,7 +408,7 @@ impl<'a> Context<'a> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.outline_thickness.unwrap_or(0),
+                outline_thickness: style.border_thickness.unwrap_or(0),
             });
         }
 
@@ -421,7 +429,7 @@ impl<'a> Context<'a> {
                     clip,
                     color: border,
                     radius: style.radius.unwrap_or(0),
-                    outline_thickness: style.outline_thickness.unwrap_or(1),
+                    outline_thickness: style.border_thickness.unwrap_or(1),
                 });
             }
         }
@@ -468,7 +476,7 @@ impl<'a> Context<'a> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.outline_thickness.unwrap_or(0),
+                outline_thickness: style.border_thickness.unwrap_or(0),
             });
         }
 

@@ -1,3 +1,5 @@
+use crate::*;
+
 #[derive(Debug, Clone, Copy)]
 pub enum Size {
     Pixel(usize),
@@ -5,6 +7,8 @@ pub enum Size {
     Percentage(f32),
     Remaining,
     RemainingMinus(i32),
+    ///TODO
+    Fit,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -29,17 +33,19 @@ pub struct Style {
     pub bg: Option<u32>,
     pub fg: Option<u32>,
     pub border: Option<u32>,
-    pub padding: Option<Padding>,
-    pub font_size: Option<usize>,
+    //TODO: No hover border thickness?
+    pub border_thickness: Option<usize>,
     pub selected: Option<u32>,
     pub selected_border: Option<u32>,
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
-    pub radius: Option<usize>,
+    pub font_size: Option<usize>,
     pub width: Option<Size>,
     pub height: Option<Size>,
-    pub outline_thickness: Option<usize>,
+    pub padding: Option<Padding>,
+    pub radius: Option<usize>,
     pub depth: Option<usize>,
+    pub alignment: Option<Alignment>,
 }
 
 impl Style {
@@ -98,8 +104,23 @@ impl Style {
         self
     }
 
+    pub fn fillw(mut self) -> Self {
+        self.width = Some(Size::Remaining);
+        self
+    }
+
+    pub fn fillh(mut self) -> Self {
+        self.height = Some(Size::Remaining);
+        self
+    }
+
+    pub fn align(mut self, alignment: Alignment) -> Self {
+        self.alignment = Some(alignment);
+        self
+    }
+
     pub fn outline(mut self, outline_thickness: usize) -> Self {
-        self.outline_thickness = Some(outline_thickness);
+        self.border_thickness = Some(outline_thickness);
         self
     }
 

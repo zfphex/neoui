@@ -191,8 +191,8 @@ impl<'a> Context<'a> {
     }
 
     /// Splits the current frame's remaining space vertically.
-    pub fn split_v(&self, top_height: impl Into<Size>) -> (Rect, Rect) {
-        let top_height = self.resolve_size(top_height.into(), false);
+    pub fn split_v(&self, top_height: impl IntoSize) -> (Rect, Rect) {
+        let top_height = self.resolve_size(top_height.into().unwrap_or_default(), false);
         let frame = self.layout_stack.last().expect("No active frame");
 
         let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
@@ -327,9 +327,13 @@ impl<'a> Context<'a> {
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let text_metrics = self.measure_text(&text, font_size);
         let padding = style.padding.unwrap_or_default();
-        let width = style.width.unwrap_or(text_metrics.width + padding.left + padding.right);
+        let width = style
+            .width
+            .map(|w| self.resolve_size(w, true))
+            .unwrap_or(text_metrics.width + padding.left + padding.right);
         let height = style
             .height
+            .map(|h| self.resolve_size(h, false))
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
         let rect = self.walk_layout(width, height);
@@ -343,12 +347,10 @@ impl<'a> Context<'a> {
             style.bg
         };
 
-        let clip = self.layout_stack.last().expect("No active frame").clip;
-
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
                 rect,
-                clip,
+                clip: self.layout_stack.last().expect("No active frame").clip,
                 color,
                 radius: style.radius.unwrap_or(0),
                 outline_thickness: style.outline_thickness.unwrap_or(0),
@@ -365,7 +367,10 @@ impl<'a> Context<'a> {
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let padding = style.padding.unwrap_or_default();
         let allocated_h = font_size + padding.top + padding.bottom;
-        let width = style.width.unwrap_or_else(|| self.resolve_size(Size::Remaining, true));
+        let width = style
+            .width
+            .map(|w| self.resolve_size(w, true))
+            .unwrap_or_else(|| self.resolve_size(Size::Remaining, true));
         let rect = self.walk_layout(width, allocated_h);
         let clicked = self.clicked(rect);
         let hovered = self.hovered(rect);
@@ -435,8 +440,14 @@ impl<'a> Context<'a> {
 
     pub fn rect(&mut self, style: Style) -> State {
         let padding = style.padding.unwrap_or_default();
-        let width = style.width.map(|w| w + padding.left + padding.right).unwrap_or(0);
-        let height = style.height.map(|h| h + padding.top + padding.bottom).unwrap_or(0);
+        let width = style
+            .width
+            .map(|w| self.resolve_size(w, true) + padding.left + padding.right)
+            .unwrap_or(0);
+        let height = style
+            .height
+            .map(|h| self.resolve_size(h, false) + padding.top + padding.bottom)
+            .unwrap_or(0);
 
         let rect = self.walk_layout(width, height);
         let clicked = self.clicked(rect);
@@ -466,14 +477,14 @@ impl<'a> Context<'a> {
 
     //Uses a fixed width or fill the remaining space
     //Should be depricated in favor of Size::Remaining
-    pub fn spacer(&mut self, style: Style) -> State {
-        let frame = self.layout_stack.last_mut().expect("No active layout frame");
-        let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-        let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
-        let width = style.width.unwrap_or(remaining_width);
-        let height = style.height.unwrap_or(remaining_height);
-        self.rect(style.width(width).height(height))
-    }
+    // pub fn spacer(&mut self, style: Style) -> State {
+    //     let frame = self.layout_stack.last_mut().expect("No active layout frame");
+    //     let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
+    //     let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+    //     let width = style.width.unwrap_or(remaining_width);
+    //     let height = style.height.unwrap_or(remaining_height);
+    //     self.rect(style.width(width).height(height))
+    // }
 
     // TODO
     // pub fn divider(&mut self, bounds: Rect, style: Style) {

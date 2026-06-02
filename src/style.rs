@@ -7,35 +7,6 @@ pub enum Size {
     RemainingMinus(i32),
 }
 
-impl Default for Size {
-    fn default() -> Self {
-        Size::Pixel(0)
-    }
-}
-
-impl Into<Size> for usize {
-    fn into(self) -> Size {
-        Size::Pixel(self)
-    }
-}
-
-impl Into<Size> for f32 {
-    fn into(self) -> Size {
-        Size::Percentage(self)
-    }
-}
-
-//Yeah keep it for now, I'll think about it later...
-impl Into<Size> for i32 {
-    fn into(self) -> Size {
-        if self < 0 {
-            Size::RemainingMinus(self)
-        } else {
-            Size::Pixel(self as usize)
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Padding {
     pub top: usize,
@@ -65,8 +36,8 @@ pub struct Style {
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
     pub radius: Option<usize>,
-    pub width: Option<usize>,
-    pub height: Option<usize>,
+    pub width: Option<Size>,
+    pub height: Option<Size>,
     pub outline_thickness: Option<usize>,
     pub depth: Option<usize>,
 }
@@ -117,13 +88,13 @@ impl Style {
         self
     }
 
-    pub fn width(mut self, w: usize) -> Self {
-        self.width = Some(w);
+    pub fn width(mut self, w: impl IntoSize) -> Self {
+        self.width = w.into();
         self
     }
 
-    pub fn height(mut self, h: usize) -> Self {
-        self.height = Some(h);
+    pub fn height(mut self, h: impl IntoSize) -> Self {
+        self.height = h.into();
         self
     }
 
@@ -239,4 +210,43 @@ pub const fn split(color: u32) -> (u8, u8, u8) {
         (color >> 8 & 0xFF) as u8,
         (color & 0xFF) as u8,
     )
+}
+
+impl Default for Size {
+    fn default() -> Self {
+        Size::Pixel(0)
+    }
+}
+
+pub trait IntoSize {
+    fn into(self) -> Option<Size>;
+}
+
+impl IntoSize for Size {
+    fn into(self) -> Option<Size> {
+        Some(self)
+    }
+}
+
+impl IntoSize for f32 {
+    fn into(self) -> Option<Size> {
+        Some(Size::Percentage(self))
+    }
+}
+
+//Yeah keep it for now, I'll think about it later...
+impl IntoSize for i32 {
+    fn into(self) -> Option<Size> {
+        if self < 0 {
+            Some(Size::RemainingMinus(self))
+        } else {
+            Some(Size::Pixel(self as usize))
+        }
+    }
+}
+
+impl IntoSize for usize {
+    fn into(self) -> Option<Size> {
+        Some(Size::Pixel(self))
+    }
 }

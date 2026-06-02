@@ -120,6 +120,7 @@ fn main() {
 
     let panel_bg = rgb(10, 10, 10);
     let border_color = rgb(45, 45, 45);
+    let bar_color = rgb(66, 66, 66);
     let accent_blue = rgb(0, 102, 204);
     let text_dim = rgb(170, 170, 170);
     let menu_bg = rgb(25, 25, 25);
@@ -160,7 +161,7 @@ fn main() {
             None => {}
         }
 
-        let ui_width = ui.width();
+        let _ui_width = ui.width();
         let _ui_height = ui.height();
 
         ui.begin_frame(black());
@@ -213,6 +214,7 @@ fn main() {
             .hover(menu_hover);
 
         ui.flow_right(top_nav_rect, |ui| {
+            ui.paint_rect(top_nav_rect, bg(menu_bg));
             for (label, menu) in items {
                 let state = ui.text(label, menu_style);
                 if state.clicked {
@@ -226,24 +228,20 @@ fn main() {
                 }
             }
 
-            let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
-            let gap = bar_style.bg(menu_bg).width(120);
-            ui.rect(bar_style);
+            let bar = style().width(1).height(top_nav_rect.height).bg(bar_color);
+            let gap = bar.bg(menu_bg).width(120);
+            ui.rect(bar);
             ui.rect(gap);
-            ui.rect(bar_style);
+            ui.rect(bar);
             ui.rect(gap);
-            ui.rect(bar_style);
-            let frame = ui.layout_stack.last().unwrap();
-
-            ui.rect(gap.width(ui_width - frame.cursor_x - 200 - 14));
+            ui.rect(bar);
+            ui.rect(gap.width(Size::RemainingMinus(214)));
             volume_slider(ui, &mut volume, 200, top_nav_rect.height);
-            ui.spacer(bg(menu_bg));
         });
 
         let player_row_style = style()
             .pad(8)
             .padl(12)
-            .bg(panel_bg)
             .hover(rgb(35, 35, 35))
             .hover_border(rgb(90, 90, 90))
             .selected(rgb(82, 82, 82))
@@ -263,8 +261,10 @@ fn main() {
             //TODO: I want to create this header which is based on the font size and not some fixed pixel width.
             let (album_header_rect, scroll_viewport) = ui.split_v(24);
 
+            ui.paint_rect(album_header_rect, bg(panel_bg));
+            ui.paint_rect(scroll_viewport, bg(panel_bg));
+
             ui.flow_down(album_header_rect, |ui| {
-                ui.paint_rect(album_header_rect, bg(panel_bg));
                 ui.text(
                     "beabadoobee - Fake It Flowers (2020)",
                     style().fg(accent_blue).font_size(14).padl(8).padb(4),

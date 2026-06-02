@@ -30,7 +30,7 @@ fn volume_slider(ui: &mut Context, volume: &mut f32, width: usize, height: usize
         (rect.x, cy + max_track_h),
         (rect.x + width, cy + max_track_h),
         (rect.x + width, cy - max_track_h),
-        bg(hex("#000000")),
+        bg(black()),
     );
 
     let thumb_w = 12;
@@ -40,7 +40,7 @@ fn volume_slider(ui: &mut Context, volume: &mut f32, width: usize, height: usize
     let thumb_x = rect.x + (*volume * available_width as f32).round() as usize;
     let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
 
-    let thumb_color = hex("#0078D7");
+    let thumb_color = rgb(0, 102, 204);
     ui.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
 }
 

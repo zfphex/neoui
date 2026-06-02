@@ -258,29 +258,23 @@ fn main() {
         });
 
         ui.flow_down(track_rect, |ui| {
-            //TODO: I want to create this header which is based on the font size and not some fixed pixel width.
-            let (album_header_rect, scroll_viewport) = ui.split_v(24);
+            ui.paint_rect(track_rect, bg(panel_bg));
 
-            ui.paint_rect(album_header_rect, bg(panel_bg));
-            ui.paint_rect(scroll_viewport, bg(panel_bg));
+            ui.text(
+                "beabadoobee - Fake It Flowers (2020)",
+                style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
+            );
 
-            ui.flow_down(album_header_rect, |ui| {
-                ui.text(
-                    "beabadoobee - Fake It Flowers (2020)",
-                    style().fg(accent_blue).font_size(14).padl(8).padb(4),
-                );
-            });
-
-            total_track_content_height = ui.scroll(scroll_viewport, Flow::Down, |ui| {
+            total_track_content_height = ui.scroll(None, track_scroll_y, |ui| {
+                let frame = ui.layout_stack.last().unwrap();
                 scrollbar(
                     ui,
-                    scroll_viewport,
+                    frame.bounds,
                     total_track_content_height,
                     &mut track_scroll_y,
                     scroll_direction,
                 );
 
-                ui.begin_scroll_view(scroll_viewport, track_scroll_y);
                 let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
                 let player_row_style = player_row_style.width(ui.resolve_size(Size::RemainingMinus(20), true));
                 for (idx, track) in tracklist.into_iter().enumerate() {

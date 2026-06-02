@@ -513,9 +513,24 @@ impl<'a> Context<'a> {
         result
     }
 
-    pub fn scroll<R>(&mut self, bounds: Rect, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> usize {
-        self.begin_layout(flow, Some(bounds));
+    //Currently no horizontal scroll support.
+    pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> usize {
+        let parent = self.layout_stack.last().expect("Layout stack empty");
+        let bounds = if let Some(bounds) = bounds {
+            bounds
+        } else {
+            Rect::new(
+                parent.cursor_x,
+                parent.cursor_y,
+                parent.bounds.width,
+                parent.bounds.height,
+            )
+        };
+
+        self.begin_scroll_view(bounds, scroll_y);
+
         let _ = ui(self); //Probably fine.
+
         self.end_scroll_view()
     }
 

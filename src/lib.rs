@@ -15,7 +15,7 @@ pub use mini::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Flow {
     #[default]
     Down,
@@ -226,6 +226,14 @@ impl<'a> Context<'a> {
                     (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y)
                 }
             }
+            Size::RemainingMinus(sub) => {
+                let remaining = if horizontal {
+                    (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x)
+                } else {
+                    (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y)
+                };
+                remaining.saturating_sub(sub.abs() as usize)
+            }
         }
     }
 
@@ -313,37 +321,6 @@ impl<'a> Context<'a> {
         });
     }
 
-    pub fn rect(&mut self, style: Style) -> State {
-        let padding = style.padding.unwrap_or_default();
-        let width = style.width.map(|w| w + padding.left + padding.right).unwrap_or(0);
-        let height = style.height.map(|h| h + padding.top + padding.bottom).unwrap_or(0);
-
-        let rect = self.walk_layout(width, height);
-        let clicked = self.clicked(rect);
-        let hovered = self.hovered(rect);
-        let depth = style.depth.unwrap_or(0);
-
-        let bg = if hovered && style.hover.is_some() {
-            style.hover
-        } else {
-            style.bg
-        };
-
-        let clip = self.layout_stack.last().expect("No active frame").clip;
-
-        if let Some(color) = bg {
-            self.commands[depth].push(Command::Rect {
-                rect,
-                clip,
-                color,
-                radius: style.radius.unwrap_or(0),
-                outline_thickness: style.outline_thickness.unwrap_or(0),
-            });
-        }
-
-        State { clicked, hovered, rect }
-    }
-
     pub fn button(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
@@ -382,18 +359,13 @@ impl<'a> Context<'a> {
         State { clicked, hovered, rect }
     }
 
-    pub fn list_item(
-        &mut self,
-        text: impl Into<Cow<'a, str>>,
-        selected: bool,
-        width_override: usize,
-        style: Style,
-    ) -> State {
+    pub fn list_item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let padding = style.padding.unwrap_or_default();
         let allocated_h = font_size + padding.top + padding.bottom;
-        let rect = self.walk_layout(width_override, allocated_h);
+        let width = style.width.unwrap_or_else(|| self.resolve_size(Size::Remaining, true));
+        let rect = self.walk_layout(width, allocated_h);
         let clicked = self.clicked(rect);
         let hovered = self.hovered(rect);
         let depth = style.depth.unwrap_or(0);
@@ -460,19 +432,25 @@ impl<'a> Context<'a> {
         State { clicked, hovered, rect }
     }
 
-    pub fn spacer(&mut self, style: Style) {
-        let frame = self.layout_stack.last_mut().expect("No active layout frame");
+    pub fn rect(&mut self, style: Style) -> State {
+        let padding = style.padding.unwrap_or_default();
+        let width = style.width.map(|w| w + padding.left + padding.right).unwrap_or(0);
+        let height = style.height.map(|h| h + padding.top + padding.bottom).unwrap_or(0);
 
-        let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-        let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
-
-        let width = style.width.unwrap_or(remaining_width);
-        let height = style.height.unwrap_or(remaining_height);
         let rect = self.walk_layout(width, height);
-        let clip = self.layout_stack.last().expect("No active frame").clip;
+        let clicked = self.clicked(rect);
+        let hovered = self.hovered(rect);
         let depth = style.depth.unwrap_or(0);
 
-        if let Some(color) = style.bg {
+        let bg = if hovered && style.hover.is_some() {
+            style.hover
+        } else {
+            style.bg
+        };
+
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+
+        if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
                 rect,
                 clip,
@@ -482,32 +460,54 @@ impl<'a> Context<'a> {
             });
         }
 
-        if let Some(color) = style.border {
-            self.commands[depth].push(Command::Rect {
-                rect,
-                clip,
-                color,
-                radius: style.radius.unwrap_or(0),
-                outline_thickness: style.outline_thickness.unwrap_or(1),
-            });
-        }
+        State { clicked, hovered, rect }
     }
 
-    pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.begin_layout_with_bounds(Flow::Down, bounds);
-        let result = ui(self);
+    //Uses a fixed width or fill the remaining space
+    //Should be depricated in favor of Size::Remaining
+    pub fn spacer(&mut self, style: Style) -> State {
+        let frame = self.layout_stack.last_mut().expect("No active layout frame");
+        let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
+        let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+        let width = style.width.unwrap_or(remaining_width);
+        let height = style.height.unwrap_or(remaining_height);
+        self.rect(style.width(width).height(height))
+    }
+
+    // TODO
+    // pub fn divider(&mut self, bounds: Rect, style: Style) {
+    //     let frame = self.layout_stack.last_mut().expect("No active layout frame");
+    //     let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
+    //     let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+    //     let (width, height) = match frame.flow {
+    //         Flow::Down => (remaining_width, style.width.unwrap_or(0)),
+    //         Flow::Right => (style.height.unwrap_or(0), remaining_height),
+    //     };
+    //     self.walk_layout(width, remaining_height);
+    //     self.paint_rect(bounds.width(width).height(height), style);
+    // }
+
+    pub fn flow_down<R>(&mut self, bounds: Rect, ctx: impl FnOnce(&mut Self) -> R) -> R {
+        self.begin_layout(Flow::Down, Some(bounds));
+        let result = ctx(self);
         self.end_layout();
         result
     }
 
-    pub fn flow_right<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.begin_layout_with_bounds(Flow::Right, bounds);
-        let result = ui(self);
+    pub fn flow_right<R>(&mut self, bounds: Rect, ctx: impl FnOnce(&mut Self) -> R) -> R {
+        self.begin_layout(Flow::Right, Some(bounds));
+        let result = ctx(self);
         self.end_layout();
         result
     }
 
-    pub fn begin_ui(&mut self, fill_color: u32) {
+    pub fn scroll<R>(&mut self, bounds: Rect, flow: Flow, ctx: impl FnOnce(&mut Self) -> R) -> usize {
+        self.begin_layout(flow, Some(bounds));
+        let _ = ctx(self); //Probably fine.
+        self.end_scroll_view()
+    }
+
+    pub fn begin_frame(&mut self, fill_color: u32) {
         let bounds = Rect::new(0, 0, self.width(), self.height());
         self.fill(fill_color);
         self.layout_stack.clear();
@@ -519,34 +519,29 @@ impl<'a> Context<'a> {
         });
     }
 
-    pub fn begin_layout_with_bounds(&mut self, flow: Flow, bounds: Rect) {
-        let parent_clip = self.layout_stack.last().map(|p| p.clip).unwrap_or(bounds);
+    pub fn begin_layout(&mut self, flow: Flow, bounds: Option<Rect>) {
+        let parent = self.layout_stack.last().expect("Layout stack empty");
+
+        let bounds = if let Some(bounds) = bounds {
+            bounds
+        } else {
+            Rect::new(
+                parent.cursor_x,
+                parent.cursor_y,
+                parent.bounds.width,
+                parent.bounds.height,
+            )
+        };
+
         let new_frame = Frame {
             bounds,
-            clip: parent_clip.intersection(bounds),
+            clip: parent.clip.intersection(bounds),
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
             ..Default::default()
         };
-        self.layout_stack.push(new_frame);
-    }
 
-    pub fn begin_layout(&mut self, flow: Flow) {
-        let parent = self.layout_stack.last().expect("Layout stack empty");
-        let new_frame = Frame {
-            bounds: Rect::new(
-                parent.cursor_x,
-                parent.cursor_y,
-                parent.bounds.width,
-                parent.bounds.height,
-            ),
-            clip: parent.clip,
-            flow,
-            cursor_x: parent.cursor_x,
-            cursor_y: parent.cursor_y,
-            ..Default::default()
-        };
         self.layout_stack.push(new_frame);
     }
 
@@ -588,7 +583,7 @@ impl<'a> Context<'a> {
         let cell_w = col_width.min(grid_bounds.width.saturating_sub(col * col_width));
         let cell_h = row_height.min(grid_bounds.height.saturating_sub(row * row_height));
 
-        self.begin_layout_with_bounds(flow, Rect::new(cell_x, cell_y, cell_w, cell_h));
+        self.begin_layout(flow, Some(Rect::new(cell_x, cell_y, cell_w, cell_h)));
     }
 
     pub fn begin_scroll_view(&mut self, bounds: Rect, scroll_y: usize) {
@@ -630,7 +625,7 @@ impl<'a> Context<'a> {
         window.buffer.fill(color);
     }
 
-    pub fn draw(&mut self) {
+    pub fn draw_frame(&mut self) {
         profile!();
         let self_width = self.width();
         let self_height = self.height();

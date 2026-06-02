@@ -101,7 +101,7 @@ pub fn scrollbar(
     ctx.paint_rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
 }
 
-fn dropdown_items(menu: Menu) -> &'static [&'static str] {
+const fn dropdown_items(menu: Menu) -> &'static [&'static str] {
     match menu {
         Menu::File => &["New Project", "Open File...", "Save"],
         Menu::Edit => &["Undo", "Redo", "Cut"],
@@ -114,28 +114,22 @@ fn dropdown_items(menu: Menu) -> &'static [&'static str] {
 
 fn main() {
     defer_results!();
+
     let mut ctx = ctx("Basic", 1000, 700);
     ctx.default_font_size = 13;
+
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut volume = 0.5;
 
     let mut track_scroll_y = 0;
     let mut total_track_content_height: usize = 0;
 
-    // let dark_bg = rgb(15, 15, 15);
     let panel_bg = rgb(10, 10, 10);
     let border_color = rgb(45, 45, 45);
     let accent_blue = rgb(0, 102, 204);
     let text_dim = rgb(170, 170, 170);
-    let player_row_style = style()
-        .pad(8)
-        .padl(12)
-        .bg(panel_bg)
-        .hover(rgb(35, 35, 35))
-        .hover_border(rgb(90, 90, 90))
-        .selected(rgb(82, 82, 82))
-        .selected_border(rgb(170, 170, 170));
-
+    let menu_bg = rgb(25, 25, 25);
+    let menu_hover = rgb(45, 45, 45);
     let items = [
         ("File", Menu::File),
         ("Edit", Menu::Edit),
@@ -143,6 +137,20 @@ fn main() {
         ("Playback", Menu::Playback),
         ("Library", Menu::Library),
         ("Help", Menu::Help),
+    ];
+
+    let artists = [
+        "Arca",
+        "BADBADNOTGOOD",
+        "beabadoobee",
+        "Björk",
+        "black midi",
+        "Bonobo",
+        "C418",
+        "Daft Punk",
+        "Death Grips ",
+        "Duster ",
+        "Flume",
     ];
 
     loop {
@@ -159,23 +167,23 @@ fn main() {
         }
 
         let ctx_width = ctx.width();
-        #[allow(unused)]
-        let ctx_height = ctx.height();
+        let _ctx_height = ctx.height();
 
-        ctx.begin_ui(black());
+        ctx.begin_frame(black());
 
         let (top_nav_rect, body) = ctx.split_v(30);
         let (sidebar_rect, track_rect) = body.split_h(260);
 
         if let Some((menu, rect)) = current_menu {
             let item_style = style()
+                .width(180)
                 .padlr(12)
                 .padtb(8)
                 .bg(rgb(35, 35, 35))
                 .hover(rgb(60, 60, 60))
                 .depth(1);
 
-            ctx.begin_layout(Flow::Down);
+            ctx.begin_layout(Flow::Down, None);
 
             //Update the postion and height. TODO: Should make this easier to do.
             let last = ctx.layout_stack.last_mut().unwrap();
@@ -183,12 +191,11 @@ fn main() {
             last.cursor_y = top_nav_rect.height;
 
             for &item in dropdown_items(menu) {
-                if ctx.list_item(item, false, 120, item_style).clicked {
+                if ctx.list_item(item, false, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;
                 }
             }
-
             ctx.end_layout_absolute();
 
             let window = ctx.window.as_mut().unwrap();
@@ -208,11 +215,10 @@ fn main() {
             .height(top_nav_rect.height)
             .padl(14)
             .padr(14)
-            .bg(rgb(25, 25, 25))
-            .hover(rgb(45, 45, 45));
+            .bg(menu_bg)
+            .hover(menu_hover);
 
-        ctx.begin_layout_with_bounds(Flow::Right, top_nav_rect);
-        {
+        ctx.flow_right(top_nav_rect, |ctx| {
             for (label, menu) in items {
                 let state = ctx.button(label, menu_style);
                 if state.clicked {
@@ -227,91 +233,72 @@ fn main() {
             }
 
             let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
-
-            //TODO: Left, right, top, bottom borders.
-            let gap = bar_style.bg(rgb(25, 25, 25)).width(120);
-            ctx.spacer(bar_style);
-            ctx.spacer(gap);
-            ctx.spacer(bar_style);
-            ctx.spacer(gap);
-            ctx.spacer(bar_style);
+            let gap = bar_style.bg(menu_bg).width(120);
+            ctx.rect(bar_style);
+            ctx.rect(gap);
+            ctx.rect(bar_style);
+            ctx.rect(gap);
+            ctx.rect(bar_style);
             let frame = ctx.layout_stack.last().unwrap();
-            ctx.spacer(gap.width(ctx_width - frame.cursor_x - 200 - 14));
-            volume_slider(&mut ctx, &mut volume, 200, top_nav_rect.height);
-            ctx.spacer(menu_style);
-        }
-        ctx.end_layout();
 
-        ctx.begin_layout_with_bounds(Flow::Down, track_rect);
-        {
+            ctx.rect(gap.width(ctx_width - frame.cursor_x - 200 - 14));
+            volume_slider(ctx, &mut volume, 200, top_nav_rect.height);
+            ctx.spacer(bg(menu_bg));
+        });
+
+        let player_row_style = style()
+            .pad(8)
+            .padl(12)
+            .bg(panel_bg)
+            .hover(rgb(35, 35, 35))
+            .hover_border(rgb(90, 90, 90))
+            .selected(rgb(82, 82, 82))
+            .selected_border(rgb(170, 170, 170));
+
+        ctx.flow_down(sidebar_rect, |ctx| {
+            ctx.paint_rect(sidebar_rect, bg(panel_bg));
+
+            ctx.button("All Music", style().fg(text_dim).pad(6));
+
+            for artist in artists {
+                ctx.list_item(artist, false, player_row_style);
+            }
+        });
+
+        ctx.flow_down(track_rect, |ctx| {
             //TODO: I want to create this header which is based on the font size and not some fixed pixel width.
             let (album_header_rect, scroll_viewport) = ctx.split_v(24);
 
-            ctx.begin_layout_with_bounds(Flow::Down, album_header_rect);
-            {
+            ctx.flow_down(album_header_rect, |ctx| {
                 ctx.paint_rect(album_header_rect, bg(panel_bg));
                 ctx.button(
                     "beabadoobee - Fake It Flowers (2020)",
                     style().fg(accent_blue).font_size(14).padl(8).padb(4),
                 );
-            }
-            ctx.end_layout();
+            });
 
-            ctx.begin_layout_with_bounds(Flow::Down, scroll_viewport);
+            total_track_content_height = ctx.scroll(scroll_viewport, Flow::Down, |ctx| {
+                scrollbar(
+                    ctx,
+                    scroll_viewport,
+                    total_track_content_height,
+                    &mut track_scroll_y,
+                    scroll_direction,
+                );
 
-            scrollbar(
-                &mut ctx,
-                scroll_viewport,
-                total_track_content_height,
-                &mut track_scroll_y,
-                scroll_direction,
-            );
-
-            ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
-            let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
-            for (idx, track) in tracklist.into_iter().enumerate() {
-                if ctx
-                    .list_item(track, false, scroll_viewport.width - 20, player_row_style)
-                    .clicked
-                {
-                    println!("Clicked item {idx}")
+                ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
+                let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
+                let player_row_style = player_row_style.width(ctx.resolve_size(Size::RemainingMinus(20), true));
+                for (idx, track) in tracklist.into_iter().enumerate() {
+                    if ctx.list_item(track, false, player_row_style).clicked {
+                        println!("Clicked item {idx}")
+                    }
                 }
-            }
+            });
+        });
 
-            total_track_content_height = ctx.end_scroll_view();
+        ctx.paint_rect(track_rect.width(1), bg(border_color));
 
-            ctx.end_layout();
-
-            ctx.paint_rect(track_rect.width(1), bg(border_color));
-        }
-        ctx.end_layout();
-
-        ctx.begin_layout_with_bounds(Flow::Down, sidebar_rect);
-        {
-            ctx.paint_rect(sidebar_rect, bg(panel_bg));
-
-            ctx.button("All Music", style().fg(text_dim).pad(6));
-
-            let artists = [
-                "Arca",
-                "BADBADNOTGOOD",
-                "beabadoobee",
-                "Björk",
-                "black midi",
-                "Bonobo",
-                "C418",
-                "Daft Punk",
-                "Death Grips ",
-                "Duster ",
-                "Flume",
-            ];
-
-            for artist in artists {
-                ctx.list_item(artist, false, sidebar_rect.width - 10, player_row_style);
-            }
-        }
-        ctx.end_layout();
-
-        ctx.draw();
+        ctx.draw_frame();
     }
 }

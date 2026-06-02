@@ -4,6 +4,7 @@ pub enum Size {
     ///0.0 to 1.0 of parent's total space
     Percentage(f32),
     Remaining,
+    RemainingMinus(i32),
 }
 
 impl Default for Size {
@@ -21,6 +22,17 @@ impl Into<Size> for usize {
 impl Into<Size> for f32 {
     fn into(self) -> Size {
         Size::Percentage(self)
+    }
+}
+
+//Yeah keep it for now, I'll think about it later...
+impl Into<Size> for i32 {
+    fn into(self) -> Size {
+        if self < 0 {
+            Size::RemainingMinus(self)
+        } else {
+            Size::Pixel(self as usize)
+        }
     }
 }
 

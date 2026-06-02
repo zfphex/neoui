@@ -10,10 +10,10 @@ enum Menu {
     Help,
 }
 
-fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usize) {
-    let rect = ctx.walk_layout(width, height);
-    ctx.paint_rect(rect, bg(rgb(25, 25, 25)));
-    let window = ctx.window.as_ref().unwrap();
+fn volume_slider(ui: &mut Context, volume: &mut f32, width: usize, height: usize) {
+    let rect = ui.walk_layout(width, height);
+    ui.paint_rect(rect, bg(rgb(25, 25, 25)));
+    let window = ui.window.as_ref().unwrap();
     if let Some(inital) = window.left_mouse.inital_position
         && window.left_mouse.pressed
     {
@@ -26,7 +26,7 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     let max_track_h = 6;
     let cy = rect.y + height / 2;
 
-    ctx.paint_triangle(
+    ui.paint_triangle(
         (rect.x, cy + max_track_h),
         (rect.x + width, cy + max_track_h),
         (rect.x + width, cy - max_track_h),
@@ -41,16 +41,10 @@ fn volume_slider(ctx: &mut Context, volume: &mut f32, width: usize, height: usiz
     let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
 
     let thumb_color = hex("#0078D7");
-    ctx.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
+    ui.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
 }
 
-pub fn scrollbar(
-    ctx: &mut Context,
-    viewport: Rect,
-    content_height: usize,
-    scroll_y: &mut usize,
-    scroll_direction: i32,
-) {
+pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll_y: &mut usize, scroll_direction: i32) {
     if content_height <= viewport.height {
         return;
     }
@@ -67,7 +61,7 @@ pub fn scrollbar(
     let x = viewport.x + viewport.width - w - pad;
     let hitbox = Rect::new(x.saturating_sub(pad), viewport.y, w + pad * 2, viewport.height);
 
-    let window = ctx.window.as_mut().unwrap();
+    let window = ui.window.as_mut().unwrap();
     let mut handled = false;
 
     if window.left_mouse.pressed && window.left_mouse.inital_position.is_some_and(|p| p.intersects(hitbox)) {
@@ -98,7 +92,7 @@ pub fn scrollbar(
     };
     let thumb_y = viewport.y + (ratio * track_h as f32) as usize;
 
-    ctx.paint_rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
+    ui.paint_rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
 }
 
 const fn dropdown_items(menu: Menu) -> &'static [&'static str] {
@@ -115,8 +109,8 @@ const fn dropdown_items(menu: Menu) -> &'static [&'static str] {
 fn main() {
     defer_results!();
 
-    let mut ctx = ctx("Basic", 1000, 700);
-    ctx.default_font_size = 13;
+    let mut ui = ui("Basic", 1000, 700);
+    ui.default_font_size = 13;
 
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut volume = 0.5;
@@ -155,7 +149,7 @@ fn main() {
 
     loop {
         let mut scroll_direction = 0;
-        match ctx.window.as_mut().unwrap().event() {
+        match ui.window.as_mut().unwrap().event() {
             Some(event) => match event {
                 Event::Quit => return,
                 Event::Input(Key::Escape, _) => return,
@@ -166,12 +160,12 @@ fn main() {
             None => {}
         }
 
-        let ctx_width = ctx.width();
-        let _ctx_height = ctx.height();
+        let ui_width = ui.width();
+        let _ui_height = ui.height();
 
-        ctx.begin_frame(black());
+        ui.begin_frame(black());
 
-        let (top_nav_rect, body) = ctx.split_v(30);
+        let (top_nav_rect, body) = ui.split_v(30);
         let (sidebar_rect, track_rect) = body.split_h(260);
 
         if let Some((menu, rect)) = current_menu {
@@ -183,22 +177,22 @@ fn main() {
                 .hover(rgb(60, 60, 60))
                 .depth(1);
 
-            ctx.begin_layout(Flow::Down, None);
+            ui.begin_layout(Flow::Down, None);
 
             //Update the postion and height. TODO: Should make this easier to do.
-            let last = ctx.layout_stack.last_mut().unwrap();
+            let last = ui.layout_stack.last_mut().unwrap();
             last.cursor_x = rect.x;
             last.cursor_y = top_nav_rect.height;
 
             for &item in dropdown_items(menu) {
-                if ctx.list_item(item, false, item_style).clicked {
+                if ui.list_item(item, false, item_style).clicked {
                     println!("{}", item);
                     current_menu = None;
                 }
             }
-            ctx.end_layout_absolute();
+            ui.end_layout_absolute();
 
-            let window = ctx.window.as_mut().unwrap();
+            let window = ui.window.as_mut().unwrap();
             let left = &mut window.left_mouse;
             if let Some(inital) = left.inital_position
                 && let Some(release) = left.release_position
@@ -218,9 +212,9 @@ fn main() {
             .bg(menu_bg)
             .hover(menu_hover);
 
-        ctx.flow_right(top_nav_rect, |ctx| {
+        ui.flow_right(top_nav_rect, |ui| {
             for (label, menu) in items {
-                let state = ctx.text(label, menu_style);
+                let state = ui.text(label, menu_style);
                 if state.clicked {
                     if let Some((cm, _)) = current_menu
                         && cm == menu
@@ -234,16 +228,16 @@ fn main() {
 
             let bar_style = style().width(1).height(top_nav_rect.height).bg(hex("#424242"));
             let gap = bar_style.bg(menu_bg).width(120);
-            ctx.rect(bar_style);
-            ctx.rect(gap);
-            ctx.rect(bar_style);
-            ctx.rect(gap);
-            ctx.rect(bar_style);
-            let frame = ctx.layout_stack.last().unwrap();
+            ui.rect(bar_style);
+            ui.rect(gap);
+            ui.rect(bar_style);
+            ui.rect(gap);
+            ui.rect(bar_style);
+            let frame = ui.layout_stack.last().unwrap();
 
-            ctx.rect(gap.width(ctx_width - frame.cursor_x - 200 - 14));
-            volume_slider(ctx, &mut volume, 200, top_nav_rect.height);
-            ctx.spacer(bg(menu_bg));
+            ui.rect(gap.width(ui_width - frame.cursor_x - 200 - 14));
+            volume_slider(ui, &mut volume, 200, top_nav_rect.height);
+            ui.spacer(bg(menu_bg));
         });
 
         let player_row_style = style()
@@ -255,50 +249,50 @@ fn main() {
             .selected(rgb(82, 82, 82))
             .selected_border(rgb(170, 170, 170));
 
-        ctx.flow_down(sidebar_rect, |ctx| {
-            ctx.paint_rect(sidebar_rect, bg(panel_bg));
+        ui.flow_down(sidebar_rect, |ui| {
+            ui.paint_rect(sidebar_rect, bg(panel_bg));
 
-            ctx.text("All Music", style().fg(text_dim).pad(6));
+            ui.text("All Music", style().fg(text_dim).pad(6));
 
             for artist in artists {
-                ctx.list_item(artist, false, player_row_style);
+                ui.list_item(artist, false, player_row_style);
             }
         });
 
-        ctx.flow_down(track_rect, |ctx| {
+        ui.flow_down(track_rect, |ui| {
             //TODO: I want to create this header which is based on the font size and not some fixed pixel width.
-            let (album_header_rect, scroll_viewport) = ctx.split_v(24);
+            let (album_header_rect, scroll_viewport) = ui.split_v(24);
 
-            ctx.flow_down(album_header_rect, |ctx| {
-                ctx.paint_rect(album_header_rect, bg(panel_bg));
-                ctx.text(
+            ui.flow_down(album_header_rect, |ui| {
+                ui.paint_rect(album_header_rect, bg(panel_bg));
+                ui.text(
                     "beabadoobee - Fake It Flowers (2020)",
                     style().fg(accent_blue).font_size(14).padl(8).padb(4),
                 );
             });
 
-            total_track_content_height = ctx.scroll(scroll_viewport, Flow::Down, |ctx| {
+            total_track_content_height = ui.scroll(scroll_viewport, Flow::Down, |ui| {
                 scrollbar(
-                    ctx,
+                    ui,
                     scroll_viewport,
                     total_track_content_height,
                     &mut track_scroll_y,
                     scroll_direction,
                 );
 
-                ctx.begin_scroll_view(scroll_viewport, track_scroll_y);
+                ui.begin_scroll_view(scroll_viewport, track_scroll_y);
                 let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
-                let player_row_style = player_row_style.width(ctx.resolve_size(Size::RemainingMinus(20), true));
+                let player_row_style = player_row_style.width(ui.resolve_size(Size::RemainingMinus(20), true));
                 for (idx, track) in tracklist.into_iter().enumerate() {
-                    if ctx.list_item(track, false, player_row_style).clicked {
+                    if ui.list_item(track, false, player_row_style).clicked {
                         println!("Clicked item {idx}")
                     }
                 }
             });
         });
 
-        ctx.paint_rect(track_rect.width(1), bg(border_color));
+        ui.paint_rect(track_rect.width(1), bg(border_color));
 
-        ctx.draw_frame();
+        ui.draw_frame();
     }
 }

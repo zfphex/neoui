@@ -69,7 +69,7 @@ pub struct State {
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
-pub fn ctx<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
+pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
     #[cfg(target_os = "windows")]
     let window = create_window(title, 0, 0, width as i32, height as i32, WindowStyle::DEFAULT);
 
@@ -488,23 +488,23 @@ impl<'a> Context<'a> {
     //     self.paint_rect(bounds.width(width).height(height), style);
     // }
 
-    pub fn flow_down<R>(&mut self, bounds: Rect, ctx: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
         self.begin_layout(Flow::Down, Some(bounds));
-        let result = ctx(self);
+        let result = ui(self);
         self.end_layout();
         result
     }
 
-    pub fn flow_right<R>(&mut self, bounds: Rect, ctx: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn flow_right<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
         self.begin_layout(Flow::Right, Some(bounds));
-        let result = ctx(self);
+        let result = ui(self);
         self.end_layout();
         result
     }
 
-    pub fn scroll<R>(&mut self, bounds: Rect, flow: Flow, ctx: impl FnOnce(&mut Self) -> R) -> usize {
+    pub fn scroll<R>(&mut self, bounds: Rect, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> usize {
         self.begin_layout(flow, Some(bounds));
-        let _ = ctx(self); //Probably fine.
+        let _ = ui(self); //Probably fine.
         self.end_scroll_view()
     }
 

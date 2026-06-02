@@ -1,31 +1,31 @@
 use neoui::*;
 fn main() {
-    let mut ctx = ctx("Test", 1000, 700);
+    let mut ui = ui("Test", 1000, 700);
     loop {
-        if ctx.exit() {
+        if ui.exit() {
             break;
         }
-        ctx.begin_frame(black());
+        ui.begin_frame(black());
 
-        ctx.begin_layout(Flow::Down, None);
-        ctx.text("A", style());
-        ctx.text("B", style());
-        ctx.end_layout();
+        ui.begin_layout(Flow::Down, None);
+        ui.text("A", style());
+        ui.text("B", style());
+        ui.end_layout();
 
-        ctx.begin_layout(Flow::Right, None);
-        ctx.text("Left", style());
-        ctx.text("Right", style());
-        ctx.text("Left", style());
-        ctx.text("Right", style());
-        ctx.text("Left", style());
-        ctx.text("Right", style());
-        ctx.end_layout();
+        ui.begin_layout(Flow::Right, None);
+        ui.text("Left", style());
+        ui.text("Right", style());
+        ui.text("Left", style());
+        ui.text("Right", style());
+        ui.text("Left", style());
+        ui.text("Right", style());
+        ui.end_layout();
 
-        ctx.begin_layout(Flow::Down, None);
-        ctx.text("A", style());
-        ctx.text("B", style());
-        ctx.end_layout();
+        ui.begin_layout(Flow::Down, None);
+        ui.text("A", style());
+        ui.text("B", style());
+        ui.end_layout();
 
-        ctx.draw_frame();
+        ui.draw_frame();
     }
 }

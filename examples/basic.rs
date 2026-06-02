@@ -220,7 +220,7 @@ fn main() {
 
         ctx.flow_right(top_nav_rect, |ctx| {
             for (label, menu) in items {
-                let state = ctx.button(label, menu_style);
+                let state = ctx.text(label, menu_style);
                 if state.clicked {
                     if let Some((cm, _)) = current_menu
                         && cm == menu
@@ -258,7 +258,7 @@ fn main() {
         ctx.flow_down(sidebar_rect, |ctx| {
             ctx.paint_rect(sidebar_rect, bg(panel_bg));
 
-            ctx.button("All Music", style().fg(text_dim).pad(6));
+            ctx.text("All Music", style().fg(text_dim).pad(6));
 
             for artist in artists {
                 ctx.list_item(artist, false, player_row_style);
@@ -271,7 +271,7 @@ fn main() {
 
             ctx.flow_down(album_header_rect, |ctx| {
                 ctx.paint_rect(album_header_rect, bg(panel_bg));
-                ctx.button(
+                ctx.text(
                     "beabadoobee - Fake It Flowers (2020)",
                     style().fg(accent_blue).font_size(14).padl(8).padb(4),
                 );

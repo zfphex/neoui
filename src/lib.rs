@@ -294,6 +294,7 @@ impl<'a> Context<'a> {
         )
     }
 
+    #[doc(hidden)]
     pub fn text_aligned(
         &mut self,
         dest: Rect,
@@ -321,7 +322,7 @@ impl<'a> Context<'a> {
         });
     }
 
-    pub fn button(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
+    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let text_metrics = self.measure_text(&text, font_size);

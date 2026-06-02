@@ -8,22 +8,22 @@ fn main() {
         ctx.begin_frame(black());
 
         ctx.begin_layout(Flow::Down, None);
-        ctx.button("A", style());
-        ctx.button("B", style());
+        ctx.text("A", style());
+        ctx.text("B", style());
         ctx.end_layout();
 
         ctx.begin_layout(Flow::Right, None);
-        ctx.button("Left", style());
-        ctx.button("Right", style());
-        ctx.button("Left", style());
-        ctx.button("Right", style());
-        ctx.button("Left", style());
-        ctx.button("Right", style());
+        ctx.text("Left", style());
+        ctx.text("Right", style());
+        ctx.text("Left", style());
+        ctx.text("Right", style());
+        ctx.text("Left", style());
+        ctx.text("Right", style());
         ctx.end_layout();
 
         ctx.begin_layout(Flow::Down, None);
-        ctx.button("A", style());
-        ctx.button("B", style());
+        ctx.text("A", style());
+        ctx.text("B", style());
         ctx.end_layout();
 
         ctx.draw_frame();

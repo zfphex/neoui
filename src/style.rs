@@ -193,31 +193,8 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
     (r as u32) << 16 | (g as u32) << 8 | (b as u32)
 }
 
-pub const fn hex(color: &str) -> u32 {
-    let bytes = color.as_bytes();
-    if bytes.len() != 7 || bytes[0] != b'#' {
-        panic!("Invalid hex color. Expected '#RRGGBB'");
-    }
-
-    let mut result: u32 = 0;
-    let mut i = 1; // Skip '#'
-
-    while i < bytes.len() {
-        result <<= 4;
-
-        let byte = bytes[i];
-        let digit = match byte {
-            b'0'..=b'9' => byte - b'0',
-            b'a'..=b'f' => byte - b'a' + 10,
-            b'A'..=b'F' => byte - b'A' + 10,
-            _ => panic!("Invalid hex character"),
-        };
-
-        result |= digit as u32;
-        i += 1;
-    }
-
-    result
+pub fn hex(color: &str) -> u32 {
+    u32::from_str_radix(color.split_at(1).1, 16).expect("Invalid hex color")
 }
 
 pub const fn split(color: u32) -> (u8, u8, u8) {

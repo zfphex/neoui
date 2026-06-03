@@ -422,7 +422,7 @@ impl<'a> Context<'a> {
                 style.fg.unwrap_or(white()),
                 font_size,
                 style.alignment.unwrap_or(Alignment::Center),
-                0,
+                depth,
             );
         }
 

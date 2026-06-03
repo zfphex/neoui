@@ -238,7 +238,7 @@ fn main() {
             ui.rect(bar);
             ui.rect(gap);
             ui.rect(bar);
-            ui.rect(gap.width(Size::RemainingMinus(214)));
+            ui.rect(gap.width(Size::FillMinus(214)));
             volume_slider(ui, &mut volume, 200, top_nav_rect.height);
         });
 
@@ -246,6 +246,7 @@ fn main() {
             .pad(8)
             .padl(12)
             .hover(rgb(35, 35, 35))
+            .fillw()
             .hover_border(rgb(90, 90, 90))
             .selected(rgb(82, 82, 82))
             .selected_border(rgb(170, 170, 170));
@@ -280,30 +281,14 @@ fn main() {
 
                 let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
                 let row_style = row_style
-                    // .align(Alignment::Left { pad: 12 })
-                    .width(ui.resolve_size(Size::RemainingMinus(20), true));
+                    .align(Alignment::Left { pad: 12 })
+                    .width(ui.resolve_size(Size::FillMinus(20), true));
+
                 for (idx, track) in tracklist.into_iter().enumerate() {
-                    if ui.list_item(track, idx == selected_song, row_style).clicked {
+                    if ui.item(track, idx == selected_song, row_style).clicked {
                         selected_song = idx;
                         println!("Clicked item {idx}");
                     }
-
-                    // Technically we can remove list item's in favour of just using text.
-                    // TODO: Allow for None backgrounds.
-                    // TODO: How to handle when text is hovered AND selected.
-                    // The selected color should take precedence, but it does
-                    // not know the selected state...
-
-                    // let bg = if idx == selected_song {
-                    //     rgb(82, 82, 82)
-                    // } else {
-                    //     panel_bg
-                    // };
-
-                    // if ui.text(track, row_style.bg(bg)).clicked {
-                    //     selected_song = idx;
-                    //     println!("Clicked item {idx}");
-                    // }
                 }
             });
         });

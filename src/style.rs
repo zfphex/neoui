@@ -3,11 +3,13 @@ use crate::*;
 #[derive(Debug, Clone, Copy)]
 pub enum Size {
     Pixel(usize),
-    /// 0.0 to 1.0 of parent's total space
+    /// 0.0 to 1.0 of parent's total space.
     Percentage(f32),
-    Remaining,
-    RemainingMinus(i32),
-    ///TODO
+    /// Fill remaining space in container.
+    Fill,
+    /// Fill remaing space minus some value.
+    FillMinus(i32),
+    /// TODO
     Fit,
 }
 
@@ -64,6 +66,12 @@ impl Style {
         self
     }
 
+    // TODO: The rendering is cooked for outline thickness.
+    // pub fn border_thickness(mut self, border_thickness: usize) -> Self {
+    //     self.border_thickness = Some(border_thickness);
+    //     self
+    // }
+
     pub fn radius(mut self, r: usize) -> Self {
         self.radius = Some(r);
         self
@@ -105,22 +113,17 @@ impl Style {
     }
 
     pub fn fillw(mut self) -> Self {
-        self.width = Some(Size::Remaining);
+        self.width = Some(Size::Fill);
         self
     }
 
     pub fn fillh(mut self) -> Self {
-        self.height = Some(Size::Remaining);
+        self.height = Some(Size::Fill);
         self
     }
 
     pub fn align(mut self, alignment: Alignment) -> Self {
         self.alignment = Some(alignment);
-        self
-    }
-
-    pub fn outline(mut self, outline_thickness: usize) -> Self {
-        self.border_thickness = Some(outline_thickness);
         self
     }
 
@@ -214,8 +217,11 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
     (r as u32) << 16 | (g as u32) << 8 | (b as u32)
 }
 
-pub fn hex(color: &str) -> u32 {
-    u32::from_str_radix(color.split_at(1).1, 16).expect("Invalid hex color")
+pub const fn hex(color: &str) -> u32 {
+    match u32::from_str_radix(color.split_at(1).1, 16) {
+        Ok(hex) => hex,
+        Err(_) => panic!("Invalid hex color."),
+    }
 }
 
 pub const fn split(color: u32) -> (u8, u8, u8) {
@@ -254,7 +260,7 @@ impl IntoSize for f32 {
 impl IntoSize for i32 {
     fn into(self) -> Option<Size> {
         if self < 0 {
-            Some(Size::RemainingMinus(self))
+            Some(Size::FillMinus(self))
         } else {
             Some(Size::Pixel(self as usize))
         }

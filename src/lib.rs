@@ -219,14 +219,14 @@ impl<'a> Context<'a> {
                 };
                 (total as f32 * pct) as usize
             }
-            Size::Remaining => {
+            Size::Fill => {
                 if horizontal {
                     (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x)
                 } else {
                     (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y)
                 }
             }
-            Size::RemainingMinus(sub) => {
+            Size::FillMinus(sub) => {
                 let remaining = if horizontal {
                     (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x)
                 } else {
@@ -323,10 +323,37 @@ impl<'a> Context<'a> {
         });
     }
 
+    pub fn rect(&mut self, style: Style) -> State {
+        self.item("", false, style)
+    }
+
     pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
+        self.item(text, false, style)
+    }
+
+    pub fn list_item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
+        //By default use align on the left instead of the center.
+        let style = if let Some(pad) = style.padding
+            && style.alignment.is_none()
+        {
+            // TODO: I think there is a clash where we have two padding values for each item?
+            // There is alignment padding and regualr padding?
+            style.align(Alignment::Left { pad: pad.left })
+        } else {
+            style
+        };
+        self.item(text, selected, style)
+    }
+
+    pub fn item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let text_metrics = self.measure_text(&text, font_size);
+        let text_metrics = if text.is_empty() {
+            Rect::default()
+        } else {
+            self.measure_text(&text, font_size)
+        };
+
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
@@ -338,51 +365,6 @@ impl<'a> Context<'a> {
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
         let rect = self.walk_layout(width, height);
-        let clicked = self.clicked(rect);
-        let hovered = self.hovered(rect);
-        let depth = style.depth.unwrap_or(0);
-
-        let bg = if hovered && style.hover.is_some() {
-            style.hover
-        } else {
-            style.bg
-        };
-
-        if let Some(color) = bg {
-            self.commands[depth].push(Command::Rect {
-                rect,
-                clip: self.layout_stack.last().expect("No active frame").clip,
-                color,
-                radius: style.radius.unwrap_or(0),
-                outline_thickness: style.border_thickness.unwrap_or(0),
-            });
-        }
-
-        self.text_aligned(
-            rect,
-            text,
-            style.fg.unwrap_or(white()),
-            font_size,
-            style.alignment.unwrap_or(Alignment::Center),
-            0,
-        );
-
-        State { clicked, hovered, rect }
-    }
-
-    pub fn list_item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
-        let text = text.into();
-        let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let padding = style.padding.unwrap_or_default();
-        let allocated_h = font_size + padding.top + padding.bottom;
-        let width = style
-            .width
-            .map(|w| self.resolve_size(w, true))
-            .unwrap_or_else(|| self.resolve_size(Size::Remaining, true));
-        let rect = self.walk_layout(width, allocated_h);
-        let clicked = self.clicked(rect);
-        let hovered = self.hovered(rect);
-        let depth = style.depth.unwrap_or(0);
 
         if rect.width == 0 || rect.height == 0 {
             return State {
@@ -392,83 +374,18 @@ impl<'a> Context<'a> {
             };
         }
 
-        let bg = if selected {
-            style.selected
-        } else if hovered {
-            style.hover
-        } else {
-            style.bg
-        };
-
-        let clip = self.layout_stack.last().expect("No active frame").clip;
-
-        if let Some(color) = bg {
-            self.commands[depth].push(Command::Rect {
-                rect,
-                clip,
-                color,
-                radius: style.radius.unwrap_or(0),
-                outline_thickness: style.border_thickness.unwrap_or(0),
-            });
-        }
-
-        if selected {
-            if let Some(color) = style.selected {
-                self.commands[depth].push(Command::Rect {
-                    rect,
-                    clip,
-                    color,
-                    radius: style.radius.unwrap_or(0),
-                    outline_thickness: 0,
-                });
-            }
-
-            if let Some(border) = style.selected_border {
-                self.commands[depth].push(Command::Rect {
-                    rect,
-                    clip,
-                    color: border,
-                    radius: style.radius.unwrap_or(0),
-                    outline_thickness: style.border_thickness.unwrap_or(1),
-                });
-            }
-        }
-
-        self.text_aligned(
-            rect,
-            text,
-            style.fg.unwrap_or(white()),
-            font_size,
-            Alignment::Left { pad: padding.left },
-            depth,
-        );
-
-        State { clicked, hovered, rect }
-    }
-
-    pub fn rect(&mut self, style: Style) -> State {
-        let padding = style.padding.unwrap_or_default();
-        let width = style
-            .width
-            .map(|w| self.resolve_size(w, true) + padding.left + padding.right)
-            .unwrap_or(0);
-        let height = style
-            .height
-            .map(|h| self.resolve_size(h, false) + padding.top + padding.bottom)
-            .unwrap_or(0);
-
-        let rect = self.walk_layout(width, height);
         let clicked = self.clicked(rect);
         let hovered = self.hovered(rect);
         let depth = style.depth.unwrap_or(0);
+        let clip = self.layout_stack.last().expect("No active frame").clip;
 
-        let bg = if hovered && style.hover.is_some() {
+        let bg = if selected && style.selected.is_some() {
+            style.selected
+        } else if hovered && style.hover.is_some() {
             style.hover
         } else {
             style.bg
         };
-
-        let clip = self.layout_stack.last().expect("No active frame").clip;
 
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
@@ -480,32 +397,37 @@ impl<'a> Context<'a> {
             });
         }
 
+        let border = if selected && style.selected_border.is_some() {
+            style.selected_border
+        } else if style.border.is_some() {
+            style.border
+        } else {
+            None
+        };
+
+        if let Some(border) = border {
+            self.commands[depth].push(Command::Rect {
+                rect,
+                clip,
+                color: border,
+                radius: style.radius.unwrap_or(0),
+                outline_thickness: style.border_thickness.unwrap_or(1),
+            });
+        }
+
+        if !text.is_empty() {
+            self.text_aligned(
+                rect,
+                text,
+                style.fg.unwrap_or(white()),
+                font_size,
+                style.alignment.unwrap_or(Alignment::Center),
+                0,
+            );
+        }
+
         State { clicked, hovered, rect }
     }
-
-    //Uses a fixed width or fill the remaining space
-    //Should be depricated in favor of Size::Remaining
-    // pub fn spacer(&mut self, style: Style) -> State {
-    //     let frame = self.layout_stack.last_mut().expect("No active layout frame");
-    //     let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-    //     let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
-    //     let width = style.width.unwrap_or(remaining_width);
-    //     let height = style.height.unwrap_or(remaining_height);
-    //     self.rect(style.width(width).height(height))
-    // }
-
-    // TODO
-    // pub fn divider(&mut self, bounds: Rect, style: Style) {
-    //     let frame = self.layout_stack.last_mut().expect("No active layout frame");
-    //     let remaining_width = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-    //     let remaining_height = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
-    //     let (width, height) = match frame.flow {
-    //         Flow::Down => (remaining_width, style.width.unwrap_or(0)),
-    //         Flow::Right => (style.height.unwrap_or(0), remaining_height),
-    //     };
-    //     self.walk_layout(width, remaining_height);
-    //     self.paint_rect(bounds.width(width).height(height), style);
-    // }
 
     pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
         self.begin_layout(Flow::Down, Some(bounds));

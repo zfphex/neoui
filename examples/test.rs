@@ -8,12 +8,13 @@ fn main() {
         ui.begin_frame(black());
 
         ui.begin_layout(Flow::Down, None);
-        ui.text(
-            "This is some example test\nAnother line",
+        let s = ui.text(
+            "A line of text\nAnother line of text.",
             style()
-                //
-                // .border(gray())
-                // .bg(rgb(80, 80, 80))
+                // .bg(red())
+                .bg(gray())
+                //TODO: Borders 
+                // .border(red())
                 .font_size(32),
         );
         ui.end_layout();

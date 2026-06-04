@@ -232,6 +232,14 @@ pub const fn split(color: u32) -> (u8, u8, u8) {
     )
 }
 
+pub const fn split_f32(color: u32) -> (f32, f32, f32) {
+    (
+        (color >> 16 & 0xFF) as f32,
+        (color >> 8 & 0xFF) as f32,
+        (color & 0xFF) as f32,
+    )
+}
+
 impl Default for Size {
     fn default() -> Self {
         Size::Pixel(0)

@@ -279,7 +279,7 @@ impl<'a> Context<'a> {
         let font = self.font.as_ref().expect("Font missing");
         let cache = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
 
-        draw_text_subpixel(
+        draw_text(
             text,
             font,
             0,
@@ -405,6 +405,8 @@ impl<'a> Context<'a> {
             None
         };
 
+        // TODO: Borders render inside of the bounding box
+        // for text which means they can overlap...
         if let Some(border) = border {
             self.commands[depth].push(Command::Rect {
                 rect,
@@ -634,7 +636,7 @@ impl<'a> Context<'a> {
                         size,
                     } => {
                         let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
-                        draw_text_subpixel(
+                        draw_text(
                             &text,
                             self.font.as_ref().unwrap(),
                             x,

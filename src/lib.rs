@@ -485,8 +485,8 @@ impl<'a> Context<'a> {
             Rect::new(
                 parent.cursor_x,
                 parent.cursor_y,
-                parent.bounds.width,
-                parent.bounds.height,
+                (parent.bounds.x + parent.bounds.width).saturating_sub(parent.cursor_x),
+                (parent.bounds.y + parent.bounds.height).saturating_sub(parent.cursor_y),
             )
         };
 

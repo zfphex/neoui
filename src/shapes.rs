@@ -21,12 +21,17 @@ pub enum Alignment {
     BottomRight { padh: usize, padv: usize },
 }
 
-#[track_caller]
 pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
     let mid_x = parent.x + (parent.width / 2) - (child_w / 2);
     let mid_y = parent.y + (parent.height / 2) - (child_h / 2);
     let right_edge = parent.x + parent.width - child_w;
     let bottom_edge = parent.y + parent.height - child_h;
+
+    // hmmm
+    // let mid_x = (parent.x as i32 + (parent.width as i32 / 2) - (child_w as i32 / 2)) as usize;
+    // let mid_y = (parent.y as i32 + (parent.height as i32 / 2) - (child_h as i32 / 2)) as usize;
+    // let right_edge = (parent.x as i32 + parent.width as i32 - child_w as i32) as usize;
+    // let bottom_edge = (parent.y as i32 + parent.height as i32 - child_h as i32) as usize;
 
     let (x, y) = match alignment {
         Alignment::Left { pad } => (parent.x + pad, mid_y),
@@ -475,7 +480,9 @@ pub fn draw_triangle_sdf(
         let right_bound = (x_long + pad_long).max(x_short + pad_short);
 
         let min_x = (left_bound.max(0.0) as usize).max(clip.x).min(window_width);
-        let max_x = (right_bound.max(0.0) as usize).min(clip.x + clip.width).min(window_width);
+        let max_x = (right_bound.max(0.0) as usize)
+            .min(clip.x + clip.width)
+            .min(window_width);
 
         let mut solid_start = window_width;
         let mut solid_end = 0;
@@ -679,9 +686,11 @@ pub fn draw_text_subpixel(
     let x_start = scale(x, display_scale);
     let y_start = scale(y, display_scale);
     let font_size = scale(font_size, display_scale);
+    let line_metrics = font.horizontal_line_metrics(font_size as f32).unwrap();
+    let ascent = line_metrics.ascent;
 
     let mut area = Rect::new(x_start, y_start, 0, 0);
-    let mut y_pos = area.y;
+    let mut y_pos = area.y as f32;
 
     let mut max_x = 0;
     let mut max_y = 0;
@@ -702,10 +711,10 @@ pub fn draw_text_subpixel(
                 (metrics, bitmap)
             });
 
-            let glyph_y = y_pos as f32 - metrics.bounds.height - metrics.bounds.ymin;
+            let glyph_y = y_pos - metrics.bounds.height - metrics.bounds.ymin;
 
             for y_px in 0..metrics.height {
-                let offset = font_size as f32 + glyph_y + y_px as f32;
+                let offset = ascent + glyph_y + y_px as f32;
 
                 if offset < 0.0 {
                     continue;
@@ -780,7 +789,7 @@ pub fn draw_text_subpixel(
             }
         }
 
-        y_pos += font_size;
+        y_pos += line_metrics.new_line_size;
     }
 
     area.height = if max_y >= area.y { max_y + 1 - area.y } else { 0 };

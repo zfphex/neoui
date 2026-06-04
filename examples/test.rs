@@ -8,7 +8,14 @@ fn main() {
         ui.begin_frame(black());
 
         ui.begin_layout(Flow::Down, None);
-        let state = ui.text("A", style().font_size(32).border(gray()).bg(rgb(80, 80, 80)));
+        ui.text(
+            "This is some example test\nAnother line",
+            style()
+                //
+                // .border(gray())
+                // .bg(rgb(80, 80, 80))
+                .font_size(32),
+        );
         ui.end_layout();
 
         ui.draw_frame();

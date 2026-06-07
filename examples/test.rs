@@ -8,7 +8,7 @@ fn main() {
         ui.begin_frame(black());
 
         ui.begin_layout(Flow::Down, None);
-        let s = ui.text(
+        let _s = ui.text(
             "A line of text\nAnother line of text.",
             style()
                 // .bg(red())

@@ -10,40 +10,6 @@ enum Menu {
     Help,
 }
 
-fn volume_slider(ui: &mut Context, volume: &mut f32, width: usize, height: usize) {
-    let rect = ui.walk_layout(width, height);
-    ui.paint_rect(rect, bg(rgb(25, 25, 25)));
-    let window = ui.window.as_ref().unwrap();
-    if let Some(inital) = window.left_mouse.inital_position
-        && window.left_mouse.pressed
-    {
-        if inital.intersects(rect) {
-            let click_x = window.mouse_position.x.saturating_sub(rect.x);
-            *volume = (click_x as f32 / width as f32).clamp(0.0, 1.0);
-        }
-    }
-
-    let max_track_h = 6;
-    let cy = rect.y + height / 2;
-
-    ui.paint_triangle(
-        (rect.x, cy + max_track_h),
-        (rect.x + width, cy + max_track_h),
-        (rect.x + width, cy - max_track_h),
-        bg(black()),
-    );
-
-    let thumb_w = 12;
-    let thumb_h = 18;
-
-    let available_width = width.saturating_sub(thumb_w);
-    let thumb_x = rect.x + (*volume * available_width as f32).round() as usize;
-    let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
-
-    let thumb_color = rgb(0, 102, 204);
-    ui.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
-}
-
 pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll_y: &mut usize, scroll_direction: i32) {
     if content_height <= viewport.height {
         return;
@@ -60,12 +26,10 @@ pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll
     let pad = 4;
     let x = viewport.x + viewport.width - w - pad;
     let hitbox = Rect::new(x.saturating_sub(pad), viewport.y, w + pad * 2, viewport.height);
-
-    let window = ui.window.as_mut().unwrap();
     let mut handled = false;
 
-    if window.left_mouse.pressed && window.left_mouse.inital_position.is_some_and(|p| p.intersects(hitbox)) {
-        let click_y = window.mouse_position.y.saturating_sub(viewport.y) as f32;
+    if ui.dragged(hitbox) {
+        let click_y = ui.mouse_position().y.saturating_sub(viewport.y) as f32;
 
         // This maps the mouse position to a 0.0 - 1.0 ratio of the entire track,
         // preventing the thumb from jumping to the cursor center.
@@ -75,7 +39,7 @@ pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll
         handled = true;
     }
 
-    if !handled && scroll_direction != 0 && window.mouse_position.intersects(viewport) {
+    if !handled && scroll_direction != 0 && ui.mouse_position().intersects(viewport) {
         if scroll_direction > 0 {
             *scroll_y = scroll_y.saturating_add(50);
         } else {
@@ -239,7 +203,39 @@ fn main() {
             ui.rect(gap);
             ui.rect(bar);
             ui.rect(gap.width(Size::FillMinus(214)));
-            volume_slider(ui, &mut volume, 200, top_nav_rect.height);
+
+            //Volume slider.
+            {
+                let width = 200;
+                let height = top_nav_rect.height;
+                let rect = ui.walk_layout(width, height);
+
+                ui.paint_rect(rect, bg(rgb(25, 25, 25)));
+
+                if ui.dragged(rect) {
+                    let click_x = ui.mouse_position().x.saturating_sub(rect.x);
+                    volume = (click_x as f32 / width as f32).clamp(0.0, 1.0);
+                }
+
+                let track_height = 6;
+                let cy = rect.y + height / 2;
+
+                ui.paint_triangle(
+                    (rect.x, cy + track_height),
+                    (rect.x + width, cy + track_height),
+                    (rect.x + width, cy - track_height),
+                    bg(black()),
+                );
+
+                let thumb_w = 12;
+                let thumb_h = 18;
+                let available_width = width.saturating_sub(thumb_w);
+                let thumb_x = rect.x + (volume * available_width as f32).round() as usize;
+                let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
+                let thumb_color = rgb(0, 102, 204);
+
+                ui.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
+            }
         });
 
         let row_style = style()

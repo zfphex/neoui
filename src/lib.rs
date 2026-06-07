@@ -250,6 +250,18 @@ impl<'a> Context<'a> {
         window.mouse_position.intersects(rect) && window.mouse_position.intersects(frame.bounds)
     }
 
+    pub fn dragged(&self, rect: Rect) -> bool {
+        let window = self.window.as_ref().unwrap();
+        let Some(inital) = window.left_mouse.inital_position else {
+            return false;
+        };
+        inital.intersects(rect) && window.left_mouse.pressed
+    }
+
+    pub fn mouse_position(&self) -> Rect {
+        self.window.as_ref().unwrap().mouse_position
+    }
+
     //TODO: This should really be paint_rect or something.
     //Users should be able to use the layout system to render rectangles.
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {

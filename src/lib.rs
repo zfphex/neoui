@@ -258,6 +258,18 @@ impl<'a> Context<'a> {
         inital.intersects(rect) && window.left_mouse.pressed
     }
 
+    pub fn lost_focus(&self, rect: Rect) -> bool {
+        let window = self.window.as_ref().unwrap();
+        let Some(inital) = window.left_mouse.inital_position else {
+            return false;
+        };
+        let Some(release) = window.left_mouse.release_position else {
+            return false;
+        };
+
+        window.left_mouse.released && !inital.intersects(rect) && !release.intersects(rect)
+    }
+
     pub fn mouse_position(&self) -> Rect {
         self.window.as_ref().unwrap().mouse_position
     }

@@ -158,16 +158,9 @@ fn main() {
             }
             ui.end_layout_absolute();
 
-            let window = ui.window.as_mut().unwrap();
-            let left = &mut window.left_mouse;
-            if let Some(inital) = left.inital_position
-                && let Some(release) = left.release_position
-            {
-                if left.released && !inital.intersects(rect) && !release.intersects(rect) {
-                    left.inital_position = None;
-                    left.released = false;
-                    current_menu = None;
-                }
+            //TODO: This could maybe be part of the response.
+            if ui.lost_focus(rect) {
+                current_menu = None;
             }
         }
 
@@ -185,9 +178,7 @@ fn main() {
                 );
 
                 if state.clicked {
-                    if let Some((cm, _)) = current_menu
-                        && cm == menu
-                    {
+                    if current_menu.is_some_and(|(cm, _)| cm == menu) {
                         current_menu = None;
                     } else {
                         current_menu = Some((menu, state.rect));

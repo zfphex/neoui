@@ -82,7 +82,6 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
         window: Some(window),
         layout_stack: Vec::new(),
         glyph_cache: None,
-        glyph_cache_subpixel: None,
         default_font_size: 32,
     }
 }
@@ -93,7 +92,6 @@ pub struct Context<'a> {
     pub window: Option<std::pin::Pin<Box<Window>>>,
     pub layout_stack: Vec<Frame>,
     pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    pub glyph_cache_subpixel: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub default_font_size: usize,
 }
 
@@ -128,7 +126,7 @@ impl<'a> Context<'a> {
         //            |
         //  0 ========|========= <--  Screen top
         //            |        |
-        //            |        | <-- `y` = prev_y - scroll_y
+        //            |        | <-- `y` = rect.y - frame.scroll_y
         //            |        |     (Distance from screen top)
         //  prev_y -> +------+ |
         //            | ITEM | |
@@ -301,7 +299,7 @@ impl<'a> Context<'a> {
     pub fn measure_text(&mut self, text: &str, font_size: usize) -> Rect {
         let width = self.width();
         let font = self.font.as_ref().expect("Font missing");
-        let cache = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+        let cache = self.glyph_cache.get_or_insert_with(HashMap::new);
 
         draw_text(
             text,
@@ -659,7 +657,7 @@ impl<'a> Context<'a> {
                         color,
                         size,
                     } => {
-                        let cache_map = self.glyph_cache_subpixel.get_or_insert_with(HashMap::new);
+                        let cache_map = self.glyph_cache.get_or_insert_with(HashMap::new);
                         draw_text(
                             &text,
                             self.font.as_ref().unwrap(),

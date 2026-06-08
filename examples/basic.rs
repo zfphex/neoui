@@ -193,7 +193,7 @@ fn main() {
             ui.rect(bar);
             ui.rect(gap);
             ui.rect(bar);
-            ui.rect(gap.width(Size::FillMinus(214)));
+            ui.rect(gap.width(-214));
 
             //Volume slider.
             {

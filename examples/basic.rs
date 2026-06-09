@@ -115,7 +115,7 @@ fn main() {
 
     loop {
         let mut scroll_direction = 0;
-        match ui.window.as_mut().unwrap().event() {
+        match ui.window.event() {
             Some(event) => match event {
                 Event::Quit => return,
                 Event::Input(Key::Escape, _) => return,

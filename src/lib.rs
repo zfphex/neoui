@@ -79,7 +79,7 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
     Context {
         commands: [const { Vec::new() }; 16],
         font: Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()),
-        window: Some(window),
+        window: window,
         layout_stack: Vec::new(),
         glyph_cache: None,
         default_font_size: 32,
@@ -89,7 +89,7 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
 pub struct Context<'a> {
     pub commands: [Vec<Command<'a>>; 16],
     pub font: Option<fontdue::Font>,
-    pub window: Option<std::pin::Pin<Box<Window>>>,
+    pub window: std::pin::Pin<Box<Window>>,
     pub layout_stack: Vec<Frame>,
     pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub default_font_size: usize,
@@ -238,38 +238,34 @@ impl<'a> Context<'a> {
 
     pub fn clicked(&mut self, rect: Rect) -> bool {
         let frame = self.layout_stack.last().expect("No active frame");
-        let window = self.window.as_mut().unwrap();
-        window.left_mouse.clicked(rect) && window.mouse_position.intersects(frame.bounds)
+        self.window.left_mouse.clicked(rect) && self.window.mouse_position.intersects(frame.bounds)
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
         let frame = self.layout_stack.last().expect("No active frame");
-        let window = self.window.as_ref().unwrap();
-        window.mouse_position.intersects(rect) && window.mouse_position.intersects(frame.bounds)
+        self.window.mouse_position.intersects(rect) && self.window.mouse_position.intersects(frame.bounds)
     }
 
     pub fn dragged(&self, rect: Rect) -> bool {
-        let window = self.window.as_ref().unwrap();
-        let Some(inital) = window.left_mouse.inital_position else {
+        let Some(inital) = self.window.left_mouse.inital_position else {
             return false;
         };
-        inital.intersects(rect) && window.left_mouse.pressed
+        inital.intersects(rect) && self.window.left_mouse.pressed
     }
 
     pub fn lost_focus(&self, rect: Rect) -> bool {
-        let window = self.window.as_ref().unwrap();
-        let Some(inital) = window.left_mouse.inital_position else {
+        let Some(inital) = self.window.left_mouse.inital_position else {
             return false;
         };
-        let Some(release) = window.left_mouse.release_position else {
+        let Some(release) = self.window.left_mouse.release_position else {
             return false;
         };
 
-        window.left_mouse.released && !inital.intersects(rect) && !release.intersects(rect)
+        self.window.left_mouse.released && !inital.intersects(rect) && !release.intersects(rect)
     }
 
     pub fn mouse_position(&self) -> Rect {
-        self.window.as_ref().unwrap().mouse_position
+        self.window.mouse_position
     }
 
     //TODO: This should really be paint_rect or something.
@@ -602,16 +598,13 @@ impl<'a> Context<'a> {
     }
 
     pub fn fill(&mut self, color: u32) {
-        let window = self.window.as_mut().unwrap();
-        window.buffer.fill(color);
+        self.window.buffer.fill(color);
     }
 
     pub fn draw_frame(&mut self) {
         profile!();
         let self_width = self.width();
         let self_height = self.height();
-        let window = self.window.as_mut().unwrap();
-
         for layer in &mut self.commands {
             for cmd in layer.drain(..) {
                 match cmd {
@@ -624,7 +617,7 @@ impl<'a> Context<'a> {
                     } => {
                         if outline_thickness == 0 {
                             draw_rounded_rect(
-                                &mut window.buffer,
+                                &mut self.window.buffer,
                                 rect.x,
                                 rect.y,
                                 rect.width,
@@ -638,7 +631,7 @@ impl<'a> Context<'a> {
                         } else {
                             //rounded rect outline doesn't work for 1px outlines??
                             draw_rect_outline(
-                                &mut window.buffer,
+                                &mut self.window.buffer,
                                 rect.x,
                                 rect.y,
                                 rect.width,
@@ -664,9 +657,9 @@ impl<'a> Context<'a> {
                             x,
                             y,
                             size,
-                            window.display_scale(),
+                            self.window.display_scale(),
                             self_width,
-                            &mut window.buffer,
+                            &mut self.window.buffer,
                             color,
                             false,
                             cache_map,
@@ -682,7 +675,7 @@ impl<'a> Context<'a> {
                     } => {
                         //
                         draw_triangle_sdf(
-                            &mut window.buffer,
+                            &mut self.window.buffer,
                             self_width,
                             self_height,
                             ax,
@@ -699,24 +692,20 @@ impl<'a> Context<'a> {
             }
         }
 
-        window.draw();
-        window.vsync();
+        self.window.draw();
+        self.window.vsync();
     }
 
     pub fn width(&mut self) -> usize {
-        let window = self.window.as_ref().unwrap();
-        window.width()
+        self.window.width()
     }
 
     pub fn height(&mut self) -> usize {
-        let window = self.window.as_ref().unwrap();
-        window.height()
+        self.window.height()
     }
 
     pub fn exit(&mut self) -> bool {
-        let window = self.window.as_mut().unwrap();
-
-        if let Some(event) = window.event() {
+        if let Some(event) = self.window.event() {
             return match event {
                 Event::Quit | Event::Input(Key::Escape, _) => true,
                 _ => false,

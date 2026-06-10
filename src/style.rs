@@ -51,12 +51,12 @@ pub struct Style {
     pub depth: Option<usize>,
     pub alignment: Option<Alignment>,
     pub bounds: Option<Rect>,
-    pub gap: Option<usize>,
+    pub gap: Option<Size>,
 }
 
 impl Style {
-    pub fn gap(mut self, gap: usize) -> Self {
-        self.gap = Some(gap);
+    pub fn gap(mut self, gap: impl IntoSize) -> Self {
+        self.gap = gap.into_size();
         self
     }
 

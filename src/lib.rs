@@ -105,11 +105,11 @@ impl<'a> Context<'a> {
             Flow::Down => {
                 frame.cursor_y += height + gap;
                 frame.max_child_width = frame.max_child_width.max(width);
-                frame.max_child_height += height;
+                frame.max_child_height += height + gap;
             }
             Flow::Right => {
                 frame.cursor_x += width + gap;
-                frame.max_child_width += width;
+                frame.max_child_width += width + gap;
                 frame.max_child_height = frame.max_child_height.max(height);
             }
         }
@@ -401,7 +401,13 @@ impl<'a> Context<'a> {
             .map(|h| self.resolve_size(h, Flow::Down))
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
-        let gap = style.gap.unwrap_or_default();
+        let gap = style
+            .gap
+            .map(|gap| {
+                let flow = self.layout_stack.last().expect("No active frame").flow;
+                self.resolve_size(gap, flow)
+            })
+            .unwrap_or_default();
         let rect = self.walk_layout(width, height, gap);
 
         if rect.width == 0 || rect.height == 0 {

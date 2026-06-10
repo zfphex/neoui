@@ -51,9 +51,15 @@ pub struct Style {
     pub depth: Option<usize>,
     pub alignment: Option<Alignment>,
     pub bounds: Option<Rect>,
+    pub gap: Option<usize>,
 }
 
 impl Style {
+    pub fn gap(mut self, gap: usize) -> Self {
+        self.gap = Some(gap);
+        self
+    }
+
     pub fn bounds(mut self, bounds: Rect) -> Self {
         self.bounds = Some(bounds);
         self
@@ -111,12 +117,12 @@ impl Style {
     }
 
     pub fn width(mut self, w: impl IntoSize) -> Self {
-        self.width = w.into();
+        self.width = w.into_size();
         self
     }
 
     pub fn height(mut self, h: impl IntoSize) -> Self {
-        self.height = h.into();
+        self.height = h.into_size();
         self
     }
 
@@ -257,24 +263,24 @@ impl Default for Size {
 /// Helper trait to simplify writing Size constraints.
 /// Allows users to write None, 13, 0.2, -32 or Size::*.
 pub trait IntoSize {
-    fn into(self) -> Option<Size>;
+    fn into_size(self) -> Option<Size>;
 }
 
 impl IntoSize for Size {
-    fn into(self) -> Option<Size> {
+    fn into_size(self) -> Option<Size> {
         Some(self)
     }
 }
 
 impl IntoSize for f32 {
-    fn into(self) -> Option<Size> {
+    fn into_size(self) -> Option<Size> {
         Some(Size::Percentage(self))
     }
 }
 
 //Yeah keep it for now, I'll think about it later...
 impl IntoSize for i32 {
-    fn into(self) -> Option<Size> {
+    fn into_size(self) -> Option<Size> {
         if self < 0 {
             Some(Size::FillMinus(self))
         } else {
@@ -284,7 +290,7 @@ impl IntoSize for i32 {
 }
 
 impl IntoSize for usize {
-    fn into(self) -> Option<Size> {
+    fn into_size(self) -> Option<Size> {
         Some(Size::Pixel(self))
     }
 }

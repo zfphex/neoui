@@ -14,15 +14,16 @@ fn main() {
         let (sidebar, tracks) = rem.split_h(260);
 
         ui.flow_right_styled(style().bounds(top_nav).bg(gray()), |ui| {
-            ui.text("text", style());
-            ui.text("text", style());
-            ui.text("text", style());
-            ui.text("text", style());
-            ui.text("text", style());
-            ui.text("text", style());
-            ui.text("text", style());
-            ui.text("text", style());
-            ui.text("text", style());
+            let s = style().gap(12);
+            ui.text("text", s);
+            ui.text("text", s);
+            ui.text("text", s);
+            ui.text("text", s);
+            ui.text("text", s);
+            ui.text("text", s);
+            ui.text("text", s);
+            ui.text("text", s);
+            ui.text("text", s);
         });
 
         ui.flow_down_styled(style().bounds(sidebar).bg(rgb(30, 40, 80)), |_| {});

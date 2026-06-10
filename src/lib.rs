@@ -97,18 +97,18 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
-    pub fn walk_layout(&mut self, width: usize, height: usize) -> Rect {
+    pub fn walk_layout(&mut self, width: usize, height: usize, gap: usize) -> Rect {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
         let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
 
         match frame.flow {
             Flow::Down => {
-                frame.cursor_y += height;
+                frame.cursor_y += height + gap;
                 frame.max_child_width = frame.max_child_width.max(width);
                 frame.max_child_height += height;
             }
             Flow::Right => {
-                frame.cursor_x += width;
+                frame.cursor_x += width + gap;
                 frame.max_child_width += width;
                 frame.max_child_height = frame.max_child_height.max(height);
             }
@@ -173,7 +173,7 @@ impl<'a> Context<'a> {
 
     /// Splits the current frame's remaining space horizontally.
     pub fn split_h(&self, left_width: impl Into<Size>) -> (Rect, Rect) {
-        let left_width = self.resolve_size(left_width.into(), true);
+        let left_width = self.resolve_size(left_width.into(), Flow::Right);
         let frame = self.layout_stack.last().expect("No active frame");
 
         let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
@@ -190,7 +190,7 @@ impl<'a> Context<'a> {
 
     /// Splits the current frame's remaining space vertically.
     pub fn split_v(&self, top_height: impl IntoSize) -> (Rect, Rect) {
-        let top_height = self.resolve_size(top_height.into().unwrap_or_default(), false);
+        let top_height = self.resolve_size(top_height.into_size().unwrap_or_default(), Flow::Down);
         let frame = self.layout_stack.last().expect("No active frame");
 
         let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
@@ -205,30 +205,25 @@ impl<'a> Context<'a> {
         (top_rect, bottom_rect)
     }
 
-    pub fn resolve_size(&self, size: Size, horizontal: bool) -> usize {
+    pub fn resolve_size(&self, size: Size, flow: Flow) -> usize {
         let frame = self.layout_stack.last().expect("No active frame");
         match size {
             Size::Pixel(px) => px,
             Size::Percentage(pct) => {
-                let total = if horizontal {
-                    frame.bounds.width
-                } else {
-                    frame.bounds.height
+                let total = match flow {
+                    Flow::Down => frame.bounds.height,
+                    Flow::Right => frame.bounds.width,
                 };
                 (total as f32 * pct) as usize
             }
-            Size::Fill => {
-                if horizontal {
-                    (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x)
-                } else {
-                    (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y)
-                }
-            }
+            Size::Fill => match flow {
+                Flow::Down => (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y),
+                Flow::Right => (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x),
+            },
             Size::FillMinus(sub) => {
-                let remaining = if horizontal {
-                    (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x)
-                } else {
-                    (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y)
+                let remaining = match flow {
+                    Flow::Down => (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y),
+                    Flow::Right => (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x),
                 };
                 remaining.saturating_sub(sub.abs() as usize)
             }
@@ -357,6 +352,14 @@ impl<'a> Context<'a> {
         });
     }
 
+    pub fn gap(&mut self, gap: impl IntoSize) {
+        if let Some(gap) = gap.into_size() {
+            let frame = self.layout_stack.last().expect("No active frame");
+            let gap = self.resolve_size(gap, frame.flow);
+            self.walk_layout(0, 0, gap);
+        }
+    }
+
     pub fn rect(&mut self, style: Style) -> State {
         self.item("", false, style)
     }
@@ -391,14 +394,15 @@ impl<'a> Context<'a> {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
-            .map(|w| self.resolve_size(w, true))
+            .map(|w| self.resolve_size(w, Flow::Right))
             .unwrap_or(text_metrics.width + padding.left + padding.right);
         let height = style
             .height
-            .map(|h| self.resolve_size(h, false))
+            .map(|h| self.resolve_size(h, Flow::Down))
             .unwrap_or(text_metrics.height + padding.top + padding.bottom);
 
-        let rect = self.walk_layout(width, height);
+        let gap = style.gap.unwrap_or_default();
+        let rect = self.walk_layout(width, height, gap);
 
         if rect.width == 0 || rect.height == 0 {
             return State {

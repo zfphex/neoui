@@ -187,19 +187,19 @@ fn main() {
             }
 
             let bar = style().width(1).height(top_nav_rect.height).bg(bar_color);
-            let gap = bar.bg(menu_bg).width(120);
             ui.rect(bar);
-            ui.rect(gap);
+            ui.gap(120);
             ui.rect(bar);
-            ui.rect(gap);
+            ui.gap(120);
             ui.rect(bar);
-            ui.rect(gap.width(-214));
+            ui.gap(120);
+            ui.gap(-214);
 
             //Volume slider.
             {
                 let width = 200;
                 let height = top_nav_rect.height;
-                let rect = ui.walk_layout(width, height);
+                let rect = ui.walk_layout(width, height, 0);
 
                 ui.paint_rect(rect, bg(rgb(25, 25, 25)));
 
@@ -268,7 +268,7 @@ fn main() {
                 let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
                 let row_style = row_style
                     .align(Alignment::Left { pad: 12 })
-                    .width(ui.resolve_size(Size::FillMinus(20), true));
+                    .width(ui.resolve_size(Size::FillMinus(20), Flow::Right));
 
                 for (idx, track) in tracklist.into_iter().enumerate() {
                     if ui.item(track, idx == selected_song, row_style).clicked {

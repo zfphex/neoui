@@ -30,13 +30,24 @@ pub fn pad(p: usize) -> Padding {
     }
 }
 
+#[rustfmt::skip] 
+pub mod border {
+    pub const NONE:   u8 = 0     ;
+    pub const TOP:    u8 = 1 << 0;
+    pub const BOTTOM: u8 = 1 << 1;
+    pub const LEFT:   u8 = 1 << 2;
+    pub const RIGHT:  u8 = 1 << 3;
+    pub const ALL:    u8 = 0b1111;
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Style {
     pub bg: Option<u32>,
     pub fg: Option<u32>,
-    pub border: Option<u32>,
+    // pub border: Option<u32>,
     //TODO: No hover border thickness?
     pub border_thickness: Option<usize>,
+    pub border_sides: Option<u8>,
     pub selected: Option<u32>,
     pub selected_border: Option<u32>,
     pub hover: Option<u32>,
@@ -75,16 +86,20 @@ impl Style {
         self
     }
 
-    pub fn border(mut self, color: u32) -> Self {
-        self.border = Some(color);
+    // pub fn border(mut self, color: u32) -> Self {
+    //     self.border = Some(color);
+    //     self
+    // }
+
+    pub fn border_thickness(mut self, border_thickness: usize) -> Self {
+        self.border_thickness = Some(border_thickness);
         self
     }
 
-    // TODO: The rendering is cooked for outline thickness.
-    // pub fn border_thickness(mut self, border_thickness: usize) -> Self {
-    //     self.border_thickness = Some(border_thickness);
-    //     self
-    // }
+    pub fn border_sides(mut self, border_sides: u8) -> Self {
+        self.border_sides = Some(border_sides);
+        self
+    }
 
     pub fn radius(mut self, r: usize) -> Self {
         self.radius = Some(r);

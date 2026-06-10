@@ -41,7 +41,8 @@ pub enum Command<'a> {
         clip: Rect,
         color: u32,
         radius: usize,
-        outline_thickness: usize,
+        border_thickness: usize,
+        border_sides: u8,
     },
     Triangle {
         a: (usize, usize),
@@ -290,7 +291,10 @@ impl<'a> Context<'a> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.border_thickness.unwrap_or(0),
+                // border_color: style.border.unwrap_or(0),
+                #[rustfmt::skip] 
+                border_thickness: style.border_thickness.unwrap_or(0), 
+                border_sides: style.border_sides.unwrap_or(border::ALL),
             });
         }
     }
@@ -432,17 +436,19 @@ impl<'a> Context<'a> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.border_thickness.unwrap_or(0),
+                border_thickness: style.border_thickness.unwrap_or(0),
+                border_sides: style.border_sides.unwrap_or(border::ALL),
             });
         }
 
-        let border = if selected && style.selected_border.is_some() {
-            style.selected_border
-        } else if style.border.is_some() {
-            style.border
-        } else {
-            None
-        };
+        // let border = if selected && style.selected_border.is_some() {
+        //     style.selected_border
+        // } else if style.border.is_some() {
+        //     style.border
+        // } else {
+        //     None
+        // };
+        let border = None;
 
         // TODO: Borders render inside of the bounding box
         // for text which means they can overlap...
@@ -452,7 +458,8 @@ impl<'a> Context<'a> {
                 clip,
                 color: border,
                 radius: style.radius.unwrap_or(0),
-                outline_thickness: style.border_thickness.unwrap_or(1),
+                border_thickness: style.border_thickness.unwrap_or(1),
+                border_sides: style.border_sides.unwrap_or(border::ALL),
             });
         }
 
@@ -676,9 +683,10 @@ impl<'a> Context<'a> {
                         clip,
                         color,
                         radius,
-                        outline_thickness,
+                        border_thickness,
+                        border_sides,
                     } => {
-                        if outline_thickness == 0 {
+                        if border_thickness == 0 {
                             draw_rounded_rect(
                                 &mut self.window.buffer,
                                 rect.x,
@@ -702,6 +710,7 @@ impl<'a> Context<'a> {
                                 self_width,
                                 color,
                                 clip,
+                                border_sides,
                             )
                         }
                     }

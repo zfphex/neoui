@@ -85,7 +85,10 @@ pub fn draw_rect_outline(
     window_width: usize,
     color: u32,
     clip: Rect,
+    sides: u8,
 ) {
+    use border::*;
+
     if height == 0 || width == 0 {
         return;
     }
@@ -93,25 +96,34 @@ pub fn draw_rect_outline(
     let min_y = y.max(clip.y);
     let max_y = (y + height).min(clip.y + clip.height);
     let min_x = x.max(clip.x);
-    let max_x = (x + width + 1).min(clip.x + clip.width);
+    let max_x = (x + width).min(clip.x + clip.width);
 
     for py in min_y..max_y {
-        if py == y || py == y + height - 1 {
-            let row_start = py * window_width + min_x;
-            let row_end = py * window_width + max_x;
-            if min_x < max_x {
+        if py == y {
+            if sides & TOP != 0 && min_x < max_x {
+                let row_start = py * window_width + min_x;
+                let row_end = py * window_width + max_x;
+                if let Some(slice) = buffer.get_mut(row_start..row_end) {
+                    slice.fill(color);
+                }
+            }
+        } else if py == y + height.saturating_sub(1) {
+            if sides & BOTTOM != 0 && min_x < max_x {
+                let row_start = py * window_width + min_x;
+                let row_end = py * window_width + max_x;
                 if let Some(slice) = buffer.get_mut(row_start..row_end) {
                     slice.fill(color);
                 }
             }
         } else {
-            if x >= min_x && x < max_x {
+            if sides & LEFT != 0 && x >= min_x && x < max_x {
                 if let Some(b) = buffer.get_mut(py * window_width + x) {
                     *b = color;
                 }
             }
-            if x + width >= min_x && x + width < max_x {
-                if let Some(b) = buffer.get_mut(py * window_width + x + width) {
+            let right_x = x + width.saturating_sub(1);
+            if sides & RIGHT != 0 && right_x >= min_x && right_x < max_x {
+                if let Some(b) = buffer.get_mut(py * window_width + right_x) {
                     *b = color;
                 }
             }
@@ -232,7 +244,7 @@ pub fn draw_rounded_rect_outline(
     }
 
     if radius == 0 {
-        draw_rect_outline(buffer, x, y, width, height, window_width, color, clip);
+        draw_rect_outline(buffer, x, y, width, height, window_width, color, clip, border::ALL);
     }
 
     let radius = radius.min(width / 2).min(height / 2);

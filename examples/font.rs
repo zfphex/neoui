@@ -8,10 +8,44 @@ fn main() {
             break;
         }
 
-        ui.begin_frame(black());
+        ui.start_frame(black());
 
-        //TODO: This should be aligned on the horizon line, currently it's not?
-        ui.text("Example", style().bg(gray()));
+        let (top_nav, rem) = ui.split_v(30);
+        let (sidebar, tracks) = rem.split_h(260);
+
+        ui.flow_right_styled(style().bounds(top_nav).bg(gray()), |ui| {
+            ui.text("text", style());
+            ui.text("text", style());
+            ui.text("text", style());
+            ui.text("text", style());
+            ui.text("text", style());
+            ui.text("text", style());
+            ui.text("text", style());
+            ui.text("text", style());
+            ui.text("text", style());
+        });
+
+        ui.flow_down_styled(style().bounds(sidebar).bg(rgb(30, 40, 80)), |_| {});
+
+        ui.flow_down_styled(style().bounds(tracks).bg(rgb(90, 40, 50)), |_| {});
+
+        // ui.flow_down_styled(style().width(0.5).bg(rgb(30, 30, 30)), |ui| {
+        //     ui.text("Okay", style());
+        // });
+
+        // ui.flow_down_styled(style().width(0.5).bg(rgb(80, 90, 80)), |ui| {
+        //     ui.text("Okay", style());
+        // });
+
+        // ui.flow_down_styled(style().width(0.5).bg(rgb(90, 30, 20)), |ui| {
+        //     ui.text("Okay", style());
+        // });
+
+        // ui.flow_right_styled(style().height(300).bg(rgb(20, 90, 20)), |ui| {
+        //     for _ in 0..10 {
+        //         ui.text("Okay", style());
+        //     }
+        // });
 
         ui.draw_frame();
     }

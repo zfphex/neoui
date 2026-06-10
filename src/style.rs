@@ -42,15 +42,23 @@ pub struct Style {
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
     pub font_size: Option<usize>,
+    // pub x: Option<usize>,
+    // pub y: Option<usize>,
     pub width: Option<Size>,
     pub height: Option<Size>,
     pub padding: Option<Padding>,
     pub radius: Option<usize>,
     pub depth: Option<usize>,
     pub alignment: Option<Alignment>,
+    pub bounds: Option<Rect>,
 }
 
 impl Style {
+    pub fn bounds(mut self, bounds: Rect) -> Self {
+        self.bounds = Some(bounds);
+        self
+    }
+
     pub fn bg(mut self, color: u32) -> Self {
         self.bg = Some(color);
         self

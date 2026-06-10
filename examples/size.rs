@@ -9,7 +9,7 @@ fn main() {
             break;
         }
 
-        ui.begin_frame(black());
+        ui.start_frame(black());
 
         // Creates two relatively sized rectangles.
         let (t, b) = ui.split_v(p.sin().abs());

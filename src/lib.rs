@@ -253,6 +253,22 @@ impl<'a> Context<'a> {
         inital.intersects(rect) && self.window.left_mouse.pressed
     }
 
+    /// Return what percentage of the rectangle the user has dragged.
+    pub fn drag_percentage(&self, rect: Rect) -> Option<f32> {
+        if !self.dragged(rect) {
+            return None;
+        }
+
+        if rect.width == 0 {
+            return Some(0.0);
+        }
+
+        let x = self.window.mouse_position.x.saturating_sub(rect.x);
+        let percent = (x as f32 / rect.width as f32).clamp(0.0, 1.0);
+
+        Some(percent)
+    }
+
     pub fn lost_focus(&self, rect: Rect) -> bool {
         let Some(inital) = self.window.left_mouse.inital_position else {
             return false;
@@ -463,6 +479,48 @@ impl<'a> Context<'a> {
         result
     }
 
+    pub fn flow_styled<R>(&mut self, style: Style, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let parent = self.layout_stack.last().expect("Layout stack empty");
+        let mut rect = Rect::new(
+            parent.cursor_x,
+            parent.cursor_y,
+            (parent.bounds.x + parent.bounds.width).saturating_sub(parent.cursor_x),
+            (parent.bounds.y + parent.bounds.height).saturating_sub(parent.cursor_y),
+        );
+
+        if let Some(bounds) = style.bounds {
+            rect = bounds;
+        }
+
+        if let Some(width) = style.width {
+            (rect, _) = self.split_h(width);
+        };
+
+        //TODO: Idk what if the user wants to split twice.
+        //What would that even be?
+        //Currently we just override.
+        if let Some(height) = style.height {
+            (rect, _) = self.split_v(height);
+        };
+
+        if style.bg.is_some() {
+            self.paint_rect(rect, style);
+        }
+
+        self.begin_layout(flow, Some(rect));
+        let result = ui(self);
+        self.end_layout();
+        result
+    }
+
+    pub fn flow_down_styled<R>(&mut self, style: Style, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.flow_styled(style, Flow::Down, ui)
+    }
+
+    pub fn flow_right_styled<R>(&mut self, style: Style, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.flow_styled(style, Flow::Right, ui)
+    }
+
     //Currently no horizontal scroll support.
     pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> usize {
         let parent = self.layout_stack.last().expect("Layout stack empty");
@@ -484,7 +542,7 @@ impl<'a> Context<'a> {
         self.end_scroll_view()
     }
 
-    pub fn begin_frame(&mut self, fill_color: u32) {
+    pub fn start_frame(&mut self, fill_color: u32) {
         let bounds = Rect::new(0, 0, self.width(), self.height());
         self.fill(fill_color);
         self.layout_stack.clear();

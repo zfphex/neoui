@@ -5,7 +5,7 @@ fn main() {
         if ui.exit() {
             break;
         }
-        ui.begin_frame(black());
+        ui.start_frame(black());
 
         ui.begin_layout(Flow::Down, None);
         let _s = ui.text(
@@ -13,7 +13,7 @@ fn main() {
             style()
                 // .bg(red())
                 .bg(gray())
-                //TODO: Borders 
+                //TODO: Borders
                 // .border(red())
                 .font_size(32),
         );

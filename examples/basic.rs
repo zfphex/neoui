@@ -129,7 +129,7 @@ fn main() {
         let _ui_width = ui.width();
         let _ui_height = ui.height();
 
-        ui.begin_frame(black());
+        ui.start_frame(black());
 
         let (top_nav_rect, body) = ui.split_v(30);
         let (sidebar_rect, track_rect) = body.split_h(260);
@@ -203,9 +203,8 @@ fn main() {
 
                 ui.paint_rect(rect, bg(rgb(25, 25, 25)));
 
-                if ui.dragged(rect) {
-                    let click_x = ui.mouse_position().x.saturating_sub(rect.x);
-                    volume = (click_x as f32 / width as f32).clamp(0.0, 1.0);
+                if let Some(percent) = ui.drag_percentage(rect) {
+                    volume = percent;
                 }
 
                 let track_height = 6;

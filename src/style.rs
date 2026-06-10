@@ -44,24 +44,32 @@ pub mod border {
 pub struct Style {
     pub bg: Option<u32>,
     pub fg: Option<u32>,
-    // pub border: Option<u32>,
-    //TODO: No hover border thickness?
+    pub radius: Option<usize>,
+
+    //TODO: Everything about this is a bit too confusing.
+    pub border_color: Option<u32>,
     pub border_thickness: Option<usize>,
     pub border_sides: Option<u8>,
+    pub border_radius: Option<u32>,
+
     pub selected: Option<u32>,
     pub selected_border: Option<u32>,
+
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
+
     pub font_size: Option<usize>,
+
+    pub bounds: Option<Rect>,
     // pub x: Option<usize>,
     // pub y: Option<usize>,
     pub width: Option<Size>,
     pub height: Option<Size>,
     pub padding: Option<Padding>,
-    pub radius: Option<usize>,
+
     pub depth: Option<usize>,
+
     pub alignment: Option<Alignment>,
-    pub bounds: Option<Rect>,
     pub gap: Option<Size>,
 }
 
@@ -86,15 +94,22 @@ impl Style {
         self
     }
 
-    // pub fn border(mut self, color: u32) -> Self {
-    //     self.border = Some(color);
+    pub fn border_color(mut self, color: u32) -> Self {
+        self.border_color = Some(color);
+        self
+    }
+
+    // TODO: Doesn't do anything.
+
+    // pub fn border_thickness(mut self, border_thickness: usize) -> Self {
+    //     self.border_thickness = Some(border_thickness);
     //     self
     // }
 
-    pub fn border_thickness(mut self, border_thickness: usize) -> Self {
-        self.border_thickness = Some(border_thickness);
-        self
-    }
+    // pub fn border_radius(mut self, border_radius: u32) -> Self {
+    //     self.border_radius = Some(border_radius);
+    //     self
+    // }
 
     pub fn border_sides(mut self, border_sides: u8) -> Self {
         self.border_sides = Some(border_sides);

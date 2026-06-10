@@ -41,6 +41,12 @@ pub enum Command<'a> {
         clip: Rect,
         color: u32,
         radius: usize,
+    },
+    RectOutline {
+        rect: Rect,
+        clip: Rect,
+        color: u32,
+        radius: usize,
         border_thickness: usize,
         border_sides: u8,
     },
@@ -280,20 +286,26 @@ impl<'a> Context<'a> {
         self.window.mouse_position
     }
 
-    //TODO: This should really be paint_rect or something.
-    //Users should be able to use the layout system to render rectangles.
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
+
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Rect {
                 rect,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                // border_color: style.border.unwrap_or(0),
-                #[rustfmt::skip] 
-                border_thickness: style.border_thickness.unwrap_or(0), 
+            });
+        }
+
+        if let Some(color) = style.border_color {
+            self.commands[depth].push(Command::RectOutline {
+                rect,
+                clip,
+                color,
+                radius: style.radius.unwrap_or(0),
+                border_thickness: style.border_thickness.unwrap_or(1),
                 border_sides: style.border_sides.unwrap_or(border::ALL),
             });
         }
@@ -436,24 +448,21 @@ impl<'a> Context<'a> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                border_thickness: style.border_thickness.unwrap_or(0),
-                border_sides: style.border_sides.unwrap_or(border::ALL),
             });
         }
 
-        // let border = if selected && style.selected_border.is_some() {
-        //     style.selected_border
-        // } else if style.border.is_some() {
-        //     style.border
-        // } else {
-        //     None
-        // };
-        let border = None;
+        let border = if selected && style.selected_border.is_some() {
+            style.selected_border
+        } else if style.border_color.is_some() {
+            style.border_color
+        } else {
+            None
+        };
 
         // TODO: Borders render inside of the bounding box
         // for text which means they can overlap...
         if let Some(border) = border {
-            self.commands[depth].push(Command::Rect {
+            self.commands[depth].push(Command::RectOutline {
                 rect,
                 clip,
                 color: border,
@@ -683,37 +692,36 @@ impl<'a> Context<'a> {
                         clip,
                         color,
                         radius,
-                        border_thickness,
+                    } => draw_rounded_rect(
+                        &mut self.window.buffer,
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        self_width,
+                        self_height,
+                        radius,
+                        color,
+                        clip,
+                    ),
+                    Command::RectOutline {
+                        rect,
+                        clip,
+                        color,
+                        radius: _,
+                        border_thickness: _,
                         border_sides,
-                    } => {
-                        if border_thickness == 0 {
-                            draw_rounded_rect(
-                                &mut self.window.buffer,
-                                rect.x,
-                                rect.y,
-                                rect.width,
-                                rect.height,
-                                self_width,
-                                self_height,
-                                radius,
-                                color,
-                                clip,
-                            )
-                        } else {
-                            //rounded rect outline doesn't work for 1px outlines??
-                            draw_rect_outline(
-                                &mut self.window.buffer,
-                                rect.x,
-                                rect.y,
-                                rect.width,
-                                rect.height,
-                                self_width,
-                                color,
-                                clip,
-                                border_sides,
-                            )
-                        }
-                    }
+                    } => draw_rect_outline(
+                        &mut self.window.buffer,
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
+                        self_width,
+                        color,
+                        clip,
+                        border_sides,
+                    ),
                     Command::Text {
                         text,
                         clip,

@@ -89,43 +89,46 @@ pub fn draw_rect_outline(
 ) {
     use border::*;
 
-    if height == 0 || width == 0 {
+    if width == 0 || height == 0 || window_width == 0 {
         return;
     }
 
-    let min_y = y.max(clip.y);
-    let max_y = (y + height).min(clip.y + clip.height);
+    let right = x.saturating_add(width.saturating_sub(1));
+    let bottom = y.saturating_add(height.saturating_sub(1));
     let min_x = x.max(clip.x);
-    let max_x = (x + width).min(clip.x + clip.width);
+    let max_x = right.saturating_add(1).min(clip.x + clip.width).min(window_width);
+    let min_y = y.max(clip.y);
+    let max_y = bottom
+        .saturating_add(1)
+        .min(clip.y + clip.height)
+        .min(buffer.len() / window_width);
 
-    for py in min_y..max_y {
-        if py == y {
-            if sides & TOP != 0 && min_x < max_x {
-                let row_start = py * window_width + min_x;
-                let row_end = py * window_width + max_x;
-                if let Some(slice) = buffer.get_mut(row_start..row_end) {
-                    slice.fill(color);
-                }
-            }
-        } else if py == y + height.saturating_sub(1) {
-            if sides & BOTTOM != 0 && min_x < max_x {
-                let row_start = py * window_width + min_x;
-                let row_end = py * window_width + max_x;
-                if let Some(slice) = buffer.get_mut(row_start..row_end) {
-                    slice.fill(color);
-                }
-            }
-        } else {
-            if sides & LEFT != 0 && x >= min_x && x < max_x {
-                if let Some(b) = buffer.get_mut(py * window_width + x) {
-                    *b = color;
-                }
-            }
-            let right_x = x + width.saturating_sub(1);
-            if sides & RIGHT != 0 && right_x >= min_x && right_x < max_x {
-                if let Some(b) = buffer.get_mut(py * window_width + right_x) {
-                    *b = color;
-                }
+    if min_x >= max_x || min_y >= max_y {
+        return;
+    }
+
+    if sides & TOP != 0 && y >= min_y && y < max_y {
+        let start = y * window_width + min_x;
+        if let Some(slice) = buffer.get_mut(start..start + max_x - min_x) {
+            slice.fill(color);
+        }
+    }
+
+    if sides & BOTTOM != 0 && bottom >= min_y && bottom < max_y {
+        let start = bottom * window_width + min_x;
+        if let Some(slice) = buffer.get_mut(start..start + max_x - min_x) {
+            slice.fill(color);
+        }
+    }
+
+    for (side, px) in [(LEFT, x), (RIGHT, right)] {
+        if sides & side == 0 || px < min_x || px >= max_x {
+            continue;
+        }
+
+        for py in min_y..max_y {
+            if let Some(b) = buffer.get_mut(py * window_width + px) {
+                *b = color;
             }
         }
     }

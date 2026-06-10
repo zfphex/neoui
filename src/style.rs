@@ -63,8 +63,8 @@ pub struct Style {
     pub font_size: Option<usize>,
 
     pub bounds: Option<Rect>,
-    // pub x: Option<usize>,
-    // pub y: Option<usize>,
+    pub x: Option<Size>,
+    pub y: Option<Size>,
     pub width: Option<Size>,
     pub height: Option<Size>,
     pub padding: Option<Padding>,
@@ -155,6 +155,16 @@ impl Style {
 
     pub fn height(mut self, h: impl IntoSize) -> Self {
         self.height = h.into_size();
+        self
+    }
+
+    pub fn y(mut self, y: impl IntoSize) -> Self {
+        self.y = y.into_size();
+        self
+    }
+
+    pub fn x(mut self, x: impl IntoSize) -> Self {
+        self.x = x.into_size();
         self
     }
 

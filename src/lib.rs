@@ -500,14 +500,48 @@ impl<'a> Context<'a> {
         result
     }
 
-    pub fn flow_styled<R>(&mut self, style: Style, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
+    // TODO: Rename
+    /// Layout widgets inside the container normally but don't add the area to the layout stack after.
+    pub fn flow_once<R>(&mut self, style: Style, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let mut bounds = match style.bounds {
+            Some(bounds) => bounds,
+            None => self.current_frame_bounds(),
+        };
+
+        if let Some(width) = style.width {
+            bounds.width = self.resolve_size(width, flow);
+        }
+
+        if let Some(height) = style.height {
+            bounds.height = self.resolve_size(height, flow);
+        }
+
+        if let Some(x) = style.x {
+            bounds.x = self.resolve_size(x, flow)
+        }
+
+        if let Some(y) = style.y {
+            bounds.y = self.resolve_size(y, flow)
+        }
+
         let parent = self.layout_stack.last().expect("Layout stack empty");
-        let mut rect = Rect::new(
-            parent.cursor_x,
-            parent.cursor_y,
-            (parent.bounds.x + parent.bounds.width).saturating_sub(parent.cursor_x),
-            (parent.bounds.y + parent.bounds.height).saturating_sub(parent.cursor_y),
-        );
+        let new_frame = Frame {
+            bounds,
+            clip: parent.clip.intersection(bounds),
+            flow,
+            cursor_x: bounds.x,
+            cursor_y: bounds.y,
+            ..Default::default()
+        };
+
+        self.layout_stack.push(new_frame);
+        let result = ui(self);
+        self.layout_stack.pop().expect("Layout underflow");
+        result
+    }
+
+    pub fn flow_styled<R>(&mut self, style: Style, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let mut rect = self.current_frame_bounds();
 
         if let Some(bounds) = style.bounds {
             rect = bounds;
@@ -544,16 +578,10 @@ impl<'a> Context<'a> {
 
     //Currently no horizontal scroll support.
     pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> usize {
-        let parent = self.layout_stack.last().expect("Layout stack empty");
         let bounds = if let Some(bounds) = bounds {
             bounds
         } else {
-            Rect::new(
-                parent.cursor_x,
-                parent.cursor_y,
-                parent.bounds.width,
-                parent.bounds.height,
-            )
+            self.current_frame_bounds()
         };
 
         self.begin_scroll_view(bounds, scroll_y);
@@ -575,20 +603,24 @@ impl<'a> Context<'a> {
         });
     }
 
-    pub fn begin_layout(&mut self, flow: Flow, bounds: Option<Rect>) {
+    pub fn current_frame_bounds(&self) -> Rect {
         let parent = self.layout_stack.last().expect("Layout stack empty");
+        Rect::new(
+            parent.cursor_x,
+            parent.cursor_y,
+            (parent.bounds.x + parent.bounds.width).saturating_sub(parent.cursor_x),
+            (parent.bounds.y + parent.bounds.height).saturating_sub(parent.cursor_y),
+        )
+    }
 
+    pub fn begin_layout(&mut self, flow: Flow, bounds: Option<Rect>) {
         let bounds = if let Some(bounds) = bounds {
             bounds
         } else {
-            Rect::new(
-                parent.cursor_x,
-                parent.cursor_y,
-                (parent.bounds.x + parent.bounds.width).saturating_sub(parent.cursor_x),
-                (parent.bounds.y + parent.bounds.height).saturating_sub(parent.cursor_y),
-            )
+            self.current_frame_bounds()
         };
 
+        let parent = self.layout_stack.last().expect("Layout stack empty");
         let new_frame = Frame {
             bounds,
             clip: parent.clip.intersection(bounds),

@@ -143,20 +143,14 @@ fn main() {
                 .hover(rgb(60, 60, 60))
                 .depth(1);
 
-            ui.begin_layout(Flow::Down, None);
-
-            //Update the postion and height. TODO: Should make this easier to do.
-            let last = ui.layout_stack.last_mut().unwrap();
-            last.cursor_x = rect.x;
-            last.cursor_y = top_nav_rect.height;
-
-            for &item in dropdown_items(menu) {
-                if ui.list_item(item, false, item_style).clicked {
-                    println!("{}", item);
-                    current_menu = None;
+            ui.flow_once(style().x(rect.x).y(top_nav_rect.height), Flow::Down, |ui| {
+                for &item in dropdown_items(menu) {
+                    if ui.list_item(item, false, item_style).clicked {
+                        println!("{}", item);
+                        current_menu = None;
+                    }
                 }
-            }
-            ui.end_layout_absolute();
+            });
 
             //TODO: This could maybe be part of the response.
             if ui.lost_focus(rect) {

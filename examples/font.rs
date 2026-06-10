@@ -30,11 +30,13 @@ fn main() {
 
         // ui.flow_down_styled(style().bounds(tracks).bg(rgb(90, 40, 50)), |_| {});
 
-        let sides = border::LEFT | border::RIGHT | border::TOP;
-
         ui.paint_rect(
             rem,
-            style().bg(blue()).radius(40).border_color(red()).border_sides(sides),
+            style()
+                .bg(blue())
+                .radius(40)
+                .border(red())
+                .border_side(LEFT | RIGHT | TOP),
         );
         // ui.paint_rect(
         //     top_nav,

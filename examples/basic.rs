@@ -245,6 +245,8 @@ fn main() {
             for artist in artists {
                 ui.list_item(artist, false, row_style);
             }
+
+            ui.paint_rect(sidebar_rect, style().border(border_color).border_side(RIGHT));
         });
 
         ui.flow_down(track_rect, |ui| {
@@ -278,11 +280,6 @@ fn main() {
                 }
             });
         });
-
-        //TODO: How can I do this better?
-        let mut divider = track_rect;
-        divider.x = divider.x.saturating_sub(1);
-        ui.paint_rect(divider.width(1), bg(border_color));
 
         ui.draw_frame();
     }

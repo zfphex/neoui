@@ -30,6 +30,8 @@ pub fn pad(p: usize) -> Padding {
     }
 }
 
+pub use border::*;
+
 #[rustfmt::skip] 
 pub mod border {
     pub const NONE:   u8 = 0     ;
@@ -42,14 +44,14 @@ pub mod border {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Style {
-    pub bg: Option<u32>,
     pub fg: Option<u32>,
+    pub bg: Option<u32>,
     pub radius: Option<usize>,
 
     //TODO: Everything about this is a bit too confusing.
-    pub border_color: Option<u32>,
+    pub border: Option<u32>,
     pub border_thickness: Option<usize>,
-    pub border_sides: Option<u8>,
+    pub border_side: Option<u8>,
     pub border_radius: Option<u32>,
 
     pub selected: Option<u32>,
@@ -94,8 +96,8 @@ impl Style {
         self
     }
 
-    pub fn border_color(mut self, color: u32) -> Self {
-        self.border_color = Some(color);
+    pub fn border(mut self, color: u32) -> Self {
+        self.border = Some(color);
         self
     }
 
@@ -111,8 +113,8 @@ impl Style {
     //     self
     // }
 
-    pub fn border_sides(mut self, border_sides: u8) -> Self {
-        self.border_sides = Some(border_sides);
+    pub fn border_side(mut self, border_side: u8) -> Self {
+        self.border_side = Some(border_side);
         self
     }
 

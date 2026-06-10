@@ -299,14 +299,14 @@ impl<'a> Context<'a> {
             });
         }
 
-        if let Some(color) = style.border_color {
+        if let Some(color) = style.border {
             self.commands[depth].push(Command::RectOutline {
                 rect,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
                 border_thickness: style.border_thickness.unwrap_or(1),
-                border_sides: style.border_sides.unwrap_or(border::ALL),
+                border_sides: style.border_side.unwrap_or(border::ALL),
             });
         }
     }
@@ -453,8 +453,8 @@ impl<'a> Context<'a> {
 
         let border = if selected && style.selected_border.is_some() {
             style.selected_border
-        } else if style.border_color.is_some() {
-            style.border_color
+        } else if style.border.is_some() {
+            style.border
         } else {
             None
         };
@@ -468,7 +468,7 @@ impl<'a> Context<'a> {
                 color: border,
                 radius: style.radius.unwrap_or(0),
                 border_thickness: style.border_thickness.unwrap_or(1),
-                border_sides: style.border_sides.unwrap_or(border::ALL),
+                border_sides: style.border_side.unwrap_or(border::ALL),
             });
         }
 

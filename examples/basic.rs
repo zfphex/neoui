@@ -158,8 +158,7 @@ fn main() {
             }
         }
 
-        ui.flow_right(top_nav_rect, |ui| {
-            ui.paint_rect(top_nav_rect, bg(menu_bg));
+        ui.flow_right(bounds(top_nav_rect).bg(menu_bg), |ui| {
             for (label, menu) in items {
                 let state = ui.text(
                     label,
@@ -231,9 +230,7 @@ fn main() {
             .selected(rgb(82, 82, 82))
             .selected_border(rgb(170, 170, 170));
 
-        ui.flow_down(sidebar_rect, |ui| {
-            ui.paint_rect(sidebar_rect, bg(panel_bg));
-
+        ui.flow_down(bounds(sidebar_rect).bg(panel_bg), |ui| {
             ui.text("All Music", style().fg(text_dim).pad(6));
 
             for artist in artists {
@@ -243,9 +240,7 @@ fn main() {
             ui.paint_rect(sidebar_rect, style().border(border_color).border_side(RIGHT));
         });
 
-        ui.flow_down(track_rect, |ui| {
-            ui.paint_rect(track_rect, bg(panel_bg));
-
+        ui.flow_down(bounds(track_rect).bg(panel_bg), |ui| {
             ui.text(
                 "beabadoobee - Fake It Flowers (2020)",
                 style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),

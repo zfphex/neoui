@@ -512,10 +512,22 @@ impl<'a> Context<'a> {
             bounds.y = self.resolve_size(y, flow)
         }
 
-        let parent = self.layout_stack.last().expect("Layout stack empty");
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+        let depth = style.depth.unwrap_or(0);
+
+        // Draw the background first.
+        if let Some(color) = style.bg {
+            self.commands[depth].push(Command::Rect {
+                rect: bounds,
+                clip,
+                color,
+                radius: style.radius.unwrap_or(0),
+            });
+        }
+
         let new_frame = Frame {
             bounds,
-            clip: parent.clip.intersection(bounds),
+            clip: clip.intersection(bounds),
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
@@ -524,6 +536,18 @@ impl<'a> Context<'a> {
 
         self.layout_stack.push(new_frame);
         let result = ui(self);
+
+        // Draw the border over the content, idk.
+        if let Some(color) = style.border {
+            self.commands[depth].push(Command::RectOutline {
+                rect: bounds,
+                clip,
+                color,
+                radius: style.radius.unwrap_or(0),
+                border_thickness: style.border_thickness.unwrap_or(1),
+                border_sides: style.border_side.unwrap_or(border::ALL),
+            });
+        }
 
         if advance {
             self.end_layout();

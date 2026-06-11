@@ -236,17 +236,15 @@ impl_pad_swizzle! {
 }
 
 pub fn bg(color: u32) -> Style {
-    Style {
-        bg: Some(color),
-        ..Default::default()
-    }
+    style().bg(color)
 }
 
 pub fn fg(color: u32) -> Style {
-    Style {
-        fg: Some(color),
-        ..Default::default()
-    }
+    style().fg(color)
+}
+
+pub fn bounds(bounds: Rect) -> Style {
+    style().bounds(bounds)
 }
 
 pub fn style() -> Style {

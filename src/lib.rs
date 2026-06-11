@@ -486,27 +486,15 @@ impl<'a> Context<'a> {
         State { clicked, hovered, rect }
     }
 
-    pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.begin_layout(Flow::Down, Some(bounds));
-        let result = ui(self);
-        self.end_layout();
-        result
-    }
-
-    pub fn flow_right<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.begin_layout(Flow::Right, Some(bounds));
-        let result = ui(self);
-        self.end_layout();
-        result
-    }
-
-    // TODO: Rename
-    /// Layout widgets inside the container normally but don't add the area to the layout stack after.
-    pub fn flow_once<R>(&mut self, style: Style, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
-        let mut bounds = match style.bounds {
-            Some(bounds) => bounds,
-            None => self.current_frame_bounds(),
-        };
+    pub fn flow<R>(
+        &mut self,
+        style: impl Into<Style>,
+        flow: Flow,
+        advance: bool,
+        ui: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let style = style.into();
+        let mut bounds = self.current_frame_bounds();
 
         if let Some(width) = style.width {
             bounds.width = self.resolve_size(width, flow);
@@ -536,45 +524,43 @@ impl<'a> Context<'a> {
 
         self.layout_stack.push(new_frame);
         let result = ui(self);
-        self.layout_stack.pop().expect("Layout underflow");
+
+        if advance {
+            self.end_layout();
+        } else {
+            self.layout_stack.pop().expect("Layout underflow");
+        }
+
         result
     }
 
-    pub fn flow_styled<R>(&mut self, style: Style, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
-        let mut rect = self.current_frame_bounds();
-
-        if let Some(bounds) = style.bounds {
-            rect = bounds;
-        }
-
-        if let Some(width) = style.width {
-            (rect, _) = self.split_h(width);
-        };
-
-        //TODO: Idk what if the user wants to split twice.
-        //What would that even be?
-        //Currently we just override.
-        if let Some(height) = style.height {
-            (rect, _) = self.split_v(height);
-        };
-
-        if style.bg.is_some() {
-            self.paint_rect(rect, style);
-        }
-
-        self.begin_layout(flow, Some(rect));
-        let result = ui(self);
-        self.end_layout();
-        result
+    pub fn flow_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.flow(style, Flow::Down, true, ui)
     }
 
-    pub fn flow_down_styled<R>(&mut self, style: Style, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.flow_styled(style, Flow::Down, ui)
+    pub fn flow_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.flow(style, Flow::Right, true, ui)
     }
 
-    pub fn flow_right_styled<R>(&mut self, style: Style, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.flow_styled(style, Flow::Right, ui)
+    // TODO: Rename
+    /// Layout widgets inside the container normally but don't add the area to the layout stack after.
+    pub fn flow_once<R>(&mut self, style: impl Into<Style>, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.flow(style, flow, false, ui)
     }
+
+    // pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
+    //     self.begin_layout(Flow::Down, Some(bounds));
+    //     let result = ui(self);
+    //     self.end_layout();
+    //     result
+    // }
+
+    // pub fn flow_right<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
+    //     self.begin_layout(Flow::Right, Some(bounds));
+    //     let result = ui(self);
+    //     self.end_layout();
+    //     result
+    // }
 
     //Currently no horizontal scroll support.
     pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> usize {

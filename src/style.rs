@@ -62,7 +62,6 @@ pub struct Style {
 
     pub font_size: Option<usize>,
 
-    pub bounds: Option<Rect>,
     pub x: Option<Size>,
     pub y: Option<Size>,
     pub width: Option<Size>,
@@ -82,7 +81,10 @@ impl Style {
     }
 
     pub fn bounds(mut self, bounds: Rect) -> Self {
-        self.bounds = Some(bounds);
+        self.x = Some(Size::Pixel(bounds.x));
+        self.y = Some(Size::Pixel(bounds.y));
+        self.width = Some(Size::Pixel(bounds.width));
+        self.height = Some(Size::Pixel(bounds.height));
         self
     }
 
@@ -186,6 +188,12 @@ impl Style {
     pub fn depth(mut self, depth: usize) -> Self {
         self.depth = Some(depth);
         self
+    }
+}
+
+impl Into<Style> for Rect {
+    fn into(self) -> Style {
+        style().bounds(self)
     }
 }
 

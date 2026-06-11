@@ -271,10 +271,12 @@ impl<'a> Context<'a> {
         Some(percent)
     }
 
+    /// Check if a rectangle is clicked off of
     pub fn lost_focus(&self, rect: Rect) -> bool {
         let Some(inital) = self.window.left_mouse.inital_position else {
             return false;
         };
+
         let Some(release) = self.window.left_mouse.release_position else {
             return false;
         };

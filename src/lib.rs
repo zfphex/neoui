@@ -255,8 +255,8 @@ impl<'a> Context<'a> {
         inital.intersects(rect) && self.window.left_mouse.pressed
     }
 
-    /// Return what percentage of the rectangle the user has dragged on the x or y-axis.
-    pub fn drag_percentage(&self, rect: Rect, flow: Flow) -> Option<f32> {
+    /// Return what percentage of the rectangle has been dragged on the x-axis.
+    pub fn drag_percentage_x(&self, rect: Rect) -> Option<f32> {
         if !self.dragged(rect) {
             return None;
         }
@@ -265,16 +265,22 @@ impl<'a> Context<'a> {
             return Some(0.0);
         }
 
-        match flow {
-            Flow::Right => {
-                let x = self.window.mouse_position.x.saturating_sub(rect.x);
-                Some((x as f32 / rect.width as f32).clamp(0.0, 1.0))
-            }
-            Flow::Down => {
-                let y = self.window.mouse_position.y.saturating_sub(rect.y);
-                Some((y as f32 / rect.height as f32).clamp(0.0, 1.0))
-            }
+        let x = self.window.mouse_position.x.saturating_sub(rect.x);
+        Some((x as f32 / rect.width as f32).clamp(0.0, 1.0))
+    }
+
+    /// Return what percentage of the rectangle has been dragged on the y-axis.
+    pub fn drag_percentage_y(&self, rect: Rect) -> Option<f32> {
+        if !self.dragged(rect) {
+            return None;
         }
+
+        if rect.height == 0 {
+            return Some(0.0);
+        }
+
+        let y = self.window.mouse_position.y.saturating_sub(rect.y);
+        Some((y as f32 / rect.height as f32).clamp(0.0, 1.0))
     }
 
     /// Check if a rectangle is clicked off of

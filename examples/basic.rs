@@ -18,18 +18,17 @@ pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll
     let max_scroll = content_height - viewport.height;
     let thumb_h = (viewport.height * viewport.height / content_height).max(20);
     let track_h = viewport.height.saturating_sub(thumb_h);
-    let w = 8;
-    let pad = 4;
-    let x = viewport.x + viewport.width - w - pad;
+    let (w, pad) = (8, 4);
+    let x = viewport.right().saturating_sub(w + pad);
 
-    if let Some(ratio) = ui.drag_percentage(viewport, Flow::Down) {
+    if let Some(ratio) = ui.drag_percentage_y(viewport) {
         *scroll_y = (ratio * max_scroll as f32).round() as usize;
-    } else if scroll_direction != 0 && ui.mouse_position().intersects(viewport) {
-        if scroll_direction > 0 {
-            *scroll_y = scroll_y.saturating_add(50);
-        } else {
-            *scroll_y = scroll_y.saturating_sub(50);
-        }
+    } else if ui.mouse_position().intersects(viewport) {
+        *scroll_y = match scroll_direction {
+            1.. => scroll_y.saturating_add(50),
+            ..=-1 => scroll_y.saturating_sub(50),
+            0 => *scroll_y,
+        };
     }
 
     *scroll_y = (*scroll_y).clamp(0, max_scroll);
@@ -174,7 +173,7 @@ fn main() {
 
                 ui.paint_rect(rect, bg(rgb(25, 25, 25)));
 
-                if let Some(percent) = ui.drag_percentage(rect, Flow::Right) {
+                if let Some(percent) = ui.drag_percentage_x(rect) {
                     volume = percent;
                 }
 

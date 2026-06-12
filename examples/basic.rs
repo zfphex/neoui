@@ -15,31 +15,16 @@ pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll
         return;
     }
 
-    let max_scroll = content_height.saturating_sub(viewport.height);
-    let visible_ratio = viewport.height as f32 / content_height as f32;
-    let min_thumb_h = 20.0;
-
-    let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
+    let max_scroll = content_height - viewport.height;
+    let thumb_h = (viewport.height * viewport.height / content_height).max(20);
     let track_h = viewport.height.saturating_sub(thumb_h);
-
     let w = 8;
     let pad = 4;
     let x = viewport.x + viewport.width - w - pad;
-    let hitbox = Rect::new(x.saturating_sub(pad), viewport.y, w + pad * 2, viewport.height);
-    let mut handled = false;
 
-    if ui.dragged(hitbox) {
-        let click_y = ui.mouse_position().y.saturating_sub(viewport.y) as f32;
-
-        // This maps the mouse position to a 0.0 - 1.0 ratio of the entire track,
-        // preventing the thumb from jumping to the cursor center.
-        let ratio = (click_y / viewport.height as f32).clamp(0.0, 1.0);
+    if let Some(ratio) = ui.drag_percentage(viewport, Flow::Down) {
         *scroll_y = (ratio * max_scroll as f32).round() as usize;
-
-        handled = true;
-    }
-
-    if !handled && scroll_direction != 0 && ui.mouse_position().intersects(viewport) {
+    } else if scroll_direction != 0 && ui.mouse_position().intersects(viewport) {
         if scroll_direction > 0 {
             *scroll_y = scroll_y.saturating_add(50);
         } else {
@@ -48,14 +33,7 @@ pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll
     }
 
     *scroll_y = (*scroll_y).clamp(0, max_scroll);
-
-    let ratio = if max_scroll > 0 {
-        *scroll_y as f32 / max_scroll as f32
-    } else {
-        0.0
-    };
-    let thumb_y = viewport.y + (ratio * track_h as f32) as usize;
-
+    let thumb_y = viewport.y + (*scroll_y as f32 / max_scroll as f32 * track_h as f32) as usize;
     ui.paint_rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
 }
 
@@ -196,7 +174,7 @@ fn main() {
 
                 ui.paint_rect(rect, bg(rgb(25, 25, 25)));
 
-                if let Some(percent) = ui.drag_percentage(rect) {
+                if let Some(percent) = ui.drag_percentage(rect, Flow::Right) {
                     volume = percent;
                 }
 

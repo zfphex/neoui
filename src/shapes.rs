@@ -22,6 +22,13 @@ pub enum Alignment {
 }
 
 pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
+    // dbg!(parent, child_w, child_h);
+
+    // Cannot align inside of rect since it must clip.
+    if child_w > parent.width || child_h > parent.height {
+        return Rect::new(0, 0, 0, 0);
+    }
+
     let mid_x = parent.x + (parent.width / 2) - (child_w / 2);
     let mid_y = parent.y + (parent.height / 2) - (child_h / 2);
     let right_edge = parent.x + parent.width - child_w;

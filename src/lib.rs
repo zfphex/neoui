@@ -175,7 +175,25 @@ impl<'a> Context<'a> {
             return Rect::new(0, 0, 0, 0);
         }
 
-        Rect::new(rect.x, y as usize, width, height)
+        // Check if the current item underflows the viewport.
+        //
+        //    +---------+     <-- y
+        //    | ITEM    |
+        //    +---------+
+        //
+        // ================== <-- 0
+        // |                |
+        // |    VIEWPORT    |
+        // |                |
+        // ==================
+
+        if y < 0 {
+            // let height = height.saturating_sub((frame.bounds.y as i32 - y) as usize);
+            // return Rect::new(rect.x, y as usize, width, height);
+            return Rect::new(0, 0, 0, 0);
+        }
+
+        Rect::new(rect.x, y.max(0) as usize, width, height)
     }
 
     /// Splits the current frame's remaining space horizontally.
@@ -334,7 +352,6 @@ impl<'a> Context<'a> {
     }
 
     pub fn measure_text(&mut self, text: &str, font_size: usize) -> Rect {
-        let width = self.width();
         let font = self.font.as_ref().expect("Font missing");
         let cache = self.glyph_cache.get_or_insert_with(HashMap::new);
 
@@ -345,12 +362,12 @@ impl<'a> Context<'a> {
             0,
             font_size,
             1.0,
-            width,
+            self.window.width(),
             &mut [],
             0,
             true,
             cache,
-            Rect::new(0, 0, usize::MAX, usize::MAX),
+            Rect::new(0, 0, self.window.width(), self.window.height()),
         )
     }
 
@@ -370,13 +387,13 @@ impl<'a> Context<'a> {
 
         let text = text.into();
         let text_metrics = self.measure_text(&text, font_size);
-        let rect = align_rect(dest, text_metrics.width, text_metrics.height, alignment);
+        // let rect = align_rect(dest, text_metrics.width, text_metrics.height, alignment);
         let clip = self.layout_stack.last().expect("No active frame").clip;
         self.commands[depth].push(Command::Text {
             text,
             clip,
-            x: rect.x,
-            y: rect.y,
+            x: dest.x,
+            y: dest.y,
             color,
             size: font_size,
         });

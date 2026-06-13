@@ -86,7 +86,9 @@ fn main() {
             .selected(rgb(82, 82, 82))
             .selected_border(rgb(170, 170, 170));
 
-        total_track_content_height = ui.scroll(None, track_scroll_y, |ui| {
+        //Yeah so the items were just not hiting y = 0 so it was a non issue before 🤣
+        let (_, bounds) = ui.split_v(40);
+        total_track_content_height = ui.scroll(Some(bounds), track_scroll_y, |ui| {
             let frame = ui.layout_stack.last().unwrap();
             scrollbar(
                 ui,

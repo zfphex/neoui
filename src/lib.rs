@@ -190,10 +190,10 @@ impl<'a> Context<'a> {
         if y < 0 {
             // let height = height.saturating_sub((frame.bounds.y as i32 - y) as usize);
             // return Rect::new(rect.x, y as usize, width, height);
-            return Rect::new(0, 0, 0, 0);
+            // return Rect::new(0, 0, 0, 0);
         }
 
-        Rect::new(rect.x, y.max(0) as usize, width, height)
+        Rect::new(rect.x, y as usize, width, height)
     }
 
     /// Splits the current frame's remaining space horizontally.

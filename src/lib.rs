@@ -179,8 +179,8 @@ impl<'a> Context<'a> {
     }
 
     /// Splits the current frame's remaining space horizontally.
-    pub fn split_h(&self, left_width: impl Into<Size>) -> (Rect, Rect) {
-        let left_width = self.resolve_size(left_width.into(), Flow::Right);
+    pub fn split_h(&self, left_width: impl IntoSize) -> (Rect, Rect) {
+        let left_width = self.resolve_size(left_width.into_size().unwrap_or_default(), Flow::Right);
         let frame = self.layout_stack.last().expect("No active frame");
 
         let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);

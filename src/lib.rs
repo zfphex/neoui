@@ -37,13 +37,19 @@ pub struct Frame {
 #[derive(Debug)]
 pub enum Command<'a> {
     Rect {
-        rect: Rect,
+        x: i32,
+        y: i32,
+        width: usize,
+        height: usize,
         clip: Rect,
         color: u32,
         radius: usize,
     },
     RectOutline {
-        rect: Rect,
+        x: i32,
+        y: i32,
+        width: usize,
+        height: usize,
         clip: Rect,
         color: u32,
         radius: usize,
@@ -51,20 +57,27 @@ pub enum Command<'a> {
         border_sides: u8,
     },
     Triangle {
-        a: (usize, usize),
-        b: (usize, usize),
-        c: (usize, usize),
+        a: (i32, i32),
+        b: (i32, i32),
+        c: (i32, i32),
         clip: Rect,
         color: u32,
     },
     Text {
         text: Cow<'a, str>,
         clip: Rect,
-        x: usize,
-        y: usize,
+        x: i32,
+        y: i32,
         color: u32,
         size: usize,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Layout {
+    pub size: Rect,
+    pub paint_x: i32,
+    pub paint_y: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -104,7 +117,7 @@ pub struct Context<'a> {
 
 impl<'a> Context<'a> {
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
-    pub fn walk_layout(&mut self, width: usize, height: usize, gap: usize) -> Rect {
+    pub fn walk_layout(&mut self, width: usize, height: usize, gap: usize) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
         let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
 
@@ -122,7 +135,11 @@ impl<'a> Context<'a> {
         }
 
         if frame.scroll_y == 0 {
-            return rect;
+            return Layout {
+                size: rect,
+                paint_x: rect.x as i32,
+                paint_y: rect.y as i32,
+            };
         }
 
         // Calculate the scroll position.
@@ -141,7 +158,10 @@ impl<'a> Context<'a> {
         //                     |
         //            VIEWPORT |
         //  ====================
+        let x = rect.x as i32;
         let y = rect.y as i32 - frame.scroll_y as i32;
+        let clip_top = frame.clip.y as i32;
+        let clip_bottom = (frame.clip.y + frame.clip.height) as i32;
 
         // Check if the current item underflows the viewport.
         //
@@ -155,8 +175,12 @@ impl<'a> Context<'a> {
         // |                |
         // ==================
 
-        if y + height as i32 <= frame.bounds.y as i32 {
-            return Rect::new(0, 0, 0, 0);
+        if y + height as i32 <= clip_top {
+            return Layout {
+                paint_x: x,
+                paint_y: y,
+                ..Default::default()
+            };
         }
 
         // Check if the current item overflows the viewport.
@@ -171,29 +195,22 @@ impl<'a> Context<'a> {
         //    | ITEM    |
         //    +---------+
 
-        if y >= (frame.bounds.y + frame.bounds.height) as i32 {
-            return Rect::new(0, 0, 0, 0);
+        if y >= clip_bottom {
+            return Layout {
+                paint_x: x,
+                paint_y: y,
+                ..Default::default()
+            };
         }
 
-        // Check if the current item underflows the viewport.
-        //
-        //    +---------+     <-- y
-        //    | ITEM    |
-        //    +---------+
-        //
-        // ================== <-- 0
-        // |                |
-        // |    VIEWPORT    |
-        // |                |
-        // ==================
+        let visible_y = y.max(clip_top).max(0) as usize;
+        let visible_bottom = (y + height as i32).min(clip_bottom).max(0) as usize;
 
-        if y < 0 {
-            // let height = height.saturating_sub((frame.bounds.y as i32 - y) as usize);
-            // return Rect::new(rect.x, y as usize, width, height);
-            // return Rect::new(0, 0, 0, 0);
+        Layout {
+            size: Rect::new(rect.x, visible_y, width, visible_bottom.saturating_sub(visible_y)),
+            paint_x: x,
+            paint_y: y,
         }
-
-        Rect::new(rect.x, y as usize, width, height)
     }
 
     /// Splits the current frame's remaining space horizontally.
@@ -324,7 +341,10 @@ impl<'a> Context<'a> {
 
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Rect {
-                rect,
+                x: rect.x as i32,
+                y: rect.y as i32,
+                width: rect.width,
+                height: rect.height,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -333,7 +353,10 @@ impl<'a> Context<'a> {
 
         if let Some(color) = style.border {
             self.commands[depth].push(Command::RectOutline {
-                rect,
+                x: rect.x as i32,
+                y: rect.y as i32,
+                width: rect.width,
+                height: rect.height,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -347,7 +370,13 @@ impl<'a> Context<'a> {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
         if let Some(color) = style.bg {
-            self.commands[depth].push(Command::Triangle { a, b, c, clip, color });
+            self.commands[depth].push(Command::Triangle {
+                a: (a.0 as i32, a.1 as i32),
+                b: (b.0 as i32, b.1 as i32),
+                c: (c.0 as i32, c.1 as i32),
+                clip,
+                color,
+            });
         }
     }
 
@@ -371,29 +400,53 @@ impl<'a> Context<'a> {
         )
     }
 
-    #[doc(hidden)]
-    pub fn text_aligned(
+    fn paint_text(
         &mut self,
-        dest: Rect,
+        paint_x: i32,
+        paint_y: i32,
+        width: usize,
+        height: usize,
         text: impl Into<Cow<'a, str>>,
         color: u32,
         font_size: usize,
         alignment: Alignment,
         depth: usize,
     ) {
-        if dest.width == 0 || dest.height == 0 {
+        let text = text.into();
+        let text_metrics = self.measure_text(&text, font_size);
+
+        if text_metrics.width > width || text_metrics.height > height {
             return;
         }
 
-        let text = text.into();
-        let text_metrics = self.measure_text(&text, font_size);
-        // let rect = align_rect(dest, text_metrics.width, text_metrics.height, alignment);
+        let child_w = text_metrics.width as i32;
+        let child_h = text_metrics.height as i32;
+        let width = width as i32;
+        let height = height as i32;
+
+        let mid_x = paint_x + (width / 2) - (child_w / 2);
+        let mid_y = paint_y + (height / 2) - (child_h / 2);
+        let right_edge = paint_x + width - child_w;
+        let bottom_edge = paint_y + height - child_h;
+
+        let (x, y) = match alignment {
+            Alignment::Left { pad } => (paint_x + pad as i32, mid_y),
+            Alignment::Center => (mid_x, mid_y),
+            Alignment::Right { pad } => (right_edge - pad as i32, mid_y),
+            Alignment::TopLeft { padh, padv } => (paint_x + padh as i32, paint_y + padv as i32),
+            Alignment::TopCenter { pad } => (mid_x, paint_y + pad as i32),
+            Alignment::TopRight { padh, padv } => (right_edge - padh as i32, paint_y + padv as i32),
+            Alignment::BottomLeft { padh, padv } => (paint_x + padh as i32, bottom_edge - padv as i32),
+            Alignment::BottomCenter { pad } => (mid_x, bottom_edge - pad as i32),
+            Alignment::BottomRight { padh, padv } => (right_edge - padh as i32, bottom_edge - padv as i32),
+        };
+
         let clip = self.layout_stack.last().expect("No active frame").clip;
         self.commands[depth].push(Command::Text {
             text,
             clip,
-            x: dest.x,
-            y: dest.y,
+            x,
+            y,
             color,
             size: font_size,
         });
@@ -450,7 +503,8 @@ impl<'a> Context<'a> {
 
         let flow = self.layout_stack.last().expect("No active frame").flow;
         let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
-        let rect = self.walk_layout(width, height, gap);
+        let layout = self.walk_layout(width, height, gap);
+        let rect = layout.size;
 
         if rect.width == 0 || rect.height == 0 {
             return State {
@@ -475,7 +529,10 @@ impl<'a> Context<'a> {
 
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
-                rect,
+                x: layout.paint_x,
+                y: layout.paint_y,
+                width,
+                height,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -494,7 +551,10 @@ impl<'a> Context<'a> {
         // for text which means they can overlap...
         if let Some(border) = border {
             self.commands[depth].push(Command::RectOutline {
-                rect,
+                x: layout.paint_x,
+                y: layout.paint_y,
+                width,
+                height,
                 clip,
                 color: border,
                 radius: style.radius.unwrap_or(0),
@@ -504,8 +564,11 @@ impl<'a> Context<'a> {
         }
 
         if !text.is_empty() {
-            self.text_aligned(
-                rect,
+            self.paint_text(
+                layout.paint_x,
+                layout.paint_y,
+                width,
+                height,
                 text,
                 style.fg.unwrap_or(white()),
                 font_size,
@@ -549,7 +612,10 @@ impl<'a> Context<'a> {
         // Draw the background first.
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Rect {
-                rect: bounds,
+                x: bounds.x as i32,
+                y: bounds.y as i32,
+                width: bounds.width,
+                height: bounds.height,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -571,7 +637,10 @@ impl<'a> Context<'a> {
         // Draw the border over the content, idk.
         if let Some(color) = style.border {
             self.commands[depth].push(Command::RectOutline {
-                rect: bounds,
+                x: bounds.x as i32,
+                y: bounds.y as i32,
+                width: bounds.width,
+                height: bounds.height,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -602,20 +671,6 @@ impl<'a> Context<'a> {
     pub fn flow_once<R>(&mut self, style: impl Into<Style>, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
         self.flow(style, flow, false, ui)
     }
-
-    // pub fn flow_down<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
-    //     self.begin_layout(Flow::Down, Some(bounds));
-    //     let result = ui(self);
-    //     self.end_layout();
-    //     result
-    // }
-
-    // pub fn flow_right<R>(&mut self, bounds: Rect, ui: impl FnOnce(&mut Self) -> R) -> R {
-    //     self.begin_layout(Flow::Right, Some(bounds));
-    //     let result = ui(self);
-    //     self.end_layout();
-    //     result
-    // }
 
     //Currently no horizontal scroll support.
     pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> usize {
@@ -761,16 +816,19 @@ impl<'a> Context<'a> {
             for cmd in layer.drain(..) {
                 match cmd {
                     Command::Rect {
-                        rect,
+                        x,
+                        y,
+                        width,
+                        height,
                         clip,
                         color,
                         radius,
                     } => draw_rounded_rect(
                         &mut self.window.buffer,
-                        rect.x,
-                        rect.y,
-                        rect.width,
-                        rect.height,
+                        x,
+                        y,
+                        width,
+                        height,
                         self_width,
                         self_height,
                         radius,
@@ -778,7 +836,10 @@ impl<'a> Context<'a> {
                         clip,
                     ),
                     Command::RectOutline {
-                        rect,
+                        x,
+                        y,
+                        width,
+                        height,
                         clip,
                         color,
                         radius: _,
@@ -786,10 +847,10 @@ impl<'a> Context<'a> {
                         border_sides,
                     } => draw_rect_outline(
                         &mut self.window.buffer,
-                        rect.x,
-                        rect.y,
-                        rect.width,
-                        rect.height,
+                        x,
+                        y,
+                        width,
+                        height,
                         self_width,
                         color,
                         clip,
@@ -825,22 +886,19 @@ impl<'a> Context<'a> {
                         c: (cx, cy),
                         clip,
                         color,
-                    } => {
-                        //
-                        draw_triangle_sdf(
-                            &mut self.window.buffer,
-                            self_width,
-                            self_height,
-                            ax,
-                            ay,
-                            bx,
-                            by,
-                            cx,
-                            cy,
-                            color,
-                            clip,
-                        )
-                    }
+                    } => draw_triangle_sdf(
+                        &mut self.window.buffer,
+                        self_width,
+                        self_height,
+                        ax,
+                        ay,
+                        bx,
+                        by,
+                        cx,
+                        cy,
+                        color,
+                        clip,
+                    ),
                 };
             }
         }

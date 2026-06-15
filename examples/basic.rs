@@ -176,7 +176,7 @@ fn main() {
             {
                 let width = 200;
                 let height = top_nav_rect.height;
-                let rect = ui.walk_layout(width, height, 0);
+                let rect = ui.walk_layout(width, height, 0).size;
 
                 ui.paint_rect(rect, bg(rgb(25, 25, 25)));
 

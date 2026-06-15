@@ -85,8 +85,8 @@ pub fn draw_rect(
 
 pub fn draw_rect_outline(
     buffer: &mut [u32],
-    x: usize,
-    y: usize,
+    x: i32,
+    y: i32,
     width: usize,
     height: usize,
     window_width: usize,
@@ -100,41 +100,44 @@ pub fn draw_rect_outline(
         return;
     }
 
-    let right = x.saturating_add(width.saturating_sub(1));
-    let bottom = y.saturating_add(height.saturating_sub(1));
-    let min_x = x.max(clip.x);
-    let max_x = right.saturating_add(1).min(clip.x + clip.width).min(window_width);
-    let min_y = y.max(clip.y);
-    let max_y = bottom
-        .saturating_add(1)
-        .min(clip.y + clip.height)
-        .min(buffer.len() / window_width);
+    let right = x + width.saturating_sub(1) as i32;
+    let bottom = y + height.saturating_sub(1) as i32;
+    let min_x = x.max(clip.x as i32).max(0).min(window_width as i32) as usize;
+    let max_x = (right + 1)
+        .min((clip.x + clip.width) as i32)
+        .min(window_width as i32)
+        .max(0) as usize;
+    let min_y = y.max(clip.y as i32).max(0).min((buffer.len() / window_width) as i32) as usize;
+    let max_y = (bottom + 1)
+        .min((clip.y + clip.height) as i32)
+        .min((buffer.len() / window_width) as i32)
+        .max(0) as usize;
 
     if min_x >= max_x || min_y >= max_y {
         return;
     }
 
-    if sides & TOP != 0 && y >= min_y && y < max_y {
-        let start = y * window_width + min_x;
+    if sides & TOP != 0 && y >= min_y as i32 && y < max_y as i32 {
+        let start = y as usize * window_width + min_x;
         if let Some(slice) = buffer.get_mut(start..start + max_x - min_x) {
             slice.fill(color);
         }
     }
 
-    if sides & BOTTOM != 0 && bottom >= min_y && bottom < max_y {
-        let start = bottom * window_width + min_x;
+    if sides & BOTTOM != 0 && bottom >= min_y as i32 && bottom < max_y as i32 {
+        let start = bottom as usize * window_width + min_x;
         if let Some(slice) = buffer.get_mut(start..start + max_x - min_x) {
             slice.fill(color);
         }
     }
 
     for (side, px) in [(LEFT, x), (RIGHT, right)] {
-        if sides & side == 0 || px < min_x || px >= max_x {
+        if sides & side == 0 || px < min_x as i32 || px >= max_x as i32 {
             continue;
         }
 
         for py in min_y..max_y {
-            if let Some(b) = buffer.get_mut(py * window_width + px) {
+            if let Some(b) = buffer.get_mut(py * window_width + px as usize) {
                 *b = color;
             }
         }
@@ -143,8 +146,8 @@ pub fn draw_rect_outline(
 
 pub fn draw_rounded_rect(
     buffer: &mut [u32],
-    x: usize,
-    y: usize,
+    x: i32,
+    y: i32,
     width: usize,
     height: usize,
     window_width: usize,
@@ -158,10 +161,16 @@ pub fn draw_rounded_rect(
     }
 
     let radius = radius.min(width / 2).min(height / 2);
-    let min_y = y.max(clip.y).min(window_height);
-    let max_y = (y + height).min(clip.y + clip.height).min(window_height);
-    let min_x = x.max(clip.x).min(window_width);
-    let max_x = (x + width).min(clip.x + clip.width).min(window_width);
+    let min_y = y.max(clip.y as i32).max(0).min(window_height as i32) as usize;
+    let max_y = (y + height as i32)
+        .min((clip.y + clip.height) as i32)
+        .min(window_height as i32)
+        .max(0) as usize;
+    let min_x = x.max(clip.x as i32).max(0).min(window_width as i32) as usize;
+    let max_x = (x + width as i32)
+        .min((clip.x + clip.width) as i32)
+        .min(window_width as i32)
+        .max(0) as usize;
 
     if radius == 0 {
         for py in min_y..max_y {
@@ -238,8 +247,8 @@ pub fn draw_rounded_rect(
 
 pub fn draw_rounded_rect_outline(
     buffer: &mut [u32],
-    x: usize,
-    y: usize,
+    x: i32,
+    y: i32,
     width: usize,
     height: usize,
     window_width: usize,
@@ -258,10 +267,16 @@ pub fn draw_rounded_rect_outline(
     }
 
     let radius = radius.min(width / 2).min(height / 2);
-    let min_y = y.min(window_height);
-    let max_y = (y + height).min(window_height);
-    let min_x = x.min(window_width);
-    let max_x = (x + width).min(window_width);
+    let min_y = y.max(clip.y as i32).max(0).min(window_height as i32) as usize;
+    let max_y = (y + height as i32)
+        .min((clip.y + clip.height) as i32)
+        .min(window_height as i32)
+        .max(0) as usize;
+    let min_x = x.max(clip.x as i32).max(0).min(window_width as i32) as usize;
+    let max_x = (x + width as i32)
+        .min((clip.x + clip.width) as i32)
+        .min(window_width as i32)
+        .max(0) as usize;
 
     let t_f32 = thickness as f32;
     let src_r = ((color >> 16 & 0xFF) as f32 / 255.0).powi(2);
@@ -396,12 +411,12 @@ pub fn draw_triangle_sdf(
     buffer: &mut [u32],
     window_width: usize,
     window_height: usize,
-    mut x0: usize,
-    mut y0: usize,
-    mut x1: usize,
-    mut y1: usize,
-    mut x2: usize,
-    mut y2: usize,
+    mut x0: i32,
+    mut y0: i32,
+    mut x1: i32,
+    mut y1: i32,
+    mut x2: i32,
+    mut y2: i32,
     color: u32,
     clip: Rect,
 ) {
@@ -419,7 +434,7 @@ pub fn draw_triangle_sdf(
         std::mem::swap(&mut x1, &mut x2);
     }
 
-    if y0 >= window_height || y2 == 0 || y0 == y2 {
+    if y0 >= window_height as i32 || y2 <= 0 || y0 == y2 {
         return;
     }
 
@@ -457,7 +472,6 @@ pub fn draw_triangle_sdf(
 
     let total_height = y2 - y0;
     let step_long = (x2 as f32 - x0 as f32) / total_height as f32;
-    let mut x_long = x0 as f32;
 
     let height_top = y1 - y0;
     let step_short_top = if height_top > 0 {
@@ -465,36 +479,32 @@ pub fn draw_triangle_sdf(
     } else {
         0.0
     };
-    let mut x_short = x0 as f32;
+    let height_bottom = y2 - y1;
+    let step_short_bottom = if height_bottom > 0 {
+        (x2 as f32 - x1 as f32) / height_bottom as f32
+    } else {
+        0.0
+    };
 
     let pad_long = 1.5 + step_long.abs();
 
-    for y in y0..=y2 {
-        if y >= window_height {
-            break;
-        }
+    let min_y = y0.max(clip.y as i32).max(0);
+    let max_y = y2
+        .min((clip.y + clip.height).saturating_sub(1) as i32)
+        .min(window_height.saturating_sub(1) as i32);
+
+    if min_y > max_y {
+        return;
+    }
+
+    for y in min_y..=max_y {
         let py = y as f32 + 0.5;
-
-        if y == y1 && y1 < y2 {
-            x_short = x1 as f32;
-        }
-
-        let step_short = if y < y1 {
-            step_short_top
+        let x_long = x0 as f32 + step_long * (y - y0) as f32;
+        let (x_short, step_short) = if y < y1 {
+            (x0 as f32 + step_short_top * (y - y0) as f32, step_short_top)
         } else {
-            let height_bottom = y2 - y1;
-            if height_bottom > 0 {
-                (x2 as f32 - x1 as f32) / height_bottom as f32
-            } else {
-                0.0
-            }
+            (x1 as f32 + step_short_bottom * (y - y1) as f32, step_short_bottom)
         };
-
-        if y < clip.y || y >= clip.y + clip.height {
-            x_long += step_long;
-            x_short += step_short;
-            continue;
-        }
 
         let pad_short = 1.5 + step_short.abs();
 
@@ -528,7 +538,7 @@ pub fn draw_triangle_sdf(
                 }
                 solid_end = x + 1;
             } else if alpha > 0.0 {
-                let idx = y * window_width + x;
+                let idx = y as usize * window_width + x;
                 if let Some(bg) = buffer.get_mut(idx) {
                     let bg_r = (((*bg >> 16) & 0xFF) as f32 / 255.0).powi(2);
                     let bg_g = (((*bg >> 8) & 0xFF) as f32 / 255.0).powi(2);
@@ -546,23 +556,20 @@ pub fn draw_triangle_sdf(
         }
 
         if solid_start < solid_end {
-            let start_idx = y * window_width + solid_start;
-            let end_idx = y * window_width + solid_end;
+            let start_idx = y as usize * window_width + solid_start;
+            let end_idx = y as usize * window_width + solid_end;
             if let Some(slice) = buffer.get_mut(start_idx..end_idx) {
                 slice.fill(color);
             }
         }
-
-        x_long += step_long;
-        x_short += step_short;
     }
 }
 
 pub fn draw_text(
     text: &str,
     font: &fontdue::Font,
-    x: usize,
-    y: usize,
+    x: i32,
+    y: i32,
     font_size: usize,
     display_scale: f32,
     window_width: usize,
@@ -610,8 +617,8 @@ pub fn draw_text(
     let txt_b = (txt_b / 255.0).powi(2);
 
     let mut y_pos = y_start;
-    let mut max_x = x_start as usize;
-    let mut max_y = y_start as usize;
+    let mut max_x = x_start.max(0.0) as usize;
+    let mut max_y = y_start.max(0.0) as usize;
 
     for line in text.lines() {
         let mut glyph_x = x_start;
@@ -630,8 +637,8 @@ pub fn draw_text(
             // Calculate bounding box
             // Note: Text bounds should ignore screen clipping
             if metrics.width > 0 && metrics.height > 0 {
-                let current_max_x = (glyph_screen_x + metrics.width as f32).round() as usize;
-                let current_max_y = (glyph_screen_y + metrics.height as f32).round() as usize;
+                let current_max_x = (glyph_screen_x + metrics.width as f32).round().max(0.0) as usize;
+                let current_max_y = (glyph_screen_y + metrics.height as f32).round().max(0.0) as usize;
 
                 max_x = max_x.max(current_max_x);
                 max_y = max_y.max(current_max_y);

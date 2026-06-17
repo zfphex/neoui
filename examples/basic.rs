@@ -182,6 +182,11 @@ fn main() {
         });
 
         ui.scroll_view(track_rect, &mut track_scroll_y, |ui| {
+            // let (left, right) = ui.split_h(Size::FillMinus(24));
+            // dbg!(left, right);
+            // ui.rect(bounds(left).bg(red()).depth(1));
+            // ui.rect(bounds(right).bg(green()).depth(1));
+
             ui.text(
                 "beabadoobee - Fake It Flowers (2020)",
                 style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
@@ -197,7 +202,7 @@ fn main() {
                     selected_song = idx;
                     println!("Clicked item {idx}");
                 }
-            };
+            }
         });
 
         ui.draw_frame();

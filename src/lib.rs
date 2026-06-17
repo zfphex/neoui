@@ -84,8 +84,16 @@ pub struct Layout {
 pub struct State {
     pub clicked: bool,
     pub hovered: bool,
-    pub scrolled: bool,
     pub rect: Rect,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScrollState {
+    pub max_scroll: usize,
+    pub content_height: usize,
+    pub scrolled: bool,
+    /// 1 up, -1 down.
+    pub direction: i32,
 }
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
@@ -292,6 +300,13 @@ impl<'a> Context<'a> {
     pub fn clicked(&mut self, rect: Rect) -> bool {
         let frame = self.layout_stack.last().expect("No active frame");
         self.window.left_mouse.clicked(rect) && self.window.mouse_position.intersects(frame.bounds)
+    }
+
+    pub fn pressed(&self, rect: Rect) -> bool {
+        let frame = self.layout_stack.last().expect("No active frame");
+        self.window.left_mouse.pressed
+            && self.window.mouse_position.intersects(rect)
+            && self.window.mouse_position.intersects(frame.bounds)
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
@@ -526,7 +541,6 @@ impl<'a> Context<'a> {
             return State {
                 clicked: false,
                 hovered: false,
-                scrolled: false,
                 rect,
             };
         }
@@ -594,12 +608,7 @@ impl<'a> Context<'a> {
             );
         }
 
-        State {
-            clicked,
-            hovered,
-            scrolled: false,
-            rect,
-        }
+        State { clicked, hovered, rect }
     }
 
     pub fn flow<R>(
@@ -701,10 +710,10 @@ impl<'a> Context<'a> {
         style: impl Into<Style>,
         scroll_y: &mut usize,
         ui: impl FnOnce(&mut Self) -> R,
-    ) -> R {
+    ) -> ScrollState {
         let flow = Flow::Down;
         let style = style.into();
-        let state = self.flow(style, flow, false, *scroll_y, ui);
+        let _ = self.flow(style, flow, false, *scroll_y, ui);
 
         let frame = self.layout_stack.pop().expect("Layout underflow");
         if let Some(parent) = self.layout_stack.last_mut() {
@@ -726,6 +735,12 @@ impl<'a> Context<'a> {
         let content_height = frame.max_child_height;
 
         let max_scroll = content_height.saturating_sub(bounds.height);
+        let mut state = ScrollState {
+            max_scroll,
+            content_height,
+            scrolled: false,
+            direction: self.scroll_y,
+        };
 
         if self.scroll_y != 0 && self.window.mouse_position.intersects(bounds) {
             const WHEEL_STEP: usize = 30;
@@ -734,13 +749,11 @@ impl<'a> Context<'a> {
             } else {
                 *scroll_y = (*scroll_y).saturating_sub(self.scroll_y.unsigned_abs() as usize * WHEEL_STEP);
             }
-            //IDK what to do here?
-            // state.scrolled = true;
+            state.scrolled = true;
         }
 
         *scroll_y = (*scroll_y).clamp(0, max_scroll);
 
-        //TODO: Return enough information so that the user
         state
     }
 

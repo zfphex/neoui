@@ -70,6 +70,15 @@ pub mod macos {
             self.event_cache
                 .extend(convert_minifb_key(&self.minifb.get_keys_pressed(KeyRepeat::Yes)));
 
+            if let Some((_, y)) = self.minifb.get_scroll_wheel() {
+                if y < 0.0 {
+                    self.event_cache
+                        .push(Event::Input(Key::ScrollDown, Modifiers::default()));
+                } else if y > 0.0 {
+                    self.event_cache.push(Event::Input(Key::ScrollUp, Modifiers::default()));
+                }
+            }
+
             return self.event_cache.pop();
         }
 

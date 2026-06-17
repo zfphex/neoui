@@ -70,6 +70,8 @@ pub mod macos {
             self.event_cache
                 .extend(convert_minifb_key(&self.minifb.get_keys_pressed(KeyRepeat::Yes)));
 
+            //Not the proper way to implement this.
+            //Very choppy scrolling.
             if let Some((_, y)) = self.minifb.get_scroll_wheel() {
                 if y < 0.0 {
                     self.event_cache

@@ -743,7 +743,12 @@ impl<'a> Context<'a> {
         };
 
         if self.scroll_y != 0 && self.window.mouse_position.intersects(bounds) {
+            #[cfg(target_os = "windows")]
             const WHEEL_STEP: usize = 30;
+
+            #[cfg(target_os = "macos")]
+            const WHEEL_STEP: usize = 60;
+
             if self.scroll_y > 0 {
                 *scroll_y = (*scroll_y).saturating_add(self.scroll_y as usize * WHEEL_STEP);
             } else {

@@ -5,8 +5,11 @@ fn main() {
     let mut p: f32 = 0.0;
 
     loop {
-        if ui.exit() {
-            break;
+        if let Some(event) = ui.poll_event() {
+            match event {
+                Event::Quit | Event::Input(Key::Escape, _) => break,
+                _ => {}
+            }
         }
 
         ui.start_frame(black());
@@ -22,9 +25,6 @@ fn main() {
             ui.rect(style().width(100).height(100).bg(rgb(119, 119, 119)));
             ui.rect(style().width(100).height(100).bg(rgb(88, 88, 88)));
         });
-
-
-
 
         p = (p + 0.001) % std::f32::consts::TAU;
 

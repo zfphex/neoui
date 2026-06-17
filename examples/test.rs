@@ -2,9 +2,13 @@ use neoui::*;
 fn main() {
     let mut ui = ui("Test", 1000, 700);
     loop {
-        if ui.exit() {
-            break;
+        if let Some(event) = ui.poll_event() {
+            match event {
+                Event::Quit | Event::Input(Key::Escape, _) => break,
+                _ => {}
+            }
         }
+
         ui.start_frame(black());
 
         ui.begin_layout(Flow::Down, None);

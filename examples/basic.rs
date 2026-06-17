@@ -10,39 +10,6 @@ enum Menu {
     Help,
 }
 
-pub fn scrollbar(ui: &mut Context, viewport: Rect, content_height: usize, scroll_y: &mut usize, scroll_direction: i32) {
-    if content_height <= viewport.height {
-        return;
-    }
-
-    let w = 8;
-    let pad = 4;
-    let min_thumb_h = 20.0;
-
-    let max_scroll = content_height.saturating_sub(viewport.height);
-    let visible_ratio = viewport.height as f32 / content_height as f32;
-    let thumb_h = (viewport.height as f32 * visible_ratio).max(min_thumb_h) as usize;
-    let track_h = viewport.height.saturating_sub(thumb_h);
-    let x = viewport.right() - w - pad;
-    let hitbox = Rect::new(x - pad, viewport.y, w + pad * 2, viewport.height);
-
-    if ui.dragged(hitbox) {
-        let ratio = ui.drag_percentage_y(viewport).unwrap_or_default();
-        *scroll_y = (ratio * max_scroll as f32).round() as usize;
-    } else if scroll_direction != 0 && ui.mouse_position().intersects(viewport) {
-        if scroll_direction > 0 {
-            *scroll_y = scroll_y.saturating_add(50);
-        } else {
-            *scroll_y = scroll_y.saturating_sub(50);
-        }
-    }
-
-    *scroll_y = (*scroll_y).clamp(0, max_scroll);
-    let ratio = *scroll_y as f32 / max_scroll as f32;
-    let thumb_y = viewport.y + (ratio * track_h as f32) as usize;
-    ui.paint_rect(Rect::new(x, thumb_y, w, thumb_h), bg(rgb(80, 80, 80)));
-}
-
 const fn dropdown_items(menu: Menu) -> &'static [&'static str] {
     match menu {
         Menu::File => &["New Project", "Open File...", "Save"],
@@ -65,7 +32,6 @@ fn main() {
     let mut volume = 0.5;
 
     let mut track_scroll_y = 0;
-    let mut total_track_content_height: usize = 0;
 
     let panel_bg = rgb(10, 10, 10);
     let border_color = rgb(45, 45, 45);
@@ -98,22 +64,13 @@ fn main() {
     ];
 
     loop {
-        let mut scroll_direction = 0;
-        match ui.window.event() {
-            Some(event) => match event {
-                Event::Quit => return,
-                Event::Input(Key::Escape, _) => return,
-                Event::Input(Key::ScrollDown, _) => scroll_direction = 1,
-                Event::Input(Key::ScrollUp, _) => scroll_direction = -1,
-                _ => {}
-            },
-            None => {}
-        }
-
-        let _ui_width = ui.width();
-        let _ui_height = ui.height();
-
         ui.start_frame(black());
+        if let Some(event) = ui.poll_event() {
+            match event {
+                Event::Quit | Event::Input(Key::Escape, _) => break,
+                _ => {}
+            }
+        }
 
         let (top_nav_rect, body) = ui.split_v(30);
         let (sidebar_rect, track_rect) = body.split_h(260);
@@ -224,11 +181,7 @@ fn main() {
             ui.paint_rect(sidebar_rect, style().border(border_color).border_side(RIGHT));
         });
 
-        //TODO: It's unintuitive that split_h doesn't take in size here...
-        let (body, _scrollbar) = track_rect.split_h(track_rect.width - 18);
-
-        //TODO: This should scroll
-        ui.flow_down(bounds(body).bg(panel_bg), |ui| {
+        ui.scroll_view(track_rect, &mut track_scroll_y, |ui| {
             ui.text(
                 "beabadoobee - Fake It Flowers (2020)",
                 style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
@@ -244,16 +197,8 @@ fn main() {
                     selected_song = idx;
                     println!("Clicked item {idx}");
                 }
-            }
+            };
         });
-
-        //TODO: Rework the scroll view. It's really bad :(
-        // let inset_scrollbar = scrollbar.inner(4, 4);
-        // ui.paint_rect(scrollbar, style().bg(panel_bg));
-
-        // _ = ui.scroll(Some(inset_scrollbar), track_scroll_y, |ui| {
-
-        // });
 
         ui.draw_frame();
     }

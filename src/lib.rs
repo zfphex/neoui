@@ -84,6 +84,7 @@ pub struct Layout {
 pub struct State {
     pub clicked: bool,
     pub hovered: bool,
+    pub scrolled: bool,
     pub rect: Rect,
 }
 
@@ -103,6 +104,7 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
         layout_stack: Vec::new(),
         glyph_cache: None,
         default_font_size: 32,
+        scroll_y: 0,
     }
 }
 
@@ -113,9 +115,23 @@ pub struct Context<'a> {
     pub layout_stack: Vec<Frame>,
     pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub default_font_size: usize,
+    pub scroll_y: i32,
 }
 
 impl<'a> Context<'a> {
+    pub fn poll_event(&mut self) -> Option<Event> {
+        self.scroll_y = 0;
+
+        match self.window.event() {
+            Some(Event::Input(Key::ScrollDown, _)) => self.scroll_y += 1,
+            Some(Event::Input(Key::ScrollUp, _)) => self.scroll_y -= 1,
+            Some(event) => return Some(event),
+            _ => {}
+        };
+
+        return None;
+    }
+
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
     pub fn walk_layout(&mut self, width: usize, height: usize, gap: usize) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
@@ -510,6 +526,7 @@ impl<'a> Context<'a> {
             return State {
                 clicked: false,
                 hovered: false,
+                scrolled: false,
                 rect,
             };
         }
@@ -577,7 +594,12 @@ impl<'a> Context<'a> {
             );
         }
 
-        State { clicked, hovered, rect }
+        State {
+            clicked,
+            hovered,
+            scrolled: false,
+            rect,
+        }
     }
 
     pub fn flow<R>(
@@ -585,6 +607,7 @@ impl<'a> Context<'a> {
         style: impl Into<Style>,
         flow: Flow,
         advance: bool,
+        scroll_y: usize,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> R {
         let style = style.into();
@@ -628,6 +651,7 @@ impl<'a> Context<'a> {
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
+            scroll_y,
             ..Default::default()
         };
 
@@ -651,28 +675,76 @@ impl<'a> Context<'a> {
 
         if advance {
             self.end_layout();
-        } else {
-            self.layout_stack.pop().expect("Layout underflow");
         }
 
         result
     }
 
     pub fn flow_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.flow(style, Flow::Down, true, ui)
+        self.flow(style, Flow::Down, true, 0, ui)
     }
 
     pub fn flow_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.flow(style, Flow::Right, true, ui)
+        self.flow(style, Flow::Right, true, 0, ui)
     }
 
     // TODO: Rename
     /// Layout widgets inside the container normally but don't add the area to the layout stack after.
     pub fn flow_once<R>(&mut self, style: impl Into<Style>, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
-        self.flow(style, flow, false, ui)
+        let r = self.flow(style, flow, false, 0, ui);
+        self.layout_stack.pop().expect("Layout underflow");
+        r
     }
 
-    //Currently no horizontal scroll support.
+    pub fn scroll_view<R>(
+        &mut self,
+        style: impl Into<Style>,
+        scroll_y: &mut usize,
+        ui: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let flow = Flow::Down;
+        let style = style.into();
+        let state = self.flow(style, flow, false, *scroll_y, ui);
+
+        let frame = self.layout_stack.pop().expect("Layout underflow");
+        if let Some(parent) = self.layout_stack.last_mut() {
+            match parent.flow {
+                Flow::Down => {
+                    parent.cursor_y += frame.bounds.height;
+                    parent.max_child_width = parent.max_child_width.max(frame.bounds.width);
+                    parent.max_child_height += frame.bounds.height;
+                }
+                Flow::Right => {
+                    parent.cursor_x += frame.bounds.width;
+                    parent.max_child_width += frame.bounds.width;
+                    parent.max_child_height = parent.max_child_height.max(frame.bounds.height);
+                }
+            }
+        }
+
+        let bounds = frame.bounds;
+        let content_height = frame.max_child_height;
+
+        let max_scroll = content_height.saturating_sub(bounds.height);
+
+        if self.scroll_y != 0 && self.window.mouse_position.intersects(bounds) {
+            const WHEEL_STEP: usize = 30;
+            if self.scroll_y > 0 {
+                *scroll_y = (*scroll_y).saturating_add(self.scroll_y as usize * WHEEL_STEP);
+            } else {
+                *scroll_y = (*scroll_y).saturating_sub(self.scroll_y.unsigned_abs() as usize * WHEEL_STEP);
+            }
+            //IDK what to do here?
+            // state.scrolled = true;
+        }
+
+        *scroll_y = (*scroll_y).clamp(0, max_scroll);
+
+        //TODO: Return enough information so that the user
+        state
+    }
+
+    #[deprecated]
     pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> usize {
         let bounds = if let Some(bounds) = bounds {
             bounds
@@ -680,11 +752,37 @@ impl<'a> Context<'a> {
             self.current_frame_bounds()
         };
 
-        self.begin_scroll_view(bounds, scroll_y);
+        let parent_clip = self.layout_stack.last().map(|p| p.clip).unwrap_or(bounds);
+        let new_frame = Frame {
+            bounds,
+            clip: parent_clip.intersection(bounds),
+            flow: Flow::Down,
+            cursor_x: bounds.x,
+            cursor_y: bounds.y,
+            scroll_y,
+            ..Default::default()
+        };
+        self.layout_stack.push(new_frame);
 
         let _ = ui(self); //Probably fine.
 
-        self.end_scroll_view()
+        let frame = self.layout_stack.pop().expect("Layout underflow");
+        if let Some(parent) = self.layout_stack.last_mut() {
+            match parent.flow {
+                Flow::Down => {
+                    parent.cursor_y += frame.bounds.height;
+                    parent.max_child_width = parent.max_child_width.max(frame.bounds.width);
+                    parent.max_child_height += frame.bounds.height;
+                }
+                Flow::Right => {
+                    parent.cursor_x += frame.bounds.width;
+                    parent.max_child_width += frame.bounds.width;
+                    parent.max_child_height = parent.max_child_height.max(frame.bounds.height);
+                }
+            }
+        }
+
+        frame.max_child_height
     }
 
     pub fn start_frame(&mut self, fill_color: u32) {
@@ -768,40 +866,6 @@ impl<'a> Context<'a> {
         let cell_h = row_height.min(grid_bounds.height.saturating_sub(row * row_height));
 
         self.begin_layout(flow, Some(Rect::new(cell_x, cell_y, cell_w, cell_h)));
-    }
-
-    pub fn begin_scroll_view(&mut self, bounds: Rect, scroll_y: usize) {
-        let parent_clip = self.layout_stack.last().map(|p| p.clip).unwrap_or(bounds);
-        let new_frame = Frame {
-            bounds,
-            clip: parent_clip.intersection(bounds),
-            flow: Flow::Down,
-            cursor_x: bounds.x,
-            cursor_y: bounds.y,
-            scroll_y,
-            ..Default::default()
-        };
-        self.layout_stack.push(new_frame);
-    }
-
-    pub fn end_scroll_view(&mut self) -> usize {
-        let frame = self.layout_stack.pop().expect("Layout underflow");
-        if let Some(parent) = self.layout_stack.last_mut() {
-            match parent.flow {
-                Flow::Down => {
-                    parent.cursor_y += frame.bounds.height;
-                    parent.max_child_width = parent.max_child_width.max(frame.bounds.width);
-                    parent.max_child_height += frame.bounds.height;
-                }
-                Flow::Right => {
-                    parent.cursor_x += frame.bounds.width;
-                    parent.max_child_width += frame.bounds.width;
-                    parent.max_child_height = parent.max_child_height.max(frame.bounds.height);
-                }
-            }
-        }
-
-        frame.max_child_height
     }
 
     pub fn fill(&mut self, color: u32) {
@@ -913,15 +977,5 @@ impl<'a> Context<'a> {
 
     pub fn height(&mut self) -> usize {
         self.window.height()
-    }
-
-    pub fn exit(&mut self) -> bool {
-        if let Some(event) = self.window.event() {
-            return match event {
-                Event::Quit | Event::Input(Key::Escape, _) => true,
-                _ => false,
-            };
-        }
-        false
     }
 }

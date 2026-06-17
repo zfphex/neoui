@@ -7,23 +7,24 @@ fn main() {
     let mut scroll_y = 18;
 
     loop {
-        if ui.exit() {
-            break;
+        ui.start_frame(black());
+        if let Some(event) = ui.poll_event() {
+            match event {
+                Event::Quit | Event::Input(Key::Escape, _) => break,
+                _ => {}
+            }
         }
 
-        ui.start_frame(black());
-
         let bounds = ui.layout_stack.last().unwrap().bounds;
-        ui.begin_scroll_view(bounds, scroll_y);
-        ui.text("test", style());
-        ui.text("test", style());
-        ui.text("test", style());
-        ui.text("test", style());
-        ui.text("test", style());
-        ui.text("test", style());
-        ui.text("test", style());
-
-        ui.end_scroll_view();
+        ui.scroll_view(bounds, &mut scroll_y, |ui| {
+            ui.text("test", style());
+            ui.text("test", style());
+            ui.text("test", style());
+            ui.text("test", style());
+            ui.text("test", style());
+            ui.text("test", style());
+            ui.text("test", style());
+        });
 
         scroll_y = (p * 10.0).round() as usize;
         p = (p + 0.01) % std::f32::consts::TAU;

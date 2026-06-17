@@ -146,7 +146,7 @@ fn main() {
                 ui.paint_triangle(
                     (rect.x, cy + track_height),
                     (rect.x + width, cy + track_height),
-                    (rect.x + width, cy - track_height),
+                    (rect.x + width, cy.saturating_sub(track_height)),
                     bg(black()),
                 );
 
@@ -190,9 +190,7 @@ fn main() {
             );
 
             let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
-            let row_style = row_style
-                .align(Alignment::Left { pad: 12 })
-                .width(ui.resolve_size(Size::FillMinus(20), Flow::Right));
+            let row_style = row_style.align(Alignment::Left { pad: 12 });
 
             for (idx, track) in tracklist.into_iter().enumerate() {
                 if ui.item(track, idx == selected_song, row_style).clicked {
@@ -203,20 +201,23 @@ fn main() {
         });
 
         {
-            let scrollbar = scrollbar.inner(4, 0);
-            let bar_height = 80;
-            let mid_bar = bar_height as f32 / 2.0;
-            let mut ratio = scroll_y as f32 / state.max_scroll as f32;
+            let s = scrollbar.inner(4, 0);
+            let (y, h) = (s.y as f32, s.height as f32);
+            let thumb_h = 80.0;
+            // Calculate the exact space the bar can move within.
+            let available_height = (h - thumb_h).max(0.0);
+            let mut ratio = (scroll_y as f32 / state.max_scroll as f32).clamp(0.0, 1.0);
 
-            // TODO: The bar cannot be dragged to the absolute top or bottom (cutoff just before).
             if ui.dragged(scrollbar) {
-                ratio = ((ui.mouse_position().y as f32 + mid_bar) / scrollbar.height as f32).clamp(0.0, 1.0);
-                scroll_y = (((ratio * state.max_scroll as f32) - mid_bar) as usize).clamp(0, state.max_scroll);
+                // Offset the mouse position by half the bar height so the drag centers on the thumb.
+                let mousey = ui.mouse_position().y as f32 - y - (thumb_h / 2.0);
+                ratio = (mousey / available_height).clamp(0.0, 1.0);
+                scroll_y = (ratio * state.max_scroll as f32).round() as usize;
             }
 
-            let y = scrollbar.y + (ratio * scrollbar.height as f32 - bar_height as f32) as usize;
-            let bar = Rect::new(scrollbar.x, y, scrollbar.width, bar_height);
-            ui.paint_rect(bar, bg(rgb(80, 80, 80)));
+            let y = s.y + (ratio * available_height).round() as usize;
+            let thumb = Rect::new(s.x, y, s.width, thumb_h as usize);
+            ui.paint_rect(thumb, bg(rgb(80, 80, 80)));
         }
 
         ui.draw_frame();

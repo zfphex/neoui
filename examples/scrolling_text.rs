@@ -3,7 +3,8 @@ use neoui::*;
 fn main() {
     let mut ui = ui("Test", 1000, 700);
 
-    let scroll_y = 18;
+    let mut p: f32 = 0.0;
+    let mut scroll_y = 18;
 
     loop {
         if ui.exit() {
@@ -23,6 +24,9 @@ fn main() {
         ui.text("test", style());
 
         ui.end_scroll_view();
+
+        scroll_y = (p * 10.0).round() as usize;
+        p = (p + 0.01) % std::f32::consts::TAU;
 
         ui.draw_frame();
     }

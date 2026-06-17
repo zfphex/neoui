@@ -237,6 +237,41 @@ impl<'a> Context<'a> {
         }
     }
 
+    pub fn resolve_rect(&self, rect: Rect, flow: Flow, size: Size) -> usize {
+        match size {
+            Size::Pixel(px) => px,
+            Size::Percentage(pct) => {
+                let total = match flow {
+                    Flow::Down => rect.height,
+                    Flow::Right => rect.width,
+                };
+                (total as f32 * pct) as usize
+            }
+            Size::Fill => match flow {
+                Flow::Down => rect.height,
+                Flow::Right => rect.width,
+            },
+            Size::FillMinus(sub) => {
+                let remaining = match flow {
+                    Flow::Down => rect.height,
+                    Flow::Right => rect.width,
+                };
+                remaining.saturating_sub(sub.abs() as usize)
+            }
+            Size::Fit => todo!(),
+        }
+    }
+
+    pub fn split_rect_h(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
+        let left_width = self.resolve_rect(rect, Flow::Right, size.into_size().unwrap_or_default());
+        rect.split_h(left_width)
+    }
+
+    pub fn split_rect_v(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
+        let top_height = self.resolve_rect(rect, Flow::Down, size.into_size().unwrap_or_default());
+        rect.split_v(top_height)
+    }
+
     /// Splits the current frame's remaining space horizontally.
     pub fn split_h(&self, left_width: impl IntoSize) -> (Rect, Rect) {
         let left_width = self.resolve_size(left_width.into_size().unwrap_or_default(), Flow::Right);

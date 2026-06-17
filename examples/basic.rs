@@ -30,8 +30,7 @@ fn main() {
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut selected_song = 0;
     let mut volume = 0.5;
-
-    let mut track_scroll_y = 0;
+    let mut scroll_y = 0;
 
     let panel_bg = rgb(10, 10, 10);
     let border_color = rgb(45, 45, 45);
@@ -181,12 +180,10 @@ fn main() {
             ui.paint_rect(sidebar_rect, style().border(border_color).border_side(RIGHT));
         });
 
-        ui.scroll_view(track_rect, &mut track_scroll_y, |ui| {
-            // let (left, right) = ui.split_h(Size::FillMinus(24));
-            // dbg!(left, right);
-            // ui.rect(bounds(left).bg(red()).depth(1));
-            // ui.rect(bounds(right).bg(green()).depth(1));
+        //This is kinda cursed.
+        let (track_rect, scrollbar) = ui.split_rect_h(track_rect, Size::FillMinus(20));
 
+        let state = ui.scroll_view(track_rect, &mut scroll_y, |ui| {
             ui.text(
                 "beabadoobee - Fake It Flowers (2020)",
                 style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
@@ -204,6 +201,23 @@ fn main() {
                 }
             }
         });
+
+        {
+            let scrollbar = scrollbar.inner(4, 0);
+            let bar_height = 80;
+            let mid_bar = bar_height as f32 / 2.0;
+            let mut ratio = scroll_y as f32 / state.max_scroll as f32;
+
+            // TODO: The bar cannot be dragged to the absolute top or bottom (cutoff just before).
+            if ui.dragged(scrollbar) {
+                ratio = ((ui.mouse_position().y as f32 + mid_bar) / scrollbar.height as f32).clamp(0.0, 1.0);
+                scroll_y = (((ratio * state.max_scroll as f32) - mid_bar) as usize).clamp(0, state.max_scroll);
+            }
+
+            let y = scrollbar.y + (ratio * scrollbar.height as f32 - bar_height as f32) as usize;
+            let bar = Rect::new(scrollbar.x, y, scrollbar.width, bar_height);
+            ui.paint_rect(bar, bg(rgb(80, 80, 80)));
+        }
 
         ui.draw_frame();
     }

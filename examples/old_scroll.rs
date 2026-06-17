@@ -44,27 +44,22 @@ fn main() {
             }
         });
 
-        let scrollbar = scrollbar.inner(4, 0);
-        let bar_height = 80;
-        let mid_bar = bar_height as f32 / 2.0;
-        let mut ratio = scroll_y as f32 / state.max_scroll as f32;
+        {
+            let scrollbar = scrollbar.inner(4, 0);
+            let bar_height = 80;
+            let mid_bar = bar_height as f32 / 2.0;
+            let mut ratio = scroll_y as f32 / state.max_scroll as f32;
 
-        // TODO: The bar cannot be dragged to the absolute top or bottom (cutoff just before).
-        if ui.dragged(scrollbar) {
-            ratio = ((ui.mouse_position().y as f32 + mid_bar) / scrollbar.height as f32).clamp(0.0, 1.0);
-            scroll_y = (((ratio * state.max_scroll as f32) - mid_bar) as usize).clamp(0, state.max_scroll);
-            dbg!(scroll_y);
+            // TODO: The bar cannot be dragged to the absolute top or bottom (cutoff just before).
+            if ui.dragged(scrollbar) {
+                ratio = ((ui.mouse_position().y as f32 + mid_bar) / scrollbar.height as f32).clamp(0.0, 1.0);
+                scroll_y = (((ratio * state.max_scroll as f32) - mid_bar) as usize).clamp(0, state.max_scroll);
+            }
+
+            let y = scrollbar.y + (ratio * scrollbar.height as f32 - 84.0) as usize;
+            let bar = Rect::new(scrollbar.x, y, scrollbar.width, bar_height);
+            ui.paint_rect(bar, bg(rgb(80, 80, 80)));
         }
-
-        let y = scrollbar.y + (ratio * scrollbar.height as f32 - 84.0) as usize;
-
-        // eprintln!(
-        //     "state: {}, scroll_y: {}, ratio: {}, y: {}",
-        //     state.max_scroll, scroll_y, ratio, y
-        // );
-
-        let bar = Rect::new(scrollbar.x, y, scrollbar.width, bar_height);
-        ui.paint_rect(bar, bg(rgb(80, 80, 80)));
 
         ui.draw_frame();
     }

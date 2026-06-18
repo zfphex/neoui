@@ -965,22 +965,6 @@ impl<'a> Context<'a> {
                         color,
                         size,
                     } => {
-                        // let cache_map = self.glyph_cache.get_or_insert_with(HashMap::new);
-                        // draw_text(
-                        //     &text,
-                        //     self.font.as_ref().unwrap(),
-                        //     x,
-                        //     y,
-                        //     size,
-                        //     self.window.display_scale(),
-                        //     self_width,
-                        //     &mut self.window.buffer,
-                        //     color,
-                        //     false,
-                        //     cache_map,
-                        //     clip,
-                        // );
-
                         draw_text(
                             &text,
                             self.font.as_ref().unwrap(),

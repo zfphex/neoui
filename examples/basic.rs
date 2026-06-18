@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use neoui::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,6 +62,8 @@ fn main() {
         "Duster ",
         "Flume",
     ];
+
+    let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
 
     loop {
         ui.start_frame(black());
@@ -189,11 +192,10 @@ fn main() {
                 style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
             );
 
-            let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
             let row_style = row_style.align(Alignment::Left { pad: 12 });
 
-            for (idx, track) in tracklist.into_iter().enumerate() {
-                if ui.item(track, idx == selected_song, row_style).clicked {
+            for (idx, track) in tracklist.iter().enumerate() {
+                if ui.item(Cow::from(track), idx == selected_song, row_style).clicked {
                     selected_song = idx;
                     println!("Clicked item {idx}");
                 }

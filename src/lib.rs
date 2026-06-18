@@ -2,6 +2,7 @@
 #![allow(unexpected_cfgs)]
 
 pub mod style;
+use rustc_hash::FxHashMap;
 pub use style::*;
 
 pub mod platform;
@@ -111,17 +112,27 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
         window: window,
         layout_stack: Vec::new(),
         glyph_cache: None,
+        // text_cache: TextCache {
+        //     ascii: std::array::from_fn(|_| FxHashMap::default()),
+        //     unicode: FxHashMap::default(),
+        // },
         default_font_size: 32,
         scroll_y: 0,
     }
 }
+
+// pub struct TextCache {
+//     pub ascii: [FxHashMap<usize, (fontdue::Metrics, Vec<u8>)>; 128],
+//     pub unicode: FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+// }
 
 pub struct Context<'a> {
     pub commands: [Vec<Command<'a>>; 16],
     pub font: Option<fontdue::Font>,
     pub window: std::pin::Pin<Box<Window>>,
     pub layout_stack: Vec<Frame>,
-    pub glyph_cache: Option<HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    pub glyph_cache: Option<FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    // pub text_cache: TextCache,
     pub default_font_size: usize,
     pub scroll_y: i32,
 }
@@ -448,7 +459,7 @@ impl<'a> Context<'a> {
 
     pub fn measure_text(&mut self, text: &str, font_size: usize) -> Rect {
         let font = self.font.as_ref().expect("Font missing");
-        let cache = self.glyph_cache.get_or_insert_with(HashMap::new);
+        let fxcache = self.glyph_cache.get_or_insert_with(FxHashMap::default);
 
         draw_text(
             text,
@@ -461,7 +472,7 @@ impl<'a> Context<'a> {
             &mut [],
             0,
             true,
-            cache,
+            fxcache,
             Rect::new(0, 0, self.window.width(), self.window.height()),
         )
     }
@@ -981,7 +992,23 @@ impl<'a> Context<'a> {
                         color,
                         size,
                     } => {
-                        let cache_map = self.glyph_cache.get_or_insert_with(HashMap::new);
+                        // let cache_map = self.glyph_cache.get_or_insert_with(HashMap::new);
+                        // draw_text(
+                        //     &text,
+                        //     self.font.as_ref().unwrap(),
+                        //     x,
+                        //     y,
+                        //     size,
+                        //     self.window.display_scale(),
+                        //     self_width,
+                        //     &mut self.window.buffer,
+                        //     color,
+                        //     false,
+                        //     cache_map,
+                        //     clip,
+                        // );
+
+                        let cache = self.glyph_cache.get_or_insert_with(FxHashMap::default);
                         draw_text(
                             &text,
                             self.font.as_ref().unwrap(),
@@ -993,7 +1020,7 @@ impl<'a> Context<'a> {
                             &mut self.window.buffer,
                             color,
                             false,
-                            cache_map,
+                            cache,
                             clip,
                         );
                     }

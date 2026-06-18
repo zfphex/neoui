@@ -1,5 +1,52 @@
 use crate::*;
 
+pub const GAMMA_TO_LINEAR: [f32; 256] = const {
+    let mut table = [0.0; 256];
+    let mut i = 0;
+    while i <= 255 {
+        let v = i as f32 / 255.0;
+        table[i] = v * v;
+        i += 1
+    }
+    table
+};
+
+pub const LINEAR_RESOLUTION: usize = 4096;
+pub const LINEAR_MULTIPLIER: f32 = 4095.0;
+
+/// Maps a linear float back to an 8-bit sRGB value.
+/// Requires multiplying the float by (LINEAR_RESOLUTION - 1) to get the index.
+pub const LINEAR_TO_GAMMA: [u8; LINEAR_RESOLUTION] = const {
+    let mut table = [0; LINEAR_RESOLUTION];
+    let mut i = 0;
+    while i < LINEAR_RESOLUTION {
+        let v = i as f32 / (LINEAR_RESOLUTION - 1) as f32;
+        table[i] = (const_sqrt(v) * 255.0).round() as u8;
+        i += 1
+    }
+    table
+};
+
+pub const fn const_sqrt(x: f32) -> f32 {
+    if x < 0.0 {
+        panic!("Cannot calculate square root of a negative number");
+    }
+    if x == 0.0 || x == 1.0 {
+        return x;
+    }
+
+    let mut guess = x / 2.0;
+    let mut i = 0;
+
+    // Run loop a fixed number of times since dynamic convergence checks
+    // can be trickier in restricted const evaluations
+    while i < 100 {
+        guess = 0.5 * (guess + x / guess);
+        i += 1;
+    }
+    guess
+}
+
 pub const fn scale(value: usize, scale: f32) -> usize {
     (value as f32 * scale).round() as usize
 }
@@ -57,28 +104,37 @@ pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Align
 
 pub fn draw_rect(
     buffer: &mut [u32],
-    x: usize,
-    y: usize,
-    mut width: usize,
-    mut height: usize,
+    x: i32,
+    y: i32,
+    width: usize,
+    height: usize,
     window_width: usize,
     window_height: usize,
     color: u32,
 ) {
+    profile!();
+    let (mut width, mut height) = (width as i32, height as i32);
+    let (window_width, window_height) = (window_width as i32, window_height as i32);
+
     if x > window_width || y > window_height {
         return;
     }
+
     if x + width > window_width {
         width = window_width.saturating_sub(x);
     }
+
     if y + height > window_height {
         height = window_height.saturating_sub(y);
     }
 
     for i in y..y + height {
         let pos = x + window_width * i;
-        if let Some(buffer) = buffer.get_mut(pos..pos + width) {
-            buffer.fill(color);
+        if pos > 0 {
+            let pos = pos as usize;
+            if let Some(buffer) = buffer.get_mut(pos..pos + width as usize) {
+                buffer.fill(color);
+            }
         }
     }
 }
@@ -94,6 +150,7 @@ pub fn draw_rect_outline(
     clip: Rect,
     sides: u8,
 ) {
+    profile!();
     use border::*;
 
     if width == 0 || height == 0 || window_width == 0 {
@@ -156,6 +213,7 @@ pub fn draw_rounded_rect(
     color: u32,
     clip: Rect,
 ) {
+    profile!();
     if width == 0 || height == 0 {
         return;
     }
@@ -258,6 +316,7 @@ pub fn draw_rounded_rect_outline(
     color: u32,
     clip: Rect,
 ) {
+    profile!();
     if width == 0 || height == 0 || thickness == 0 {
         return;
     }
@@ -565,6 +624,21 @@ pub fn draw_triangle_sdf(
     }
 }
 
+pub fn apply_lcd_filter(bitmap: &mut [u8], width: usize, height: usize) {
+    let stride = width * 3;
+    for row in 0..height {
+        let offset = row * stride;
+        let mut left = 0u16;
+        for i in 0..stride {
+            let idx = offset + i;
+            let center = bitmap[idx] as u16;
+            let right = if i == stride - 1 { 0 } else { bitmap[idx + 1] as u16 };
+            bitmap[idx] = ((left + (center * 2) + right) / 4) as u8;
+            left = center;
+        }
+    }
+}
+
 pub fn draw_text(
     text: &str,
     font: &fontdue::Font,
@@ -576,28 +650,10 @@ pub fn draw_text(
     buffer: &mut [u32],
     color: u32,
     skip_draw: bool,
-    cache_map: &mut HashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+    cache_map: &mut FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
     clip: Rect,
 ) -> Rect {
-    fn apply_lcd_filter(bitmap: &mut [u8], width: usize, height: usize) {
-        let stride = width * 3;
-
-        for row in 0..height {
-            let offset = row * stride;
-            let mut left = 0u16;
-
-            for i in 0..stride {
-                let idx = offset + i;
-                let center = bitmap[idx] as u16;
-                let right = if i == stride - 1 { 0 } else { bitmap[idx + 1] as u16 };
-                // Apply the [1, 2, 1] filter
-                bitmap[idx] = ((left + (center * 2) + right) / 4) as u8;
-                // The unfiltered center becomes the left for the next iteration
-                left = center;
-            }
-        }
-    }
-
+    profile!();
     if text.is_empty() || font_size == 0 {
         return Rect::default();
     }
@@ -609,16 +665,24 @@ pub fn draw_text(
     let line_metrics = font.horizontal_line_metrics(scaled_font_size).unwrap();
     let ascent = line_metrics.ascent;
 
-    let (txt_r, txt_g, txt_b) = split_f32(color);
+    // Pre-calculate the linear text color
+    let txt_r = (color >> 16) & 0xFF;
+    let txt_g = (color >> 8) & 0xFF;
+    let txt_b = color & 0xFF;
 
-    // Gamma corrected
-    let txt_r = (txt_r / 255.0).powi(2);
-    let txt_g = (txt_g / 255.0).powi(2);
-    let txt_b = (txt_b / 255.0).powi(2);
+    let txt_r_lin = GAMMA_TO_LINEAR[txt_r as usize];
+    let txt_g_lin = GAMMA_TO_LINEAR[txt_g as usize];
+    let txt_b_lin = GAMMA_TO_LINEAR[txt_b as usize];
 
     let mut y_pos = y_start;
     let mut max_x = x_start.max(0.0) as usize;
     let mut max_y = y_start.max(0.0) as usize;
+
+    let clip_x = clip.x as i32;
+    let clip_y = clip.y as i32;
+    let clip_right = (clip.x + clip.width) as i32;
+    let clip_bottom = (clip.y + clip.height) as i32;
+    let buffer_height = (buffer.len() / window_width) as i32;
 
     for line in text.lines() {
         let mut glyph_x = x_start;
@@ -631,86 +695,83 @@ pub fn draw_text(
                 (metrics, bitmap)
             });
 
-            let glyph_screen_y = baseline_y - metrics.height as f32 - metrics.ymin as f32;
-            let glyph_screen_x = glyph_x + metrics.xmin as f32;
+            let glyph_screen_y = (baseline_y - metrics.height as f32 - metrics.ymin as f32).round() as i32;
+            let glyph_screen_x = (glyph_x + metrics.xmin as f32).round() as i32;
 
-            // Calculate bounding box
-            // Note: Text bounds should ignore screen clipping
             if metrics.width > 0 && metrics.height > 0 {
-                let current_max_x = (glyph_screen_x + metrics.width as f32).round().max(0.0) as usize;
-                let current_max_y = (glyph_screen_y + metrics.height as f32).round().max(0.0) as usize;
-
+                let current_max_x = (glyph_screen_x + metrics.width as i32).max(0) as usize;
+                let current_max_y = (glyph_screen_y + metrics.height as i32).max(0) as usize;
                 max_x = max_x.max(current_max_x);
                 max_y = max_y.max(current_max_y);
             }
 
-            // Draw the text
             if !skip_draw {
-                for y_px in 0..metrics.height {
-                    let screen_y = (glyph_screen_y + y_px as f32).round() as i32;
+                // Exact Clip Intersection (Zero branching in inner loop)
+                let draw_start_x = glyph_screen_x.max(clip_x).max(0);
+                let draw_end_x = (glyph_screen_x + metrics.width as i32)
+                    .min(clip_right)
+                    .min(window_width as i32);
 
-                    if screen_y < 0 || screen_y < clip.y as i32 || screen_y >= (clip.y + clip.height) as i32 {
-                        continue;
-                    }
-                    let screen_y_usize = screen_y as usize;
+                let draw_start_y = glyph_screen_y.max(clip_y).max(0);
+                let draw_end_y = (glyph_screen_y + metrics.height as i32)
+                    .min(clip_bottom)
+                    .min(buffer_height);
 
-                    'x_loop: for x_px in 0..metrics.width {
-                        let screen_x = (glyph_screen_x + x_px as f32).round() as i32;
+                if draw_start_x < draw_end_x && draw_start_y < draw_end_y {
+                    let draw_width = (draw_end_x - draw_start_x) as usize;
+                    let bitmap_offset_x = (draw_start_x - glyph_screen_x) as usize;
 
-                        if screen_x < 0 || screen_x < clip.x as i32 || screen_x >= (clip.x + clip.width) as i32 {
-                            continue;
+                    for screen_y in draw_start_y..draw_end_y {
+                        let bitmap_y = (screen_y - glyph_screen_y) as usize;
+
+                        // Exact memory slicing (Elides bounds checks)
+                        let buffer_start = screen_y as usize * window_width + draw_start_x as usize;
+                        // Grab the pixels we will write to in the window buffer
+                        let buffer_row = &mut buffer[buffer_start..buffer_start + draw_width];
+
+                        let bitmap_start = (bitmap_y * metrics.width + bitmap_offset_x) * 3;
+                        // Grab the subpixel masks for this row
+                        let bitmap_row = &bitmap[bitmap_start..bitmap_start + draw_width * 3];
+
+                        const INV_255: f32 = 1.0 / 255.0; // Mult is faster than div (on my machine)
+
+                        // Zip iteration allows the compiler to auto-vectorize
+                        for (i, bg) in buffer_row.iter_mut().enumerate() {
+                            let mask_idx = i * 3;
+                            let m_r = bitmap_row[mask_idx];
+                            let m_g = bitmap_row[mask_idx + 1];
+                            let m_b = bitmap_row[mask_idx + 2];
+
+                            // Skip empty pixels to save memory bandwidth (avoid dirtying cache lines)
+                            if m_r == 0 && m_g == 0 && m_b == 0 {
+                                continue;
+                            }
+
+                            let mask_r = m_r as f32 * INV_255;
+                            let mask_g = m_g as f32 * INV_255;
+                            let mask_b = m_b as f32 * INV_255;
+
+                            let bg_val = *bg;
+                            let bg_r = (bg_val >> 16) & 0xFF;
+                            let bg_g = (bg_val >> 8) & 0xFF;
+                            let bg_b = bg_val & 0xFF;
+
+                            // LUT lookups
+                            let bg_r_lin = GAMMA_TO_LINEAR[bg_r as usize];
+                            let bg_g_lin = GAMMA_TO_LINEAR[bg_g as usize];
+                            let bg_b_lin = GAMMA_TO_LINEAR[bg_b as usize];
+
+                            // Fused Multiply-Add
+                            let out_r_lin = (txt_r_lin * mask_r) + (bg_r_lin * (1.0 - mask_r));
+                            let out_g_lin = (txt_g_lin * mask_g) + (bg_g_lin * (1.0 - mask_g));
+                            let out_b_lin = (txt_b_lin * mask_b) + (bg_b_lin * (1.0 - mask_b));
+
+                            let out_r = LINEAR_TO_GAMMA[(out_r_lin * LINEAR_MULTIPLIER) as usize] as u32;
+                            let out_g = LINEAR_TO_GAMMA[(out_g_lin * LINEAR_MULTIPLIER) as usize] as u32;
+                            let out_b = LINEAR_TO_GAMMA[(out_b_lin * LINEAR_MULTIPLIER) as usize] as u32;
+
+                            *bg = (out_r << 16) | (out_g << 8) | out_b;
                         }
-
-                        let screen_x_usize = screen_x as usize;
-                        if screen_x_usize >= window_width {
-                            continue;
-                        }
-
-                        let glyph_idx = (y_px * metrics.width + x_px) * 3;
-                        let mask_r = bitmap[glyph_idx] as f32 / 255.0;
-                        let mask_g = bitmap[glyph_idx + 1] as f32 / 255.0;
-                        let mask_b = bitmap[glyph_idx + 2] as f32 / 255.0;
-
-                        if mask_r == 0.0 && mask_g == 0.0 && mask_b == 0.0 {
-                            continue;
-                        }
-
-                        let buffer_idx = screen_x_usize + (window_width * screen_y_usize);
-                        if buffer_idx >= buffer.len() {
-                            break 'x_loop;
-                        }
-
-                        // Gamma correction.
-                        if let Some(bg) = buffer.get_mut(buffer_idx) {
-                            let (bg_r, bg_g, bg_b) = split_f32(*bg);
-
-                            // Convert background to linear space (0.0 to 1.0)
-                            let bg_r_lin = (bg_r / 255.0).powi(2);
-                            let bg_g_lin = (bg_g / 255.0).powi(2);
-                            let bg_b_lin = (bg_b / 255.0).powi(2);
-
-                            // Blend background and text in linear space
-                            let out_r_lin = (txt_r * mask_r) + (bg_r_lin * (1.0 - mask_r));
-                            let out_g_lin = (txt_g * mask_g) + (bg_g_lin * (1.0 - mask_g));
-                            let out_b_lin = (txt_b * mask_b) + (bg_b_lin * (1.0 - mask_b));
-
-                            // Convert back to sRGB (0 to 255)
-                            let out_r = (out_r_lin.sqrt() * 255.0) as u8;
-                            let out_g = (out_g_lin.sqrt() * 255.0) as u8;
-                            let out_b = (out_b_lin.sqrt() * 255.0) as u8;
-
-                            *bg = rgb(out_r, out_g, out_b);
-                        }
-
-                        // Non-gamma corrected
-
-                        // if let Some(bg) = buffer.get_mut(buffer_idx) {
-                        //     let (bg_r, bg_g, bg_b) = split_f32(*bg);
-                        //     let out_r = (txt_r * mask_r) + (bg_r * (1.0 - mask_r));
-                        //     let out_g = (txt_g * mask_g) + (bg_g * (1.0 - mask_g));
-                        //     let out_b = (txt_b * mask_b) + (bg_b * (1.0 - mask_b));
-                        //     *bg = rgb(out_r as u8, out_g as u8, out_b as u8);
-                        // }
                     }
                 }
             }

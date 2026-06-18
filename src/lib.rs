@@ -68,6 +68,15 @@ pub enum Command<'a> {
         color: u32,
         size: usize,
     },
+    Icon {
+        icon: char,
+        font: &'a fontdue::Font,
+        clip: Rect,
+        x: i32,
+        y: i32,
+        color: u32,
+        size: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -108,6 +117,7 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
         window: window,
         layout_stack: Vec::new(),
         glyph_cache: FxHashMap::default(),
+        icon_glyph_cache: FxHashMap::default(),
         metrics_cache: FxHashMap::default(),
         default_font_size: 32,
         scroll_y: 0,
@@ -120,6 +130,7 @@ pub struct Context<'a> {
     pub window: std::pin::Pin<Box<Window>>,
     pub layout_stack: Vec<Frame>,
     pub glyph_cache: FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+    pub icon_glyph_cache: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub metrics_cache: FxHashMap<(char, usize), fontdue::Metrics>,
     pub default_font_size: usize,
     pub scroll_y: i32,
@@ -400,8 +411,35 @@ impl<'a> Context<'a> {
         self.window.mouse_position
     }
 
-    pub fn paint_icon(&mut self) {
-        todo!()
+    pub fn paint_icon(&mut self, icon: char, rect: Rect, font: &'a fontdue::Font, style: Style) {
+        let font_size = style.font_size.unwrap_or(self.default_font_size);
+        let mut icon_buffer = [0; 4];
+        let icon_text = icon.encode_utf8(&mut icon_buffer);
+        let text_metrics = measure_text(icon_text, font, font_size, 1.0, &mut FxHashMap::default());
+
+        let Some((x, y)) = align_rect(
+            rect.x as i32,
+            rect.y as i32,
+            rect.width,
+            rect.height,
+            text_metrics.width,
+            text_metrics.height,
+            style.alignment.unwrap_or(Alignment::Center),
+        ) else {
+            return;
+        };
+
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+        let depth = style.depth.unwrap_or(0);
+        self.commands[depth].push(Command::Icon {
+            icon,
+            font,
+            clip,
+            x,
+            y,
+            color: style.fg.unwrap_or(white()),
+            size: font_size,
+        });
     }
 
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
@@ -468,30 +506,16 @@ impl<'a> Context<'a> {
         let text = text.into();
         let text_metrics = self.measure_text(&text, font_size);
 
-        if text_metrics.width > width || text_metrics.height > height {
+        let Some((x, y)) = align_rect(
+            paint_x,
+            paint_y,
+            width,
+            height,
+            text_metrics.width,
+            text_metrics.height,
+            alignment,
+        ) else {
             return;
-        }
-
-        let child_w = text_metrics.width as i32;
-        let child_h = text_metrics.height as i32;
-        let width = width as i32;
-        let height = height as i32;
-
-        let mid_x = paint_x + (width / 2) - (child_w / 2);
-        let mid_y = paint_y + (height / 2) - (child_h / 2);
-        let right_edge = paint_x + width - child_w;
-        let bottom_edge = paint_y + height - child_h;
-
-        let (x, y) = match alignment {
-            Alignment::Left { pad } => (paint_x + pad as i32, mid_y),
-            Alignment::Center => (mid_x, mid_y),
-            Alignment::Right { pad } => (right_edge - pad as i32, mid_y),
-            Alignment::TopLeft { padh, padv } => (paint_x + padh as i32, paint_y + padv as i32),
-            Alignment::TopCenter { pad } => (mid_x, paint_y + pad as i32),
-            Alignment::TopRight { padh, padv } => (right_edge - padh as i32, paint_y + padv as i32),
-            Alignment::BottomLeft { padh, padv } => (paint_x + padh as i32, bottom_edge - padv as i32),
-            Alignment::BottomCenter { pad } => (mid_x, bottom_edge - pad as i32),
-            Alignment::BottomRight { padh, padv } => (right_edge - padh as i32, bottom_edge - padv as i32),
         };
 
         let clip = self.layout_stack.last().expect("No active frame").clip;
@@ -979,6 +1003,36 @@ impl<'a> Context<'a> {
                             &mut self.window.buffer,
                             color,
                             &mut self.glyph_cache,
+                            clip,
+                        );
+                    }
+                    Command::Icon {
+                        icon,
+                        font,
+                        clip,
+                        x,
+                        y,
+                        color,
+                        size,
+                    } => {
+                        //The library should probably handle font loading
+                        //and each font should have a unique ID that would be
+                        //used here instead of a pointer.
+                        let font_key = font as *const fontdue::Font as usize;
+                        let cache = self.icon_glyph_cache.entry(font_key).or_default();
+                        let mut icon_buffer = [0; 4];
+                        let icon = icon.encode_utf8(&mut icon_buffer);
+                        draw_text(
+                            icon,
+                            font,
+                            x,
+                            y,
+                            size,
+                            self.window.display_scale(),
+                            self_width,
+                            &mut self.window.buffer,
+                            color,
+                            cache,
                             clip,
                         );
                     }

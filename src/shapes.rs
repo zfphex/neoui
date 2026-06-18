@@ -68,38 +68,40 @@ pub enum Alignment {
     BottomRight { padh: usize, padv: usize },
 }
 
-pub fn align_rect(parent: Rect, child_w: usize, child_h: usize, alignment: Alignment) -> Rect {
-    // dbg!(parent, child_w, child_h);
-
-    // Cannot align inside of rect since it must clip.
-    if child_w > parent.width || child_h > parent.height {
-        return Rect::new(0, 0, 0, 0);
+pub fn align_rect(
+    parent_x: i32,
+    parent_y: i32,
+    parent_w: usize,
+    parent_h: usize,
+    child_w: usize,
+    child_h: usize,
+    alignment: Alignment,
+) -> Option<(i32, i32)> {
+    if child_w > parent_w || child_h > parent_h {
+        return None;
     }
 
-    let mid_x = parent.x + (parent.width / 2) - (child_w / 2);
-    let mid_y = parent.y + (parent.height / 2) - (child_h / 2);
-    let right_edge = parent.x + parent.width - child_w;
-    let bottom_edge = parent.y + parent.height - child_h;
+    let child_w = child_w as i32;
+    let child_h = child_h as i32;
+    let parent_w = parent_w as i32;
+    let parent_h = parent_h as i32;
 
-    // hmmm
-    // let mid_x = (parent.x as i32 + (parent.width as i32 / 2) - (child_w as i32 / 2)) as usize;
-    // let mid_y = (parent.y as i32 + (parent.height as i32 / 2) - (child_h as i32 / 2)) as usize;
-    // let right_edge = (parent.x as i32 + parent.width as i32 - child_w as i32) as usize;
-    // let bottom_edge = (parent.y as i32 + parent.height as i32 - child_h as i32) as usize;
+    let mid_x = parent_x + (parent_w / 2) - (child_w / 2);
+    let mid_y = parent_y + (parent_h / 2) - (child_h / 2);
+    let right_edge = parent_x + parent_w - child_w;
+    let bottom_edge = parent_y + parent_h - child_h;
 
-    let (x, y) = match alignment {
-        Alignment::Left { pad } => (parent.x + pad, mid_y),
+    Some(match alignment {
+        Alignment::Left { pad } => (parent_x + pad as i32, mid_y),
         Alignment::Center => (mid_x, mid_y),
-        Alignment::Right { pad } => (right_edge.saturating_sub(pad), mid_y),
-        Alignment::TopLeft { padh, padv } => (parent.x + padh, parent.y + padv),
-        Alignment::TopCenter { pad } => (mid_x, parent.y + pad),
-        Alignment::TopRight { padh, padv } => (right_edge.saturating_sub(padh), parent.y + padv),
-        Alignment::BottomLeft { padh, padv } => (parent.x + padh, bottom_edge.saturating_sub(padv)),
-        Alignment::BottomCenter { pad } => (mid_x, bottom_edge.saturating_sub(pad)),
-        Alignment::BottomRight { padh, padv } => (right_edge.saturating_sub(padh), bottom_edge.saturating_sub(padv)),
-    };
-
-    Rect::new(x, y, child_w, child_h)
+        Alignment::Right { pad } => (right_edge - pad as i32, mid_y),
+        Alignment::TopLeft { padh, padv } => (parent_x + padh as i32, parent_y + padv as i32),
+        Alignment::TopCenter { pad } => (mid_x, parent_y + pad as i32),
+        Alignment::TopRight { padh, padv } => (right_edge - padh as i32, parent_y + padv as i32),
+        Alignment::BottomLeft { padh, padv } => (parent_x + padh as i32, bottom_edge - padv as i32),
+        Alignment::BottomCenter { pad } => (mid_x, bottom_edge - pad as i32),
+        Alignment::BottomRight { padh, padv } => (right_edge - padh as i32, bottom_edge - padv as i32),
+    })
 }
 
 pub fn draw_rect(

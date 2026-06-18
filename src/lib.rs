@@ -104,7 +104,7 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
 
     Context {
         commands: [const { Vec::new() }; 16],
-        font: Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()),
+        font: fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap(),
         window: window,
         layout_stack: Vec::new(),
         glyph_cache: FxHashMap::default(),
@@ -116,7 +116,7 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
 
 pub struct Context<'a> {
     pub commands: [Vec<Command<'a>>; 16],
-    pub font: Option<fontdue::Font>,
+    pub font: fontdue::Font,
     pub window: std::pin::Pin<Box<Window>>,
     pub layout_stack: Vec<Frame>,
     pub glyph_cache: FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
@@ -400,6 +400,10 @@ impl<'a> Context<'a> {
         self.window.mouse_position
     }
 
+    pub fn paint_icon(&mut self) {
+        todo!()
+    }
+
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
@@ -446,8 +450,7 @@ impl<'a> Context<'a> {
     }
 
     pub fn measure_text(&mut self, text: &str, font_size: usize) -> Rect {
-        let font = self.font.as_ref().unwrap();
-        measure_text(text, font, font_size, 1.0, &mut self.metrics_cache)
+        measure_text(text, &self.font, font_size, 1.0, &mut self.metrics_cache)
     }
 
     fn paint_text(
@@ -967,7 +970,7 @@ impl<'a> Context<'a> {
                     } => {
                         draw_text(
                             &text,
-                            self.font.as_ref().unwrap(),
+                            &self.font,
                             x,
                             y,
                             size,

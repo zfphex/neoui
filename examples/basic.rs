@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use neoui::*;
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Menu {
@@ -77,30 +77,6 @@ fn main() {
         let (top_nav_rect, body) = ui.split_v(30);
         let (sidebar_rect, track_rect) = body.split_h(260);
 
-        if let Some((menu, rect)) = current_menu {
-            let item_style = style()
-                .width(180)
-                .padlr(12)
-                .padtb(8)
-                .bg(rgb(35, 35, 35))
-                .hover(rgb(60, 60, 60))
-                .depth(1);
-
-            ui.flow_once(style().x(rect.x).y(top_nav_rect.height), Flow::Down, |ui| {
-                for &item in dropdown_items(menu) {
-                    if ui.list_item(item, false, item_style).clicked {
-                        println!("{}", item);
-                        current_menu = None;
-                    }
-                }
-            });
-
-            //TODO: This could maybe be part of the response.
-            if ui.lost_focus(rect) {
-                current_menu = None;
-            }
-        }
-
         ui.flow_right(bounds(top_nav_rect).bg(menu_bg), |ui| {
             for (label, menu) in items {
                 let state = ui.text(
@@ -163,6 +139,31 @@ fn main() {
                 ui.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
             }
         });
+
+        //Should go after the hit testing so there is not a one frame delay.
+        if let Some((menu, rect)) = current_menu {
+            let item_style = style()
+                .width(180)
+                .padlr(12)
+                .padtb(8)
+                .bg(rgb(35, 35, 35))
+                .hover(rgb(60, 60, 60))
+                .depth(1);
+
+            ui.flow_once(style().x(rect.x).y(top_nav_rect.height), Flow::Down, |ui| {
+                for &item in dropdown_items(menu) {
+                    if ui.list_item(item, false, item_style).clicked {
+                        println!("{}", item);
+                        current_menu = None;
+                    }
+                }
+            });
+
+            //TODO: This could maybe be part of the response.
+            if ui.lost_focus(rect) {
+                current_menu = None;
+            }
+        }
 
         let row_style = style()
             .pad(8)

@@ -12,7 +12,7 @@ pub const GAMMA_TO_LINEAR: [f32; 256] = const {
 };
 
 pub const LINEAR_RESOLUTION: usize = 4096;
-pub const LINEAR_MULTIPLIER: f32 = 4095.0;
+pub const LINEAR_INDEX: f32 = 4095.0;
 
 /// Maps a linear float back to an 8-bit sRGB value.
 /// Requires multiplying the float by (LINEAR_RESOLUTION - 1) to get the index.
@@ -664,11 +664,7 @@ pub fn draw_text(
     let line_metrics = font.horizontal_line_metrics(scaled_font_size).unwrap();
     let ascent = line_metrics.ascent;
 
-    // Pre-calculate the linear text color
-    let txt_r = (color >> 16) & 0xFF;
-    let txt_g = (color >> 8) & 0xFF;
-    let txt_b = color & 0xFF;
-
+    let (txt_r, txt_g, txt_b) = split(color);
     let txt_r_lin = GAMMA_TO_LINEAR[txt_r as usize];
     let txt_g_lin = GAMMA_TO_LINEAR[txt_g as usize];
     let txt_b_lin = GAMMA_TO_LINEAR[txt_b as usize];
@@ -704,7 +700,7 @@ pub fn draw_text(
                 max_y = max_y.max(current_max_y);
             }
 
-            // Exact Clip Intersection (Zero branching in inner loop)
+            // Exact Clip Intersection
             let draw_start_x = glyph_screen_x.max(clip_x).max(0);
             let draw_end_x = (glyph_screen_x + metrics.width as i32)
                 .min(clip_right)
@@ -749,10 +745,7 @@ pub fn draw_text(
                         let mask_g = m_g as f32 * INV_255;
                         let mask_b = m_b as f32 * INV_255;
 
-                        let bg_val = *bg;
-                        let bg_r = (bg_val >> 16) & 0xFF;
-                        let bg_g = (bg_val >> 8) & 0xFF;
-                        let bg_b = bg_val & 0xFF;
+                        let (bg_r, bg_g, bg_b) = split(*bg);
 
                         // LUT lookups
                         let bg_r_lin = GAMMA_TO_LINEAR[bg_r as usize];
@@ -760,13 +753,13 @@ pub fn draw_text(
                         let bg_b_lin = GAMMA_TO_LINEAR[bg_b as usize];
 
                         // Fused Multiply-Add
-                        let out_r_lin = (txt_r_lin * mask_r) + (bg_r_lin * (1.0 - mask_r));
-                        let out_g_lin = (txt_g_lin * mask_g) + (bg_g_lin * (1.0 - mask_g));
-                        let out_b_lin = (txt_b_lin * mask_b) + (bg_b_lin * (1.0 - mask_b));
+                        let out_r_lin = txt_r_lin.mul_add(mask_r, bg_r_lin * (1.0 - mask_r));
+                        let out_g_lin = txt_g_lin.mul_add(mask_g, bg_g_lin * (1.0 - mask_g));
+                        let out_b_lin = txt_b_lin.mul_add(mask_b, bg_b_lin * (1.0 - mask_b));
 
-                        let out_r = LINEAR_TO_GAMMA[(out_r_lin * LINEAR_MULTIPLIER) as usize] as u32;
-                        let out_g = LINEAR_TO_GAMMA[(out_g_lin * LINEAR_MULTIPLIER) as usize] as u32;
-                        let out_b = LINEAR_TO_GAMMA[(out_b_lin * LINEAR_MULTIPLIER) as usize] as u32;
+                        let out_r = LINEAR_TO_GAMMA[(out_r_lin * LINEAR_INDEX) as usize] as u32;
+                        let out_g = LINEAR_TO_GAMMA[(out_g_lin * LINEAR_INDEX) as usize] as u32;
+                        let out_b = LINEAR_TO_GAMMA[(out_b_lin * LINEAR_INDEX) as usize] as u32;
 
                         *bg = (out_r << 16) | (out_g << 8) | out_b;
                     }

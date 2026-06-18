@@ -1,8 +1,4 @@
-//TODO: Fix this issue in mini
-#![allow(unexpected_cfgs)]
-
 pub mod style;
-use rustc_hash::FxHashMap;
 pub use style::*;
 
 pub mod platform;
@@ -13,8 +9,8 @@ pub use shapes::*;
 
 pub use mini::*;
 
+use rustc_hash::FxHashMap;
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Flow {
@@ -111,28 +107,20 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
         font: Some(fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()),
         window: window,
         layout_stack: Vec::new(),
-        glyph_cache: None,
-        // text_cache: TextCache {
-        //     ascii: std::array::from_fn(|_| FxHashMap::default()),
-        //     unicode: FxHashMap::default(),
-        // },
+        glyph_cache: FxHashMap::default(),
+        metrics_cache: FxHashMap::default(),
         default_font_size: 32,
         scroll_y: 0,
     }
 }
-
-// pub struct TextCache {
-//     pub ascii: [FxHashMap<usize, (fontdue::Metrics, Vec<u8>)>; 128],
-//     pub unicode: FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
-// }
 
 pub struct Context<'a> {
     pub commands: [Vec<Command<'a>>; 16],
     pub font: Option<fontdue::Font>,
     pub window: std::pin::Pin<Box<Window>>,
     pub layout_stack: Vec<Frame>,
-    pub glyph_cache: Option<FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    // pub text_cache: TextCache,
+    pub glyph_cache: FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+    pub metrics_cache: FxHashMap<(char, usize), fontdue::Metrics>,
     pub default_font_size: usize,
     pub scroll_y: i32,
 }
@@ -458,23 +446,8 @@ impl<'a> Context<'a> {
     }
 
     pub fn measure_text(&mut self, text: &str, font_size: usize) -> Rect {
-        let font = self.font.as_ref().expect("Font missing");
-        let fxcache = self.glyph_cache.get_or_insert_with(FxHashMap::default);
-
-        draw_text(
-            text,
-            font,
-            0,
-            0,
-            font_size,
-            1.0,
-            self.window.width(),
-            &mut [],
-            0,
-            true,
-            fxcache,
-            Rect::new(0, 0, self.window.width(), self.window.height()),
-        )
+        let font = self.font.as_ref().unwrap();
+        measure_text(text, font, font_size, 1.0, &mut self.metrics_cache)
     }
 
     fn paint_text(
@@ -1008,7 +981,6 @@ impl<'a> Context<'a> {
                         //     clip,
                         // );
 
-                        let cache = self.glyph_cache.get_or_insert_with(FxHashMap::default);
                         draw_text(
                             &text,
                             self.font.as_ref().unwrap(),
@@ -1019,8 +991,7 @@ impl<'a> Context<'a> {
                             self_width,
                             &mut self.window.buffer,
                             color,
-                            false,
-                            cache,
+                            &mut self.glyph_cache,
                             clip,
                         );
                     }

@@ -6,8 +6,8 @@ fn main() {
     defer_results!();
     let font = fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap();
     let mut buffer = vec![0u32; 1000usize * 1000 * 4];
-    let mut fxcache = FxHashMap::default();
-
+    let mut glyph = FxHashMap::default();
+    let mut metrics = FxHashMap::default();
     let text = black_box("abcdefghijklmnopqrstuvwxyz1234567890-=!@#$%^&*()_+".repeat(200));
 
     //Without writing anything 2.15ms
@@ -17,6 +17,7 @@ fn main() {
     //New                      149.65us
 
     for _ in 0..1000 {
+        measure_text(&text, &font, 32, 1.0, &mut metrics);
         draw_text(
             &text,
             &font,
@@ -27,8 +28,7 @@ fn main() {
             10000,
             &mut buffer,
             white(),
-            false,
-            &mut fxcache,
+            &mut glyph,
             Rect::new(0, 0, 2000, 2000),
         );
     }

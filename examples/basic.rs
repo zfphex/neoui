@@ -69,10 +69,11 @@ fn main() {
         fontdue::FontSettings::default(),
     )
     .unwrap();
+    let icon_id = ui.add_font(icons);
 
-    let play = '\u{e037}';
-    let pause = '\u{e034}';
-    let stop = '\u{e047}';
+    let play = "\u{e037}";
+    let pause = "\u{e034}";
+    let stop = "\u{e047}";
 
     loop {
         ui.start_frame(black());
@@ -112,42 +113,56 @@ fn main() {
 
             //Playback
             {
-                let f = ui.current_frame();
-                let x = f.cursor_x;
-                let y = f.cursor_y + 3;
-                //TODO: This clips really weirdly
-                let size = 24;
-                ui.paint_icon(
-                    stop,
-                    Rect::new(x, y, size, size),
-                    &icons,
-                    style().fg(white()).font_size(size),
-                );
-                ui.paint_icon(
-                    pause,
-                    Rect::new(x + size, y, size, size),
-                    &icons,
-                    style().fg(white()).font_size(size),
-                );
-                ui.paint_icon(
-                    play,
-                    Rect::new(x + 2 * size, y, size, size),
-                    &icons,
-                    style().fg(white()).font_size(size),
-                );
+                // let f = ui.current_frame();
+                // let x = f.cursor_x;
+                // let y = f.cursor_y + 3;
+                // //TODO: This clips really weirdly
+                // let size = 24;
+                // ui.paint_icon(
+                //     stop,
+                //     Rect::new(x, y, size, size),
+                //     &icons,
+                //     style().fg(white()).font_size(size),
+                // );
+                // ui.paint_icon(
+                //     pause,
+                //     Rect::new(x + size, y, size, size),
+                //     &icons,
+                //     style().fg(white()).font_size(size),
+                // );
+                // ui.paint_icon(
+                //     play,
+                //     Rect::new(x + 2 * size, y, size, size),
+                //     &icons,
+                //     style().fg(white()).font_size(size),
+                // );
             }
 
-            // ui.gap(120);
-            // ui.rect(bar);
-            // ui.gap(120);
-            // ui.rect(bar);
-            // ui.gap(120);
-            // ui.gap(-214);
+            let icon = style().font(icon_id).font_size(24).fill_height();
+            if ui.text(stop, icon).clicked {
+                println!("Stop");
+            }
+
+            if ui.text(play, icon).clicked {
+                println!("Play")
+            }
+
+            if ui.text(pause, icon).clicked {
+                println!("Pause")
+            }
+
+            ui.gap(10);
+
+            ui.rect(bar);
+            ui.gap(120);
+
+            ui.rect(bar);
+            ui.gap(120);
+
+            ui.gap(-214);
 
             //Volume slider.
-            'a: {
-                break 'a;
-
+            {
                 let width = 200;
                 let height = top_nav_rect.height;
                 let rect = ui.walk_layout(width, height, 0).size;
@@ -208,7 +223,7 @@ fn main() {
             .pad(8)
             .padl(12)
             .hover(rgb(35, 35, 35))
-            .fillw()
+            .fill_width()
             .hover_border(rgb(90, 90, 90))
             .selected(rgb(82, 82, 82))
             .selected_border(rgb(170, 170, 170));

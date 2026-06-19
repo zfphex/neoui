@@ -60,6 +60,7 @@ pub struct Style {
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
 
+    pub font: usize,
     pub font_size: Option<usize>,
 
     pub x: Option<Size>,
@@ -170,12 +171,12 @@ impl Style {
         self
     }
 
-    pub fn fillw(mut self) -> Self {
+    pub fn fill_width(mut self) -> Self {
         self.width = Some(Size::Fill);
         self
     }
 
-    pub fn fillh(mut self) -> Self {
+    pub fn fill_height(mut self) -> Self {
         self.height = Some(Size::Fill);
         self
     }
@@ -187,6 +188,17 @@ impl Style {
 
     pub fn depth(mut self, depth: usize) -> Self {
         self.depth = Some(depth);
+        self
+    }
+
+    /// Add fonts to the library to get a font ID.
+    /// Fonts are all in a vector, so it's just the index...
+    /// ```
+    /// let font_id = ui.add_font(new_font);
+    /// ui.text(":)", style().font(font_id));
+    /// ```
+    pub fn font(mut self, font_id: usize) -> Style {
+        self.font = font_id;
         self
     }
 }

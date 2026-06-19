@@ -798,7 +798,7 @@ pub fn measure_text(
     font: &fontdue::Font,
     font_size: usize,
     display_scale: f32,
-    cache: &mut FxHashMap<(char, usize), fontdue::Metrics>,
+    metrics: &mut FxHashMap<(char, usize), fontdue::Metrics>,
 ) -> Rect {
     profile!();
     if text.is_empty() || font_size == 0 {
@@ -820,7 +820,7 @@ pub fn measure_text(
             continue;
         }
 
-        let metrics = cache
+        let metrics = metrics
             .entry((ch, scaled_font_size as usize))
             .or_insert_with(|| font.metrics(ch, scaled_font_size));
 

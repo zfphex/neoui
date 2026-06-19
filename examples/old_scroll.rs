@@ -27,7 +27,7 @@ fn main() {
             .pad(8)
             .padl(12)
             .hover(rgb(35, 35, 35))
-            .fillw()
+            .fill_width()
             .hover_border(rgb(90, 90, 90))
             .selected(rgb(82, 82, 82))
             .selected_border(rgb(170, 170, 170));

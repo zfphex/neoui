@@ -62,15 +62,7 @@ pub enum Command<'a> {
     },
     Text {
         text: Cow<'a, str>,
-        clip: Rect,
-        x: i32,
-        y: i32,
-        color: u32,
-        size: usize,
-    },
-    Icon {
-        icon: char,
-        font: &'a fontdue::Font,
+        font_id: usize,
         clip: Rect,
         x: i32,
         y: i32,
@@ -113,12 +105,11 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
 
     Context {
         commands: [const { Vec::new() }; 16],
-        font: fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap(),
+        fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
         window: window,
         layout_stack: Vec::new(),
-        glyph_cache: FxHashMap::default(),
-        icon_glyph_cache: FxHashMap::default(),
-        metrics_cache: FxHashMap::default(),
+        font_bitmaps: FxHashMap::default(),
+        font_metrics: FxHashMap::default(),
         default_font_size: 32,
         scroll_y: 0,
     }
@@ -126,12 +117,11 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
 
 pub struct Context<'a> {
     pub commands: [Vec<Command<'a>>; 16],
-    pub font: fontdue::Font,
     pub window: std::pin::Pin<Box<Window>>,
     pub layout_stack: Vec<Frame>,
-    pub glyph_cache: FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
-    pub icon_glyph_cache: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    pub metrics_cache: FxHashMap<(char, usize), fontdue::Metrics>,
+    pub fonts: Vec<fontdue::Font>,
+    pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
     pub default_font_size: usize,
     pub scroll_y: i32,
 }
@@ -245,6 +235,13 @@ impl<'a> Context<'a> {
             paint_x: x,
             paint_y: y,
         }
+    }
+
+    /// Add a font then return a font ID to use.
+    pub fn add_font(&mut self, font: fontdue::Font) -> usize {
+        let id = self.fonts.len();
+        self.fonts.push(font);
+        id
     }
 
     pub fn resolve_rect(&self, rect: Rect, flow: Flow, size: Size) -> usize {
@@ -411,50 +408,6 @@ impl<'a> Context<'a> {
         self.window.mouse_position
     }
 
-    pub fn paint_icon(&mut self, icon: char, rect: Rect, font: &'a fontdue::Font, style: Style) {
-        let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let mut icon_buffer = [0; 4];
-        let icon_text = icon.encode_utf8(&mut icon_buffer);
-        let text_metrics = measure_text(icon_text, font, font_size, 1.0, &mut FxHashMap::default());
-
-        let Some((x, y)) = align_rect(
-            rect.x as i32,
-            rect.y as i32,
-            rect.width,
-            rect.height,
-            text_metrics.width,
-            text_metrics.height,
-            style.alignment.unwrap_or(Alignment::Center),
-        ) else {
-            return;
-        };
-
-        let clip = self.layout_stack.last().expect("No active frame").clip;
-        let depth = style.depth.unwrap_or(0);
-
-        if let Some(color) = style.bg {
-            self.commands[depth].push(Command::Rect {
-                x: rect.x as i32,
-                y: rect.y as i32,
-                width: rect.width,
-                height: rect.height,
-                clip,
-                color,
-                radius: style.radius.unwrap_or(0),
-            });
-        }
-
-        self.commands[depth].push(Command::Icon {
-            icon,
-            font,
-            clip,
-            x,
-            y,
-            color: style.fg.unwrap_or(white()),
-            size: font_size,
-        });
-    }
-
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
@@ -500,24 +453,26 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn measure_text(&mut self, text: &str, font_size: usize) -> Rect {
-        measure_text(text, &self.font, font_size, 1.0, &mut self.metrics_cache)
+    pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
+        let metrics = self.font_metrics.entry(font_id).or_default();
+        measure_text(text, &self.fonts[font_id], font_size, 1.0, metrics)
     }
 
-    fn paint_text(
+    pub fn paint_text(
         &mut self,
+        text: impl Into<Cow<'a, str>>,
         paint_x: i32,
         paint_y: i32,
         width: usize,
         height: usize,
-        text: impl Into<Cow<'a, str>>,
         color: u32,
+        font_id: usize,
         font_size: usize,
         alignment: Alignment,
         depth: usize,
     ) {
         let text = text.into();
-        let text_metrics = self.measure_text(&text, font_size);
+        let text_metrics = self.measure_text(&text, font_id, font_size);
 
         let Some((x, y)) = align_rect(
             paint_x,
@@ -538,6 +493,7 @@ impl<'a> Context<'a> {
             x,
             y,
             color,
+            font_id,
             size: font_size,
         });
     }
@@ -578,7 +534,7 @@ impl<'a> Context<'a> {
         let text_metrics = if text.is_empty() {
             Rect::default()
         } else {
-            self.measure_text(&text, font_size)
+            self.measure_text(&text, style.font, font_size)
         };
 
         let padding = style.padding.unwrap_or_default();
@@ -655,12 +611,13 @@ impl<'a> Context<'a> {
 
         if !text.is_empty() {
             self.paint_text(
+                text,
                 layout.paint_x,
                 layout.paint_y,
                 width,
                 height,
-                text,
                 style.fg.unwrap_or(white()),
+                style.font,
                 font_size,
                 style.alignment.unwrap_or(Alignment::Center),
                 depth,
@@ -1008,10 +965,12 @@ impl<'a> Context<'a> {
                         y,
                         color,
                         size,
+                        font_id,
                     } => {
+                        let bitmap = self.font_bitmaps.entry(font_id).or_default();
                         draw_text(
                             &text,
-                            &self.font,
+                            &self.fonts[font_id],
                             x,
                             y,
                             size,
@@ -1019,40 +978,40 @@ impl<'a> Context<'a> {
                             self_width,
                             &mut self.window.buffer,
                             color,
-                            &mut self.glyph_cache,
+                            bitmap,
                             clip,
                         );
                     }
-                    Command::Icon {
-                        icon,
-                        font,
-                        clip,
-                        x,
-                        y,
-                        color,
-                        size,
-                    } => {
-                        //The library should probably handle font loading
-                        //and each font should have a unique ID that would be
-                        //used here instead of a pointer.
-                        let font_key = font as *const fontdue::Font as usize;
-                        let cache = self.icon_glyph_cache.entry(font_key).or_default();
-                        let mut icon_buffer = [0; 4];
-                        let icon = icon.encode_utf8(&mut icon_buffer);
-                        draw_text(
-                            icon,
-                            font,
-                            x,
-                            y,
-                            size,
-                            self.window.display_scale(),
-                            self_width,
-                            &mut self.window.buffer,
-                            color,
-                            cache,
-                            clip,
-                        );
-                    }
+                    // Command::Icon {
+                    //     icon,
+                    //     font,
+                    //     clip,
+                    //     x,
+                    //     y,
+                    //     color,
+                    //     size,
+                    // } => {
+                    //     //The library should probably handle font loading
+                    //     //and each font should have a unique ID that would be
+                    //     //used here instead of a pointer.
+                    //     let font_key = font as *const fontdue::Font as usize;
+                    //     let cache = self.icon_glyph_cache.entry(font_key).or_default();
+                    //     let mut icon_buffer = [0; 4];
+                    //     let icon = icon.encode_utf8(&mut icon_buffer);
+                    //     draw_text(
+                    //         icon,
+                    //         font,
+                    //         x,
+                    //         y,
+                    //         size,
+                    //         self.window.display_scale(),
+                    //         self_width,
+                    //         &mut self.window.buffer,
+                    //         color,
+                    //         cache,
+                    //         clip,
+                    //     );
+                    // }
                     Command::Triangle {
                         a: (ax, ay),
                         b: (bx, by),

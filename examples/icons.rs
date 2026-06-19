@@ -66,7 +66,8 @@ fn main() {
                             .fg(gray())
                             .font_size(16)
                             .fill_width()
-                            .align(Alignment::Left { pad: 0 }),
+                            .padl(2)
+                            .align(Alignment::Left),
                     );
                 });
 
@@ -91,6 +92,7 @@ fn main() {
                 icon_id,
                 64,
                 Alignment::Center,
+                Padding::default(),
                 0,
             );
             ui.flow_once(bounds(label_rect), Flow::Down, |ui| {

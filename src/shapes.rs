@@ -57,15 +57,15 @@ pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Alignment {
-    Left { pad: usize },
+    Left,
     Center,
-    Right { pad: usize },
-    TopLeft { padh: usize, padv: usize },
-    TopCenter { pad: usize },
-    TopRight { padh: usize, padv: usize },
-    BottomLeft { padh: usize, padv: usize },
-    BottomCenter { pad: usize },
-    BottomRight { padh: usize, padv: usize },
+    Right,
+    TopLeft,
+    TopCenter,
+    TopRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
 }
 
 pub fn align_rect(
@@ -76,31 +76,44 @@ pub fn align_rect(
     child_w: usize,
     child_h: usize,
     alignment: Alignment,
+    padding: Padding,
 ) -> Option<(i32, i32)> {
-    if child_w > parent_w || child_h > parent_h {
-        return None;
-    }
+    let pad_left = padding.left as i32;
+    let pad_right = padding.right as i32;
+    let pad_top = padding.top as i32;
+    let pad_bottom = padding.bottom as i32;
 
     let child_w = child_w as i32;
     let child_h = child_h as i32;
     let parent_w = parent_w as i32;
     let parent_h = parent_h as i32;
 
-    let mid_x = parent_x + (parent_w / 2) - (child_w / 2);
-    let mid_y = parent_y + (parent_h / 2) - (child_h / 2);
-    let right_edge = parent_x + parent_w - child_w;
-    let bottom_edge = parent_y + parent_h - child_h;
+    let available_w = parent_w - pad_left - pad_right;
+    let available_h = parent_h - pad_top - pad_bottom;
+
+    if child_w > available_w || child_h > available_h {
+        return None;
+    }
+
+    let inner_x = parent_x + pad_left;
+    let inner_y = parent_y + pad_top;
+
+    let mid_x = inner_x + (available_w / 2) - (child_w / 2);
+    let mid_y = inner_y + (available_h / 2) - (child_h / 2);
+
+    let right_edge = inner_x + available_w - child_w;
+    let bottom_edge = inner_y + available_h - child_h;
 
     Some(match alignment {
-        Alignment::Left { pad } => (parent_x + pad as i32, mid_y),
+        Alignment::Left => (inner_x, mid_y),
         Alignment::Center => (mid_x, mid_y),
-        Alignment::Right { pad } => (right_edge - pad as i32, mid_y),
-        Alignment::TopLeft { padh, padv } => (parent_x + padh as i32, parent_y + padv as i32),
-        Alignment::TopCenter { pad } => (mid_x, parent_y + pad as i32),
-        Alignment::TopRight { padh, padv } => (right_edge - padh as i32, parent_y + padv as i32),
-        Alignment::BottomLeft { padh, padv } => (parent_x + padh as i32, bottom_edge - padv as i32),
-        Alignment::BottomCenter { pad } => (mid_x, bottom_edge - pad as i32),
-        Alignment::BottomRight { padh, padv } => (right_edge - padh as i32, bottom_edge - padv as i32),
+        Alignment::Right => (right_edge, mid_y),
+        Alignment::TopLeft => (inner_x, inner_y),
+        Alignment::TopCenter => (mid_x, inner_y),
+        Alignment::TopRight => (right_edge, inner_y),
+        Alignment::BottomLeft => (inner_x, bottom_edge),
+        Alignment::BottomCenter => (mid_x, bottom_edge),
+        Alignment::BottomRight => (right_edge, bottom_edge),
     })
 }
 

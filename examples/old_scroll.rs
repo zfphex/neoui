@@ -34,7 +34,7 @@ fn main() {
 
         let (body, scrollbar) = ui.split_h(Size::FillMinus(20));
         let state = ui.scroll_view(bounds(body), &mut scroll_y, |ui| {
-            let row_style = row_style.align(Alignment::Left { pad: 12 }).width(body.width);
+            let row_style = row_style.align(Alignment::Left).padl(12).width(body.width);
 
             for (idx, track) in tracklist.iter().enumerate() {
                 if ui.item(track, idx == selected_song, row_style).clicked {

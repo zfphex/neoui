@@ -265,7 +265,6 @@ impl<'a> Context<'a> {
                 };
                 remaining.saturating_sub(sub.abs() as usize)
             }
-            Size::Fit => todo!(),
         }
     }
 
@@ -335,7 +334,6 @@ impl<'a> Context<'a> {
                 };
                 remaining.saturating_sub(sub.abs() as usize)
             }
-            Size::Fit => todo!(),
         }
     }
 
@@ -469,6 +467,7 @@ impl<'a> Context<'a> {
         font_id: usize,
         font_size: usize,
         alignment: Alignment,
+        padding: Padding,
         depth: usize,
     ) {
         let text = text.into();
@@ -482,6 +481,7 @@ impl<'a> Context<'a> {
             text_metrics.width,
             text_metrics.height,
             alignment,
+            padding,
         ) else {
             return;
         };
@@ -516,12 +516,9 @@ impl<'a> Context<'a> {
 
     pub fn list_item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
         //By default use align on the left instead of the center.
-        let style = if let Some(pad) = style.padding
-            && style.alignment.is_none()
+        let style = if style.alignment.is_none()
         {
-            // TODO: I think there is a clash where we have two padding values for each item?
-            // There is alignment padding and regualr padding?
-            style.align(Alignment::Left { pad: pad.left })
+            style.align(Alignment::Left)
         } else {
             style
         };
@@ -620,6 +617,7 @@ impl<'a> Context<'a> {
                 style.font,
                 font_size,
                 style.alignment.unwrap_or(Alignment::Center),
+                style.padding.unwrap_or_default(),
                 depth,
             );
         }

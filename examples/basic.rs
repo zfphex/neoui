@@ -247,7 +247,7 @@ fn main() {
                 style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
             );
 
-            let row_style = row_style.align(Alignment::Left { pad: 12 });
+            let row_style = row_style.align(Alignment::Left).padl(12);
 
             for (idx, track) in tracklist.iter().enumerate() {
                 if ui.item(Cow::from(track), idx == selected_song, row_style).clicked {

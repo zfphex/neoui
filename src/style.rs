@@ -9,8 +9,6 @@ pub enum Size {
     Fill,
     /// Fill remaing space minus some value.
     FillMinus(i32),
-    /// TODO
-    Fit,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -213,7 +211,7 @@ macro_rules! impl_pad_swizzle {
     ($($name:ident => [$($edge:ident),+]);* $(;)?) => {
         impl Style {
             $(
-                #[doc = concat!("Set padding for: (", stringify!($($edge)+), ")")]
+                #[doc = concat!("Set padding for (", stringify!($($edge)+), ")")]
                 pub fn $name(mut self, value: usize) -> Self {
                     let mut p = self.padding.unwrap_or_default();
                     $(

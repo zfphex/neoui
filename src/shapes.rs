@@ -245,6 +245,11 @@ pub fn draw_rounded_rect(
         .min(window_width as i32)
         .max(0) as usize;
 
+    // Fully clipped
+    if min_x >= max_x || min_y >= max_y {
+        return;
+    }
+
     if radius == 0 {
         for py in min_y..max_y {
             let start = py * window_width + min_x;
@@ -256,9 +261,13 @@ pub fn draw_rounded_rect(
         return;
     }
 
-    let src_r = ((color >> 16 & 0xFF) as f32 / 255.0).powi(2);
-    let src_g = ((color >> 8 & 0xFF) as f32 / 255.0).powi(2);
-    let src_b = ((color & 0xFF) as f32 / 255.0).powi(2);
+    let src_r = ((color >> 16) & 0xFF) as usize;
+    let src_g = ((color >> 8) & 0xFF) as usize;
+    let src_b = (color & 0xFF) as usize;
+
+    let src_r_lin = GAMMA_TO_LINEAR[src_r];
+    let src_g_lin = GAMMA_TO_LINEAR[src_g];
+    let src_b_lin = GAMMA_TO_LINEAR[src_b];
 
     let cx = x as f32 + width as f32 / 2.0;
     let cy = y as f32 + height as f32 / 2.0;
@@ -266,53 +275,96 @@ pub fn draw_rounded_rect(
     let half_h = height as f32 / 2.0;
     let r_f32 = radius as f32;
 
+    let y_top_safe = (y + radius as i32).max(0) as usize;
+    let y_bottom_safe = (y + height as i32 - radius as i32).max(0) as usize;
+    let x_left_safe = (x + radius as i32).max(0) as usize;
+    let x_right_safe = (x + width as i32 - radius as i32).max(0) as usize;
+
+    let left_limit = x_left_safe.max(min_x).min(max_x);
+    let right_limit = x_right_safe.max(min_x).min(max_x);
+
+    macro_rules! blend_edge {
+        ($bg:expr, $alpha:expr) => {
+            let a = $alpha.clamp(0.0, 1.0);
+            let bg_val = *$bg;
+            let bg_r = (bg_val >> 16) & 0xFF;
+            let bg_g = (bg_val >> 8) & 0xFF;
+            let bg_b = bg_val & 0xFF;
+
+            let bg_r_lin = GAMMA_TO_LINEAR[bg_r as usize];
+            let bg_g_lin = GAMMA_TO_LINEAR[bg_g as usize];
+            let bg_b_lin = GAMMA_TO_LINEAR[bg_b as usize];
+
+            let out_r_lin = (src_r_lin * a) + (bg_r_lin * (1.0 - a));
+            let out_g_lin = (src_g_lin * a) + (bg_g_lin * (1.0 - a));
+            let out_b_lin = (src_b_lin * a) + (bg_b_lin * (1.0 - a));
+
+            let out_r = LINEAR_TO_GAMMA[(out_r_lin * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
+            let out_g = LINEAR_TO_GAMMA[(out_g_lin * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
+            let out_b = LINEAR_TO_GAMMA[(out_b_lin * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
+
+            *$bg = (out_r << 16) | (out_g << 8) | out_b;
+        };
+    }
+
     for py in min_y..max_y {
+        let row_start = py * window_width;
+
+        if py >= y_top_safe && py < y_bottom_safe {
+            if let Some(slice) = buffer.get_mut(row_start + min_x..row_start + max_x) {
+                slice.fill(color);
+            }
+            continue;
+        }
+
         let dy = (py as f32 + 0.5 - cy).abs() - half_h + r_f32;
         let dy_max = dy.max(0.0);
         let dy_sq = dy_max * dy_max;
 
-        let mut solid_start = window_width;
-        let mut solid_end = 0;
+        if let Some(row_slice) = buffer.get_mut(row_start + min_x..row_start + max_x) {
+            let left_len = left_limit - min_x;
+            let mid_len = right_limit - left_limit;
 
-        for px in min_x..max_x {
-            let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+            let (left_slice, rest) = row_slice.split_at_mut(left_len);
+            let (mid_slice, right_slice) = rest.split_at_mut(mid_len);
 
-            let dx_max = dx.max(0.0);
-            let dist_outer = (dx_max * dx_max + dy_sq).sqrt();
-            let dist_inner = dx.max(dy).min(0.0);
-            let dist = dist_outer + dist_inner - r_f32;
-            let alpha = 0.5 - dist;
+            // Left Corner
+            for (i, bg) in left_slice.iter_mut().enumerate() {
+                let px = min_x + i;
+                let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                let dx_max = dx.max(0.0);
 
-            if alpha >= 0.999 {
-                if solid_start == window_width {
-                    solid_start = px;
-                }
-                solid_end = px + 1;
-            } else if alpha > 0.0 {
-                let idx = py * window_width + px;
-                if let Some(bg) = buffer.get_mut(idx) {
-                    let a = alpha.clamp(0.0, 1.0);
+                let dist_outer = (dx_max * dx_max + dy_sq).sqrt();
+                let dist_inner = dx.max(dy).min(0.0);
+                let dist = dist_outer + dist_inner - r_f32;
+                let alpha = 0.5 - dist;
 
-                    let bg_r = (((*bg >> 16) & 0xFF) as f32 / 255.0).powi(2);
-                    let bg_g = (((*bg >> 8) & 0xFF) as f32 / 255.0).powi(2);
-                    let bg_b = ((*bg & 0xFF) as f32 / 255.0).powi(2);
-
-                    let out_r = (src_r * a) + (bg_r * (1.0 - a));
-                    let out_g = (src_g * a) + (bg_g * (1.0 - a));
-                    let out_b = (src_b * a) + (bg_b * (1.0 - a));
-
-                    *bg = ((out_r.sqrt() * 255.0) as u32) << 16
-                        | ((out_g.sqrt() * 255.0) as u32) << 8
-                        | ((out_b.sqrt() * 255.0) as u32);
+                if alpha >= 0.999 {
+                    *bg = color;
+                } else if alpha > 0.0 {
+                    blend_edge!(bg, alpha);
                 }
             }
-        }
 
-        if solid_start < solid_end {
-            let start_idx = py * window_width + solid_start;
-            let end_idx = py * window_width + solid_end;
-            if let Some(slice) = buffer.get_mut(start_idx..end_idx) {
-                slice.fill(color);
+            // Middle Solid Segment
+            mid_slice.fill(color);
+
+            // Right Corner
+            for (i, bg) in right_slice.iter_mut().enumerate() {
+                let px = right_limit + i;
+                let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                let dx_max = dx.max(0.0);
+
+                let dist_outer = (dx_max * dx_max + dy_sq).sqrt();
+                let dist_inner = dx.max(dy).min(0.0);
+                let dist = dist_outer + dist_inner - r_f32;
+                let alpha = 0.5 - dist;
+
+                if alpha >= 0.999 {
+                    *bg = color;
+                } else if alpha > 0.0 {
+                    blend_edge!(bg, alpha);
+                }
             }
         }
     }

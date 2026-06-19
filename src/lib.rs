@@ -514,17 +514,6 @@ impl<'a> Context<'a> {
         self.item(text, false, style)
     }
 
-    pub fn list_item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
-        //By default use align on the left instead of the center.
-        let style = if style.alignment.is_none()
-        {
-            style.align(Alignment::Left)
-        } else {
-            style
-        };
-        self.item(text, selected, style)
-    }
-
     pub fn item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);

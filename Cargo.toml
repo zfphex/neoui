@@ -24,3 +24,8 @@ minifb = "0.27.0"
 name = "font"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "rect"
+harness = false
+required-features = ["bench"]

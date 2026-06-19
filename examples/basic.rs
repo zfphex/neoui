@@ -202,11 +202,12 @@ fn main() {
                 .padtb(8)
                 .bg(rgb(35, 35, 35))
                 .hover(rgb(60, 60, 60))
+                .align(Alignment::Left)
                 .depth(1);
 
             ui.flow_once(style().x(rect.x).y(top_nav_rect.height), Flow::Down, |ui| {
                 for &item in dropdown_items(menu) {
-                    if ui.list_item(item, false, item_style).clicked {
+                    if ui.item(item, false, item_style).clicked {
                         println!("{}", item);
                         current_menu = None;
                     }
@@ -226,13 +227,14 @@ fn main() {
             .fill_width()
             .hover_border(rgb(90, 90, 90))
             .selected(rgb(82, 82, 82))
+            .align(Alignment::Left)
             .selected_border(rgb(170, 170, 170));
 
         ui.flow_down(bounds(sidebar_rect).bg(panel_bg), |ui| {
             ui.text("All Music", style().fg(text_dim).pad(6));
 
             for artist in artists {
-                ui.list_item(artist, false, row_style);
+                ui.item(artist, false, row_style);
             }
 
             ui.paint_rect(sidebar_rect, style().border(border_color).border_side(RIGHT));

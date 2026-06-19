@@ -7,9 +7,11 @@ edition = "2024"
 fontdue = "0.9.3"
 mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = ["profile"] }
 rustc-hash = "2.1.2"
+divan = { version = "0.1.21", optional = true }
 
 [features]
 profile = ["mini/profile"]
+bench = ["divan"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # window = { version = "0.1.0", path = "../projects/window" }
@@ -18,9 +20,7 @@ window = { git = "https://github.com/zfphex/window", version = "0.1.0" }
 [target.'cfg(target_os = "macos")'.dependencies]
 minifb = "0.27.0"
 
-[dev-dependencies]
-divan = "0.1.21"
-
 [[bench]]
 name = "font"
 harness = false
+required-features = ["bench"]

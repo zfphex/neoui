@@ -431,6 +431,19 @@ impl<'a> Context<'a> {
 
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
+
+        if let Some(color) = style.bg {
+            self.commands[depth].push(Command::Rect {
+                x: rect.x as i32,
+                y: rect.y as i32,
+                width: rect.width,
+                height: rect.height,
+                clip,
+                color,
+                radius: style.radius.unwrap_or(0),
+            });
+        }
+
         self.commands[depth].push(Command::Icon {
             icon,
             font,
@@ -859,6 +872,10 @@ impl<'a> Context<'a> {
             flow: Flow::Down,
             ..Default::default()
         });
+    }
+
+    pub fn current_frame(&self) -> &Frame {
+        self.layout_stack.last().as_ref().unwrap()
     }
 
     pub fn current_frame_bounds(&self) -> Rect {

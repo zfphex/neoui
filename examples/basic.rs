@@ -64,6 +64,15 @@ fn main() {
     ];
 
     let tracklist: Vec<String> = (0..100).into_iter().map(|i| format!("track {i}")).collect();
+    let icons = fontdue::Font::from_bytes(
+        include_bytes!("../fonts/MaterialIcons-Regular.ttf") as &[u8],
+        fontdue::FontSettings::default(),
+    )
+    .unwrap();
+
+    let play = '\u{e037}';
+    let pause = '\u{e034}';
+    let stop = '\u{e047}';
 
     loop {
         ui.start_frame(black());
@@ -99,16 +108,46 @@ fn main() {
             }
 
             let bar = style().width(1).height(top_nav_rect.height).bg(bar_color);
-            ui.rect(bar);
-            ui.gap(120);
-            ui.rect(bar);
-            ui.gap(120);
-            ui.rect(bar);
-            ui.gap(120);
-            ui.gap(-214);
+            // ui.rect(bar);
+
+            //Playback
+            {
+                let f = ui.current_frame();
+                let x = f.cursor_x;
+                let y = f.cursor_y + 3;
+                //TODO: This clips really weirdly
+                let size = 24;
+                ui.paint_icon(
+                    stop,
+                    Rect::new(x, y, size, size),
+                    &icons,
+                    style().fg(white()).font_size(size),
+                );
+                ui.paint_icon(
+                    pause,
+                    Rect::new(x + size, y, size, size),
+                    &icons,
+                    style().fg(white()).font_size(size),
+                );
+                ui.paint_icon(
+                    play,
+                    Rect::new(x + 2 * size, y, size, size),
+                    &icons,
+                    style().fg(white()).font_size(size),
+                );
+            }
+
+            // ui.gap(120);
+            // ui.rect(bar);
+            // ui.gap(120);
+            // ui.rect(bar);
+            // ui.gap(120);
+            // ui.gap(-214);
 
             //Volume slider.
-            {
+            'a: {
+                break 'a;
+
                 let width = 200;
                 let height = top_nav_rect.height;
                 let rect = ui.walk_layout(width, height, 0).size;

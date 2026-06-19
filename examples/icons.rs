@@ -15,6 +15,9 @@ fn main() {
         ('\u{e8b6}', "search"),
         ('\u{e87d}', "favorite"),
         ('\u{e8b8}', "settings"),
+        ('\u{e037}', "play"),
+        ('\u{e034}', "pause"),
+        ('\u{e047}', "stop"),
     ];
 
     loop {
@@ -28,7 +31,7 @@ fn main() {
         ui.start_frame(black());
 
         for (i, (icon, label)) in icons.iter().enumerate() {
-            let x = 80 + i * 140;
+            let x = 20 + i * 140;
             let icon_rect = Rect::new(x, 80, 96, 96);
             let label_rect = Rect::new(x, 190, 96, 28);
 

@@ -4,6 +4,7 @@ fn main() {
     let mut ui = ui("Test", 1000, 700);
 
     let mut sidebar_open = false;
+    let mut button_hovered = false;
 
     loop {
         ui.start_frame(black());
@@ -18,7 +19,7 @@ fn main() {
         let target_width = if sidebar_open { 300.0 } else { 60.0 };
         let current_width = ui.animate_f32(target_width, 15.0) as usize;
 
-        let target_btn_color = if sidebar_open { hex("#3b82f6") } else { hex("#3f3f46") };
+        let target_btn_color = if button_hovered{ hex("#3b82f6") } else { hex("#3f3f46") };
         let current_btn_color = ui.animate_color(target_btn_color, 10.0);
 
         ui.flow_right(style(), |ui| {
@@ -34,6 +35,8 @@ fn main() {
                     btn_text,
                     style().width(Size::Fill).height(50).bg(current_btn_color).fg(white()),
                 );
+
+                button_hovered = toggle_btn.hovered;
 
                 if toggle_btn.clicked {
                     sidebar_open = !sidebar_open;

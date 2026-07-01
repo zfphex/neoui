@@ -112,6 +112,11 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
         font_metrics: FxHashMap::default(),
         default_font_size: 32,
         scroll_y: 0,
+        dt: 0.0,
+        anim_counter: 0,
+        anim_state_f32: FxHashMap::default(),
+        anim_state_color: FxHashMap::default(),
+        last_frame_time: std::time::Instant::now(),
     }
 }
 
@@ -124,6 +129,13 @@ pub struct Context<'a> {
     pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
     pub default_font_size: usize,
     pub scroll_y: i32,
+
+    //Animation
+    pub dt: f32,
+    pub anim_counter: usize,
+    pub anim_state_f32: FxHashMap<usize, f32>,
+    pub anim_state_color: FxHashMap<usize, (f32, f32, f32)>,
+    pub last_frame_time: std::time::Instant,
 }
 
 impl<'a> Context<'a> {
@@ -807,6 +819,11 @@ impl<'a> Context<'a> {
     }
 
     pub fn start_frame(&mut self, fill_color: u32) {
+        let now = std::time::Instant::now();
+        self.dt = (now - self.last_frame_time).as_secs_f32();
+        self.last_frame_time = now;
+        self.anim_counter = 0;
+
         let bounds = Rect::new(0, 0, self.width(), self.height());
         self.fill(fill_color);
         self.layout_stack.clear();
@@ -1024,6 +1041,32 @@ impl<'a> Context<'a> {
 
         self.window.draw();
         self.window.vsync();
+    }
+
+    pub fn animate_f32(&mut self, target: f32, speed: f32) -> f32 {
+        let id = self.anim_counter;
+        self.anim_counter += 1;
+
+        let current = self.anim_state_f32.entry(id).or_insert(target);
+
+        let blend = 1.0 - (-speed * self.dt).exp();
+        *current += (target - *current) * blend;
+        *current
+    }
+
+    pub fn animate_color(&mut self, target: u32, speed: f32) -> u32 {
+        let id = self.anim_counter;
+        self.anim_counter += 1;
+
+        let (tr, tg, tb) = split_f32(target);
+        let current = self.anim_state_color.entry(id).or_insert((tr, tg, tb));
+
+        let blend = 1.0 - (-speed * self.dt).exp();
+        current.0 += (tr - current.0) * blend;
+        current.1 += (tg - current.1) * blend;
+        current.2 += (tb - current.2) * blend;
+
+        rgb(current.0 as u8, current.1 as u8, current.2 as u8)
     }
 
     pub fn width(&mut self) -> usize {

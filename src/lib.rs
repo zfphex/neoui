@@ -31,6 +31,34 @@ pub struct Frame {
     pub scroll_y: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Ease {
+    Linear,
+    OutCubic,
+    InOutSine,
+    OutBack,
+}
+
+pub fn apply_ease(t: f32, ease: Ease) -> f32 {
+    match ease {
+        Ease::Linear => t,
+        Ease::OutCubic => 1.0 - (1.0 - t).powi(3),
+        Ease::InOutSine => -(std::f32::consts::PI * t).cos() / 2.0 + 0.5,
+        Ease::OutBack => {
+            let c1 = 1.70158;
+            let c3 = c1 + 1.0;
+            1.0 + c3 * (t - 1.0).powi(3) + c1 * (t - 1.0).powi(2)
+        }
+    }
+}
+
+pub struct AnimationStateF32 {
+    pub current: f32,
+    pub target: f32,
+    pub initial: f32,
+    pub elapsed: f32,
+}
+
 #[derive(Debug)]
 pub enum Command<'a> {
     Rect {
@@ -133,7 +161,7 @@ pub struct Context<'a> {
     //Animation
     pub dt: f32,
     pub anim_counter: usize,
-    pub anim_state_f32: FxHashMap<usize, f32>,
+    pub anim_state_f32: FxHashMap<usize, AnimationStateF32>,
     pub anim_state_color: FxHashMap<usize, (f32, f32, f32)>,
     pub last_frame_time: std::time::Instant,
 }
@@ -1043,15 +1071,39 @@ impl<'a> Context<'a> {
         self.window.vsync();
     }
 
-    pub fn animate_f32(&mut self, target: f32, speed: f32) -> f32 {
+    pub fn animate_f32(&mut self, target: f32, duration: f32, ease: Ease) -> f32 {
         let id = self.anim_counter;
         self.anim_counter += 1;
 
-        let current = self.anim_state_f32.entry(id).or_insert(target);
+        let state = self.anim_state_f32.entry(id).or_insert(AnimationStateF32 {
+            current: target,
+            target,
+            initial: target,
+            elapsed: duration,
+        });
 
-        let blend = 1.0 - (-speed * self.dt).exp();
-        *current += (target - *current) * blend;
-        *current
+        if state.target != target {
+            state.initial = state.current;
+            state.target = target;
+            state.elapsed = 0.0;
+        }
+
+        if state.elapsed < duration {
+            state.elapsed += self.dt;
+
+            let mut t = if duration > 0.0 { state.elapsed / duration } else { 1.0 };
+            if t > 1.0 {
+                t = 1.0;
+            }
+
+            let eased_t = apply_ease(t, ease);
+
+            state.current = state.initial + (state.target - state.initial) * eased_t;
+        } else {
+            state.current = state.target;
+        }
+
+        state.current
     }
 
     pub fn animate_color(&mut self, target: u32, speed: f32) -> u32 {

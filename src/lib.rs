@@ -779,6 +779,12 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
+        let padding = style.padding.unwrap_or_default();
+
+        bounds.x += padding.left;
+        bounds.width = bounds.width.saturating_sub(padding.left + padding.right);
+        bounds.y += padding.top;
+        bounds.height = bounds.height.saturating_sub(padding.top + padding.bottom);
 
         // Draw the background first.
         if let Some(color) = style.bg {
@@ -836,9 +842,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         self.flow(style, Flow::Right, true, 0, ui)
     }
 
-    // TODO: Rename
     /// Layout widgets inside the container normally but don't add the area to the layout stack after.
-    pub fn flow_once<R>(&mut self, style: impl Into<Style>, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn flow_skip<R>(&mut self, style: impl Into<Style>, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
         let r = self.flow(style, flow, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
         r

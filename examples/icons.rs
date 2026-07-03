@@ -87,7 +87,7 @@ fn main() {
                     Padding::default(),
                     0,
                 );
-                ui.flow_once(bounds(label_rect), Flow::Down, |ui| {
+                ui.flow_skip(bounds(label_rect), Flow::Down, |ui| {
                     ui.text(*label, style().fg(gray()).font_size(16));
                 });
             }

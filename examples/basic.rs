@@ -102,35 +102,6 @@ fn main() {
                 }
 
                 let bar = style().width(1).height(top_nav_rect.height).bg(bar_color);
-                // ui.rect(bar);
-
-                //Playback
-                {
-                    // let f = ui.current_frame();
-                    // let x = f.cursor_x;
-                    // let y = f.cursor_y + 3;
-                    // //TODO: This clips really weirdly
-                    // let size = 24;
-                    // ui.paint_icon(
-                    //     stop,
-                    //     Rect::new(x, y, size, size),
-                    //     &icons,
-                    //     style().fg(white()).font_size(size),
-                    // );
-                    // ui.paint_icon(
-                    //     pause,
-                    //     Rect::new(x + size, y, size, size),
-                    //     &icons,
-                    //     style().fg(white()).font_size(size),
-                    // );
-                    // ui.paint_icon(
-                    //     play,
-                    //     Rect::new(x + 2 * size, y, size, size),
-                    //     &icons,
-                    //     style().fg(white()).font_size(size),
-                    // );
-                }
-
                 let icon = style().font(icon_id).font_size(24).fill_height();
                 if ui.text(stop, icon).clicked {
                     println!("Stop");
@@ -198,7 +169,7 @@ fn main() {
                     .align(Alignment::Left)
                     .depth(1);
 
-                ui.flow_once(style().x(rect.x).y(top_nav_rect.height), Flow::Down, |ui| {
+                ui.flow_skip(style().x(rect.x).y(top_nav_rect.height), Flow::Down, |ui| {
                     for &item in dropdown_items(menu) {
                         if ui.item(item, false, item_style).clicked {
                             println!("{}", item);

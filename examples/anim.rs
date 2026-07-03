@@ -39,9 +39,7 @@ fn main() {
                     }
                 });
 
-                // Body
-                // TODO: Pad does not work here.
-                ui.flow_down(style().pad(80), |ui| {
+                ui.flow_down(style().padtl(8), |ui| {
                     ui.text("Main Content Area", style().fg(white()));
                 });
             });

@@ -533,7 +533,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     pub fn mouse_position(&self) -> Rect {
-        let (x, y) = self.window.mouse_pos();
+        let Some((x, y)) = self.window.mouse_pos() else {
+            return Rect::default();
+        };
+
         Rect::new(x.max(0.0) as usize, y.max(0.0) as usize, 1, 1)
     }
 

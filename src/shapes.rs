@@ -720,7 +720,7 @@ pub fn draw_text(
     clip: Rect,
 ) -> Rect {
     profile!();
-    if text.is_empty() || font_size == 0 {
+    if text.is_empty() || font_size == 0 || window_width == 0 {
         return Rect::default();
     }
 

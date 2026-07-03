@@ -5,23 +5,18 @@ fn main() {
 
     let mut scroll_y = 18;
 
-    loop {
-        ui.start_frame(black());
+    while ui.window.open() {
+        ui.frame(|ui| {
+            let bounds = ui.current_frame().bounds;
+            ui.scroll_view(bounds, &mut scroll_y, |ui| {
+                for _ in 0..100 {
+                    ui.text("test", style());
+                }
+            });
 
-        if let Some(event) = ui.poll_event() {
-            match event {
-                Event::Quit | Event::Input(Key::Escape, _) => break,
-                _ => {}
-            }
-        }
-
-        let bounds = ui.layout_stack.last().unwrap().bounds;
-        ui.scroll_view(bounds, &mut scroll_y, |ui| {
-            for _ in 0..100 {
-                ui.text("test", style());
+            if ui.window.pressed(Key::Escape) {
+                ui.window.close();
             }
         });
-
-        ui.draw_frame();
     }
 }

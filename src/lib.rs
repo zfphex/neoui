@@ -1,16 +1,15 @@
 pub mod style;
 pub use style::*;
 
-pub mod platform;
-pub use platform::*;
-
 pub mod shapes;
 pub use shapes::*;
 
 pub use mini::*;
+pub use miniwin::*;
 
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Flow {
@@ -125,37 +124,42 @@ pub struct ScrollState {
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
-    #[cfg(target_os = "windows")]
-    let window = create_window(title, 0, 0, width as i32, height as i32, WindowStyle::DEFAULT);
-
-    #[cfg(target_os = "macos")]
-    let window = Box::pin(Window::new(title, width, height));
+    let window = miniwin::create_window(title, None, width as i32, height as i32, false, WindowStyle::Standard);
 
     Context {
-        commands: [const { Vec::new() }; 16],
-        fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
-        window: window,
-        layout_stack: Vec::new(),
-        font_bitmaps: FxHashMap::default(),
-        font_metrics: FxHashMap::default(),
-        default_font_size: 32,
-        scroll_y: 0,
-        dt: 0.0,
-        anim_counter: 0,
-        anim_state_f32: FxHashMap::default(),
-        anim_state_color: FxHashMap::default(),
-        last_frame_time: std::time::Instant::now(),
+        window,
+        state: UiState {
+            commands: [const { Vec::new() }; 16],
+            fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
+            layout_stack: Vec::new(),
+            font_bitmaps: FxHashMap::default(),
+            font_metrics: FxHashMap::default(),
+            default_font_size: 32,
+            clear_color: black(),
+            scroll_y: 0,
+            left_mouse_start: None,
+            left_mouse_release: None,
+            dt: 0.0,
+            anim_counter: 0,
+            anim_state_f32: FxHashMap::default(),
+            anim_state_color: FxHashMap::default(),
+            last_frame_time: std::time::Instant::now(),
+        },
     }
 }
 
 pub struct Context<'a> {
-    pub commands: [Vec<Command<'a>>; 16],
     pub window: std::pin::Pin<Box<Window>>,
-    pub layout_stack: Vec<Frame>,
+    state: UiState<'a>,
+}
+
+pub struct UiState<'a> {
+    pub commands: [Vec<Command<'a>>; 16],
     pub fonts: Vec<fontdue::Font>,
     pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
     pub default_font_size: usize,
+    pub clear_color: u32,
     pub scroll_y: i32,
 
     //Animation
@@ -164,22 +168,107 @@ pub struct Context<'a> {
     pub anim_state_f32: FxHashMap<usize, AnimationStateF32>,
     pub anim_state_color: FxHashMap<usize, (f32, f32, f32)>,
     pub last_frame_time: std::time::Instant,
+
+    left_mouse_start: Option<Rect>,
+    left_mouse_release: Option<Rect>,
+    layout_stack: Vec<Frame>,
+}
+
+pub struct FrameContext<'frame, 'a> {
+    pub window: &'frame mut Window,
+    state: &'frame mut UiState<'a>,
+}
+
+impl<'a> Deref for Context<'a> {
+    type Target = UiState<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl<'a> DerefMut for Context<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
+}
+
+impl<'frame, 'a> Deref for FrameContext<'frame, 'a> {
+    type Target = UiState<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        self.state
+    }
+}
+
+impl<'frame, 'a> DerefMut for FrameContext<'frame, 'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.state
+    }
 }
 
 impl<'a> Context<'a> {
-    pub fn poll_event(&mut self) -> Option<Event> {
-        self.scroll_y = 0;
+    pub fn frame<F>(&mut self, mut ui: F)
+    where
+        F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
+    {
+        let state = &mut self.state;
 
-        match self.window.event() {
-            Some(Event::Input(Key::ScrollDown, _)) => self.scroll_y += 1,
-            Some(Event::Input(Key::ScrollUp, _)) => self.scroll_y -= 1,
-            Some(event) => return Some(event),
-            _ => {}
-        };
+        self.window.draw(|window| {
+            let mut frame = FrameContext { window, state };
+            let now = std::time::Instant::now();
+            frame.dt = (now - frame.last_frame_time).as_secs_f32();
+            frame.last_frame_time = now;
+            frame.anim_counter = 0;
+            frame.scroll_y = frame.window.scroll_delta().1.round() as i32;
 
-        return None;
+            if frame.window.mouse_pressed(Mouse::Left) {
+                frame.left_mouse_start = Some(frame.mouse_position());
+                frame.left_mouse_release = None;
+            }
+
+            if frame.window.mouse_released(Mouse::Left) {
+                frame.left_mouse_release = Some(frame.mouse_position());
+            }
+
+            let (width, height) = frame.window.content_size();
+            let bounds = Rect::new(0, 0, width, height);
+
+            let clear_color = frame.clear_color;
+            frame.window.framebuffer().fill(clear_color);
+            frame.layout_stack.clear();
+            frame.layout_stack.push(Frame {
+                bounds,
+                clip: bounds,
+                flow: Flow::Down,
+                ..Default::default()
+            });
+
+            ui(&mut frame);
+
+            frame.draw_frame();
+            frame.window.present();
+
+            if frame.window.mouse_released(Mouse::Left) {
+                frame.left_mouse_start = None;
+                frame.left_mouse_release = None;
+            }
+        });
+
+        self.window.wait_for_vsync();
     }
+}
 
+impl<'a> UiState<'a> {
+    /// Add a font then return a font ID to use.
+    pub fn add_font(&mut self, font: fontdue::Font) -> usize {
+        let id = self.fonts.len();
+        self.fonts.push(font);
+        id
+    }
+}
+
+impl<'frame, 'a> FrameContext<'frame, 'a> {
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
     pub fn walk_layout(&mut self, width: usize, height: usize, gap: usize) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
@@ -377,28 +466,29 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn clicked(&mut self, rect: Rect) -> bool {
+    pub fn clicked(&self, rect: Rect) -> bool {
         let frame = self.layout_stack.last().expect("No active frame");
-        self.window.left_mouse.clicked(rect) && self.window.mouse_position.intersects(frame.bounds)
+        self.window.mouse_clicked(Mouse::Left, rect) && self.mouse_position().intersects(frame.bounds)
     }
 
     pub fn pressed(&self, rect: Rect) -> bool {
         let frame = self.layout_stack.last().expect("No active frame");
-        self.window.left_mouse.pressed
-            && self.window.mouse_position.intersects(rect)
-            && self.window.mouse_position.intersects(frame.bounds)
+        self.window.mouse_down(Mouse::Left)
+            && self.mouse_position().intersects(rect)
+            && self.mouse_position().intersects(frame.bounds)
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
         let frame = self.layout_stack.last().expect("No active frame");
-        self.window.mouse_position.intersects(rect) && self.window.mouse_position.intersects(frame.bounds)
+        self.mouse_position().intersects(rect) && self.mouse_position().intersects(frame.bounds)
     }
 
     pub fn dragged(&self, rect: Rect) -> bool {
-        let Some(inital) = self.window.left_mouse.inital_position else {
+        let Some(initial) = self.left_mouse_start else {
             return false;
         };
-        inital.intersects(rect) && self.window.left_mouse.pressed
+
+        self.window.mouse_down(Mouse::Left) && initial.intersects(rect)
     }
 
     /// Return what percentage of the rectangle has been dragged on the x-axis.
@@ -411,7 +501,7 @@ impl<'a> Context<'a> {
             return Some(0.0);
         }
 
-        let x = self.window.mouse_position.x.saturating_sub(rect.x);
+        let x = self.mouse_position().x.saturating_sub(rect.x);
         Some((x as f32 / rect.width as f32).clamp(0.0, 1.0))
     }
 
@@ -425,25 +515,26 @@ impl<'a> Context<'a> {
             return Some(0.0);
         }
 
-        let y = self.window.mouse_position.y.saturating_sub(rect.y);
+        let y = self.mouse_position().y.saturating_sub(rect.y);
         Some((y as f32 / rect.height as f32).clamp(0.0, 1.0))
     }
 
     /// Check if a rectangle is clicked off of
     pub fn lost_focus(&self, rect: Rect) -> bool {
-        let Some(inital) = self.window.left_mouse.inital_position else {
+        let Some(initial) = self.left_mouse_start else {
             return false;
         };
 
-        let Some(release) = self.window.left_mouse.release_position else {
+        let Some(release) = self.left_mouse_release else {
             return false;
         };
 
-        self.window.left_mouse.released && !inital.intersects(rect) && !release.intersects(rect)
+        self.window.mouse_released(Mouse::Left) && !initial.intersects(rect) && !release.intersects(rect)
     }
 
     pub fn mouse_position(&self) -> Rect {
-        self.window.mouse_position
+        let (x, y) = self.window.mouse_pos();
+        Rect::new(x.max(0.0) as usize, y.max(0.0) as usize, 1, 1)
     }
 
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
@@ -492,8 +583,10 @@ impl<'a> Context<'a> {
     }
 
     pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
-        let metrics = self.font_metrics.entry(font_id).or_default();
-        measure_text(text, &self.fonts[font_id], font_size, 1.0, metrics)
+        let state = &mut *self.state;
+        let font = &state.fonts[font_id];
+        let metrics = state.font_metrics.entry(font_id).or_default();
+        measure_text(text, font, font_size, 1.0, metrics)
     }
 
     pub fn paint_text(
@@ -785,17 +878,13 @@ impl<'a> Context<'a> {
             direction: self.scroll_y,
         };
 
-        if self.scroll_y != 0 && self.window.mouse_position.intersects(bounds) {
-            #[cfg(target_os = "windows")]
+        if self.scroll_y != 0 && self.mouse_position().intersects(bounds) {
             const WHEEL_STEP: usize = 30;
 
-            #[cfg(target_os = "macos")]
-            const WHEEL_STEP: usize = 60;
-
             if self.scroll_y > 0 {
-                *scroll_y = (*scroll_y).saturating_add(self.scroll_y as usize * WHEEL_STEP);
-            } else {
                 *scroll_y = (*scroll_y).saturating_sub(self.scroll_y.unsigned_abs() as usize * WHEEL_STEP);
+            } else {
+                *scroll_y = (*scroll_y).saturating_add(self.scroll_y.unsigned_abs() as usize * WHEEL_STEP);
             }
             state.scrolled = true;
         }
@@ -844,23 +933,6 @@ impl<'a> Context<'a> {
         }
 
         frame.max_child_height
-    }
-
-    pub fn start_frame(&mut self, fill_color: u32) {
-        let now = std::time::Instant::now();
-        self.dt = (now - self.last_frame_time).as_secs_f32();
-        self.last_frame_time = now;
-        self.anim_counter = 0;
-
-        let bounds = Rect::new(0, 0, self.width(), self.height());
-        self.fill(fill_color);
-        self.layout_stack.clear();
-        self.layout_stack.push(Frame {
-            bounds,
-            clip: bounds,
-            flow: Flow::Down,
-            ..Default::default()
-        });
     }
 
     pub fn current_frame(&self) -> &Frame {
@@ -938,15 +1010,15 @@ impl<'a> Context<'a> {
         self.begin_layout(flow, Some(Rect::new(cell_x, cell_y, cell_w, cell_h)));
     }
 
-    pub fn fill(&mut self, color: u32) {
-        self.window.buffer.fill(color);
-    }
-
-    pub fn draw_frame(&mut self) {
+    fn draw_frame(&mut self) {
         profile!();
-        let self_width = self.width();
-        let self_height = self.height();
-        for layer in &mut self.commands {
+        let window = &mut *self.window;
+        let state = &mut *self.state;
+        let (self_width, self_height) = window.content_size();
+        let display_scale = window.scale_factor() as f32;
+        let buffer = window.framebuffer();
+
+        for layer in &mut state.commands {
             for cmd in layer.drain(..) {
                 match cmd {
                     Command::Rect {
@@ -958,7 +1030,7 @@ impl<'a> Context<'a> {
                         color,
                         radius,
                     } => draw_rounded_rect(
-                        &mut self.window.buffer,
+                        buffer,
                         x,
                         y,
                         width,
@@ -979,17 +1051,7 @@ impl<'a> Context<'a> {
                         radius: _,
                         border_thickness: _,
                         border_sides,
-                    } => draw_rect_outline(
-                        &mut self.window.buffer,
-                        x,
-                        y,
-                        width,
-                        height,
-                        self_width,
-                        color,
-                        clip,
-                        border_sides,
-                    ),
+                    } => draw_rect_outline(buffer, x, y, width, height, self_width, color, clip, border_sides),
                     Command::Text {
                         text,
                         clip,
@@ -999,16 +1061,16 @@ impl<'a> Context<'a> {
                         size,
                         font_id,
                     } => {
-                        let bitmap = self.font_bitmaps.entry(font_id).or_default();
+                        let bitmap = state.font_bitmaps.entry(font_id).or_default();
                         draw_text(
                             &text,
-                            &self.fonts[font_id],
+                            &state.fonts[font_id],
                             x,
                             y,
                             size,
-                            self.window.display_scale(),
+                            display_scale,
                             self_width,
-                            &mut self.window.buffer,
+                            buffer,
                             color,
                             bitmap,
                             clip,
@@ -1050,30 +1112,16 @@ impl<'a> Context<'a> {
                         c: (cx, cy),
                         clip,
                         color,
-                    } => draw_triangle_sdf(
-                        &mut self.window.buffer,
-                        self_width,
-                        self_height,
-                        ax,
-                        ay,
-                        bx,
-                        by,
-                        cx,
-                        cy,
-                        color,
-                        clip,
-                    ),
+                    } => draw_triangle_sdf(buffer, self_width, self_height, ax, ay, bx, by, cx, cy, color, clip),
                 };
             }
         }
-
-        self.window.draw();
-        self.window.vsync();
     }
 
     pub fn animate_f32(&mut self, target: f32, duration: f32, ease: Ease) -> f32 {
         let id = self.anim_counter;
         self.anim_counter += 1;
+        let dt = self.dt;
 
         let state = self.anim_state_f32.entry(id).or_insert(AnimationStateF32 {
             current: target,
@@ -1089,7 +1137,7 @@ impl<'a> Context<'a> {
         }
 
         if state.elapsed < duration {
-            state.elapsed += self.dt;
+            state.elapsed += dt;
 
             let mut t = if duration > 0.0 { state.elapsed / duration } else { 1.0 };
             if t > 1.0 {
@@ -1109,23 +1157,16 @@ impl<'a> Context<'a> {
     pub fn animate_color(&mut self, target: u32, speed: f32) -> u32 {
         let id = self.anim_counter;
         self.anim_counter += 1;
+        let dt = self.dt;
 
         let (tr, tg, tb) = split_f32(target);
         let current = self.anim_state_color.entry(id).or_insert((tr, tg, tb));
 
-        let blend = 1.0 - (-speed * self.dt).exp();
+        let blend = 1.0 - (-speed * dt).exp();
         current.0 += (tr - current.0) * blend;
         current.1 += (tg - current.1) * blend;
         current.2 += (tb - current.2) * blend;
 
         rgb(current.0 as u8, current.1 as u8, current.2 as u8)
-    }
-
-    pub fn width(&mut self) -> usize {
-        self.window.width()
-    }
-
-    pub fn height(&mut self) -> usize {
-        self.window.height()
     }
 }

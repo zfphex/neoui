@@ -1016,6 +1016,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let state = &mut *self.state;
         let (self_width, self_height) = window.content_size();
         let display_scale = window.scale_factor() as f32;
+        let framebuffer_width = scale(self_width, display_scale);
+        let framebuffer_height = scale(self_height, display_scale);
         let buffer = window.framebuffer();
 
         for layer in &mut state.commands {
@@ -1031,15 +1033,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                         radius,
                     } => draw_rounded_rect(
                         buffer,
-                        x,
-                        y,
-                        width,
-                        height,
-                        self_width,
-                        self_height,
-                        radius,
+                        scale_f32(x as f32, display_scale),
+                        scale_f32(y as f32, display_scale),
+                        scale(width, display_scale),
+                        scale(height, display_scale),
+                        framebuffer_width,
+                        framebuffer_height,
+                        scale(radius, display_scale),
                         color,
-                        clip,
+                        clip.scale(display_scale),
                     ),
                     Command::RectOutline {
                         x,
@@ -1051,7 +1053,17 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                         radius: _,
                         border_thickness: _,
                         border_sides,
-                    } => draw_rect_outline(buffer, x, y, width, height, self_width, color, clip, border_sides),
+                    } => draw_rect_outline(
+                        buffer,
+                        scale_f32(x as f32, display_scale),
+                        scale_f32(y as f32, display_scale),
+                        scale(width, display_scale),
+                        scale(height, display_scale),
+                        framebuffer_width,
+                        color,
+                        clip.scale(display_scale),
+                        border_sides,
+                    ),
                     Command::Text {
                         text,
                         clip,
@@ -1069,11 +1081,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                             y,
                             size,
                             display_scale,
-                            self_width,
+                            framebuffer_width,
                             buffer,
                             color,
                             bitmap,
-                            clip,
+                            clip.scale(display_scale),
                         );
                     }
                     // Command::Icon {
@@ -1112,7 +1124,19 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                         c: (cx, cy),
                         clip,
                         color,
-                    } => draw_triangle_sdf(buffer, self_width, self_height, ax, ay, bx, by, cx, cy, color, clip),
+                    } => draw_triangle_sdf(
+                        buffer,
+                        framebuffer_width,
+                        framebuffer_height,
+                        scale_f32(ax as f32, display_scale),
+                        scale_f32(ay as f32, display_scale),
+                        scale_f32(bx as f32, display_scale),
+                        scale_f32(by as f32, display_scale),
+                        scale_f32(cx as f32, display_scale),
+                        scale_f32(cy as f32, display_scale),
+                        color,
+                        clip.scale(display_scale),
+                    ),
                 };
             }
         }

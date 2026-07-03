@@ -146,7 +146,6 @@ source = "git+https://github.com/zfphex/mini#5f2a3b76f5ecc3d09a9c821496f1e993579
 [[package]]
 name = "miniwin"
 version = "0.1.0"
-source = "git+https://github.com/zfphex/miniwin#3cbc95074b8da5e47d7e5291a74837b4e29fbeeb"
 
 [[package]]
 name = "neoui"

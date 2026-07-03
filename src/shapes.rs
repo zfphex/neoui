@@ -51,6 +51,10 @@ pub const fn scale(value: usize, scale: f32) -> usize {
     (value as f32 * scale).round() as usize
 }
 
+pub const fn scale_f32(value: f32, scale: f32) -> i32 {
+    (value * scale).round() as i32
+}
+
 pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
     ((color as f32 * alpha as f32 + bg_color as f32 * bg_alpha as f32) / 255.0).round() as u8
 }

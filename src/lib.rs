@@ -399,12 +399,24 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn split_rect_h(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
         let left_width = self.resolve_rect(rect, Flow::Right, size.into_size().unwrap_or_default());
-        rect.split_h(left_width)
+        let total_w = (rect.x + rect.width).saturating_sub(rect.x);
+        let total_h = (rect.y + rect.height).saturating_sub(rect.y);
+        let left_w = left_width.min(total_w);
+        let right_w = total_w.saturating_sub(left_w);
+        let left_rect = Rect::new(rect.x, rect.y, left_w, total_h);
+        let right_rect = Rect::new(rect.x + left_w, rect.y, right_w, total_h);
+        (left_rect, right_rect)
     }
 
     pub fn split_rect_v(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
         let top_height = self.resolve_rect(rect, Flow::Down, size.into_size().unwrap_or_default());
-        rect.split_v(top_height)
+        let total_w = (rect.x + rect.width).saturating_sub(rect.x);
+        let total_h = (rect.y + rect.height).saturating_sub(rect.y);
+        let top_h = top_height.min(total_h);
+        let bottom_h = total_h.saturating_sub(top_h);
+        let top_rect = Rect::new(rect.x, rect.y, total_w, top_h);
+        let bottom_rect = Rect::new(rect.x, rect.y + top_h, total_w, bottom_h);
+        (top_rect, bottom_rect)
     }
 
     /// Splits the current frame's remaining space horizontally.

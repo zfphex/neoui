@@ -78,7 +78,7 @@ fn main() {
     while ui.window.open() {
         ui.frame(|ui| {
             let (top_nav_rect, body) = ui.split_v(30);
-            let (sidebar_rect, track_rect) = body.split_h(260);
+            let (sidebar_rect, track_rect) = ui.split_rect_h(body, 260);
 
             ui.flow_right(bounds(top_nav_rect).bg(menu_bg), |ui| {
                 for (label, menu) in items {
@@ -178,7 +178,6 @@ fn main() {
                     }
                 });
 
-                //TODO: This could maybe be part of the response.
                 if ui.lost_focus(rect) {
                     current_menu = None;
                 }

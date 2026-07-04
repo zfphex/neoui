@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-fontdue = "0.9.3"
+fontdue = { version = "0.9.3", default-features = false }
 mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = ["profile"] }
 rustc-hash = "2.1.2"
 divan = { version = "0.1.21", optional = true }
-miniwin = { git = "https://github.com/zfphex/miniwin", version = "0.1.0" }
-# miniwin = { version = "0.1.0", path = "../../miniwin" }
+# miniwin = { git = "https://github.com/zfphex/miniwin", version = "0.1.0" }
+miniwin = { version = "0.1.0", path = "../../miniwin" }
 
 [features]
 profile = ["mini/profile"]

@@ -107,6 +107,8 @@ pub struct Layout {
 
 #[derive(Debug, Clone)]
 pub struct State {
+    pub pressed: bool,
+    pub released: bool,
     pub clicked: bool,
     pub hovered: bool,
     pub rect: Rect,
@@ -487,20 +489,19 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     pub fn clicked(&self, rect: Rect) -> bool {
-        let frame = self.layout_stack.last().expect("No active frame");
-        self.window.mouse_clicked(Mouse::Left, rect) && self.mouse_position().intersects(frame.bounds)
+        self.window.mouse_clicked(Mouse::Left, rect)
     }
 
     pub fn pressed(&self, rect: Rect) -> bool {
-        let frame = self.layout_stack.last().expect("No active frame");
-        self.window.mouse_down(Mouse::Left)
-            && self.mouse_position().intersects(rect)
-            && self.mouse_position().intersects(frame.bounds)
+        self.window.mouse_pressed(Mouse::Left) && self.mouse_position().intersects(rect)
+    }
+
+    pub fn released(&self, rect: Rect) -> bool {
+        self.window.mouse_released(Mouse::Left) && self.mouse_position().intersects(rect)
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
-        let frame = self.layout_stack.last().expect("No active frame");
-        self.mouse_position().intersects(rect) && self.mouse_position().intersects(frame.bounds)
+        self.mouse_position().intersects(rect)
     }
 
     pub fn dragged(&self, rect: Rect) -> bool {
@@ -698,12 +699,16 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             return State {
                 clicked: false,
                 hovered: false,
+                pressed: false,
+                released: false,
                 rect,
             };
         }
 
         let clicked = self.clicked(rect);
         let hovered = self.hovered(rect);
+        let pressed = self.pressed(rect);
+        let released = self.released(rect);
         let depth = style.depth.unwrap_or(0);
         let clip = self.layout_stack.last().expect("No active frame").clip;
 
@@ -767,7 +772,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             );
         }
 
-        State { clicked, hovered, rect }
+        State {
+            clicked,
+            hovered,
+            rect,
+            pressed,
+            released,
+        }
     }
 
     pub fn flow<R>(

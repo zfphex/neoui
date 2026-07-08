@@ -7,10 +7,14 @@ fn main() {
             let _s = ui.text(
                 "A line of text\nAnother line of text.",
                 style()
-                    // .bg(red())
-                    .bg(gray())
-                    //TODO: Borders
-                    // .border(red())
+                    .fill_width()
+                    .fill_height()
+                    .radius(100)
+                    .align(Alignment::Center)
+                    .bg(rgb(34, 46, 155))
+                    .fg(rgb(224, 203, 13))
+                    .border(red())
+                    .border_side(border::TOP | border::BOTTOM)
                     .font_size(32),
             );
             ui.end_layout();

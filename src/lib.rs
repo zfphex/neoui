@@ -142,9 +142,10 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
             left_mouse_start: None,
             left_mouse_release: None,
             dt: 0.0,
-            anim_counter: 0,
-            anim_state_f32: FxHashMap::default(),
-            anim_state_color: FxHashMap::default(),
+            anim_f32_cursor: 0,
+            anim_color_cursor: 0,
+            anim_state_f32: Vec::new(),
+            anim_state_color: Vec::new(),
             last_frame_time: std::time::Instant::now(),
             animating: false,
             hovered_depth: None,
@@ -166,11 +167,12 @@ pub struct UiState<'a> {
     pub clear_color: u32,
     pub scroll_y: i32,
 
-    //Animation
+    // Animation state is addressed by call order within each animation type.
     pub dt: f32,
-    pub anim_counter: usize,
-    pub anim_state_f32: FxHashMap<usize, AnimationStateF32>,
-    pub anim_state_color: FxHashMap<usize, (f32, f32, f32)>,
+    pub anim_f32_cursor: usize,
+    pub anim_color_cursor: usize,
+    pub anim_state_f32: Vec<AnimationStateF32>,
+    pub anim_state_color: Vec<(f32, f32, f32)>,
     pub last_frame_time: std::time::Instant,
     pub animating: bool,
 
@@ -225,7 +227,8 @@ impl<'a> Context<'a> {
             let now = std::time::Instant::now();
             frame.dt = (now - frame.last_frame_time).as_secs_f32();
             frame.last_frame_time = now;
-            frame.anim_counter = 0;
+            frame.anim_f32_cursor = 0;
+            frame.anim_color_cursor = 0;
             frame.animating = false;
             frame.scroll_y = frame.window.scroll_delta().1.round() as i32;
             frame.hovered_depth = None;
@@ -1204,16 +1207,19 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     pub fn animate_f32(&mut self, target: f32, duration: f32, ease: Ease) -> f32 {
-        let id = self.anim_counter;
-        self.anim_counter += 1;
+        let index = self.anim_f32_cursor;
+        self.anim_f32_cursor += 1;
         let dt = self.dt;
 
-        let state = self.anim_state_f32.entry(id).or_insert(AnimationStateF32 {
-            current: target,
-            target,
-            initial: target,
-            elapsed: duration,
-        });
+        if index == self.anim_state_f32.len() {
+            self.anim_state_f32.push(AnimationStateF32 {
+                current: target,
+                target,
+                initial: target,
+                elapsed: duration,
+            });
+        }
+        let state = &mut self.anim_state_f32[index];
 
         if state.target != target {
             state.initial = state.current;
@@ -1247,12 +1253,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     pub fn animate_color(&mut self, target: u32, speed: f32) -> u32 {
-        let id = self.anim_counter;
-        self.anim_counter += 1;
+        let index = self.anim_color_cursor;
+        self.anim_color_cursor += 1;
         let dt = self.dt;
 
         let (tr, tg, tb) = split_f32(target);
-        let (r, g, b) = self.anim_state_color.entry(id).or_insert((tr, tg, tb));
+        if index == self.anim_state_color.len() {
+            self.anim_state_color.push((tr, tg, tb));
+        }
+        let (r, g, b) = &mut self.anim_state_color[index];
         let blend = 1.0 - (-speed * dt).exp();
 
         *r += (tr - *r) * blend;

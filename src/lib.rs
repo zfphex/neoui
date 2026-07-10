@@ -4,6 +4,9 @@ pub use style::*;
 pub mod shapes;
 pub use shapes::*;
 
+pub mod render_cache;
+pub use render_cache::*;
+
 pub use mini::*;
 pub use miniwin::*;
 
@@ -93,6 +96,8 @@ pub enum Command<'a> {
         clip: Rect,
         x: i32,
         y: i32,
+        width: usize,
+        height: usize,
         color: u32,
         size: usize,
     },
@@ -123,6 +128,47 @@ pub struct ScrollState {
     pub direction: i32,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RenderCacheStats {
+    pub frames: u64,
+    pub zero_damage_frames: u64,
+    pub full_redraw_frames: u64,
+    pub total_dirty_tiles: u64,
+    pub total_damage_rects: u64,
+    pub total_damaged_pixels: u64,
+    pub total_framebuffer_pixels: u64,
+}
+
+impl RenderCacheStats {
+    pub fn mean_dirty_tiles(&self) -> f64 {
+        self.total_dirty_tiles as f64 / self.frames.max(1) as f64
+    }
+
+    pub fn mean_damage_rects(&self) -> f64 {
+        self.total_damage_rects as f64 / self.frames.max(1) as f64
+    }
+
+    pub fn mean_damaged_percent(&self) -> f64 {
+        self.total_damaged_pixels as f64 * 100.0 / self.total_framebuffer_pixels.max(1) as f64
+    }
+}
+
+impl std::fmt::Display for RenderCacheStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "render cache: {} frames, {} zero-damage, {} full redraws, mean {:.2} dirty tiles, \
+             mean {:.2} regions, mean {:.3}% damaged pixels",
+            self.frames,
+            self.zero_damage_frames,
+            self.full_redraw_frames,
+            self.mean_dirty_tiles(),
+            self.mean_damage_rects(),
+            self.mean_damaged_percent(),
+        )
+    }
+}
+
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
@@ -149,6 +195,8 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
             last_frame_time: std::time::Instant::now(),
             animating: false,
             hovered_depth: None,
+            render_cache: RenderCache::default(),
+            render_cache_stats: RenderCacheStats::default(),
         },
     }
 }
@@ -180,6 +228,8 @@ pub struct UiState<'a> {
     left_mouse_release: Option<Rect>,
     hovered_depth: Option<usize>,
     layout_stack: Vec<Frame>,
+    render_cache: RenderCache,
+    render_cache_stats: RenderCacheStats,
 }
 
 pub struct FrameContext<'frame, 'a> {
@@ -216,6 +266,11 @@ impl<'frame, 'a> DerefMut for FrameContext<'frame, 'a> {
 }
 
 impl<'a> Context<'a> {
+    /// Force the next frame to rebuild the complete framebuffer.
+    pub fn invalidate_render_cache(&mut self) {
+        self.state.render_cache.invalidate();
+    }
+
     pub fn frame<F>(&mut self, mut ui: F)
     where
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
@@ -246,8 +301,6 @@ impl<'a> Context<'a> {
             let (width, height) = frame.window.content_size();
             let bounds = Rect::new(0, 0, width, height);
 
-            let clear_color = frame.clear_color;
-            frame.window.framebuffer().fill(clear_color);
             frame.layout_stack.clear();
             frame.layout_stack.push(Frame {
                 bounds,
@@ -259,7 +312,6 @@ impl<'a> Context<'a> {
             ui(&mut frame);
 
             frame.draw_frame();
-            frame.window.present();
 
             if frame.window.mouse_released(Mouse::Left) {
                 frame.left_mouse_start = None;
@@ -268,12 +320,11 @@ impl<'a> Context<'a> {
         });
 
         if self.state.animating {
-            // self.window.wait_for_vsync();
+            self.window.wait_for_vsync();
         } else {
             //Yeah so waiting for events doesn't work on macos for a number of reasons.
             #[cfg(target_os = "macos")]
-            // self.window.wait_for_vsync();
-
+            self.window.wait_for_vsync();
             #[cfg(target_os = "windows")]
             self.window.wait_for_event();
 
@@ -289,9 +340,18 @@ impl<'a> UiState<'a> {
         self.fonts.push(font);
         id
     }
+
+    pub fn render_cache_stats(&self) -> RenderCacheStats {
+        self.render_cache_stats
+    }
 }
 
 impl<'frame, 'a> FrameContext<'frame, 'a> {
+    /// Force the current frame to rebuild the complete framebuffer.
+    pub fn invalidate_render_cache(&mut self) {
+        self.state.render_cache.invalidate();
+    }
+
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
     pub fn walk_layout(&mut self, width: usize, height: usize, gap: usize) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
@@ -675,6 +735,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             clip,
             x,
             y,
+            width: text_metrics.width,
+            height: text_metrics.height,
             color,
             font_id,
             size: font_size,
@@ -1087,128 +1149,57 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let display_scale = window.scale_factor() as f32;
         let framebuffer_width = scale(self_width, display_scale);
         let framebuffer_height = scale(self_height, display_scale);
-        let buffer = window.framebuffer();
+
+        state.render_cache.begin_frame(
+            framebuffer_width,
+            framebuffer_height,
+            window.scale_factor(),
+            state.clear_color,
+        );
+
+        prepare_commands(
+            &state.commands,
+            &mut state.render_cache,
+            display_scale,
+            framebuffer_width,
+            framebuffer_height,
+        );
+
+        compute_damage(&mut state.render_cache);
+        let frame_stats = state.render_cache.stats;
+        state.render_cache_stats.frames += 1;
+        state.render_cache_stats.zero_damage_frames += u64::from(frame_stats.dirty_tiles == 0);
+        state.render_cache_stats.full_redraw_frames += u64::from(frame_stats.full_redraw);
+        state.render_cache_stats.total_dirty_tiles += frame_stats.dirty_tiles as u64;
+        state.render_cache_stats.total_damage_rects += frame_stats.damage_rects as u64;
+        state.render_cache_stats.total_damaged_pixels += frame_stats.damaged_pixels as u64;
+        state.render_cache_stats.total_framebuffer_pixels +=
+            framebuffer_width.saturating_mul(framebuffer_height) as u64;
+        let damage = state.render_cache.take_damage();
+
+        if !damage.is_empty() {
+            let buffer = window.framebuffer();
+            clear_damage(buffer, framebuffer_width, &damage, state.clear_color);
+
+            raster_damage(
+                &state.commands,
+                &state.render_cache.prepared,
+                &damage,
+                buffer,
+                framebuffer_width,
+                framebuffer_height,
+                display_scale,
+                &state.fonts,
+                &mut state.font_bitmaps,
+            );
+        }
 
         for layer in &mut state.commands {
-            for cmd in layer.drain(..) {
-                match cmd {
-                    Command::Rect {
-                        x,
-                        y,
-                        width,
-                        height,
-                        clip,
-                        color,
-                        radius,
-                    } => draw_rounded_rect(
-                        buffer,
-                        scale_f32(x as f32, display_scale),
-                        scale_f32(y as f32, display_scale),
-                        scale(width, display_scale),
-                        scale(height, display_scale),
-                        framebuffer_width,
-                        framebuffer_height,
-                        scale(radius, display_scale),
-                        color,
-                        clip.scale(display_scale),
-                    ),
-                    Command::RectOutline {
-                        x,
-                        y,
-                        width,
-                        height,
-                        clip,
-                        color,
-                        radius: _,
-                        border_thickness: _,
-                        border_sides,
-                    } => draw_rect_outline(
-                        buffer,
-                        scale_f32(x as f32, display_scale),
-                        scale_f32(y as f32, display_scale),
-                        scale(width, display_scale),
-                        scale(height, display_scale),
-                        framebuffer_width,
-                        color,
-                        clip.scale(display_scale),
-                        border_sides,
-                    ),
-                    Command::Text {
-                        text,
-                        clip,
-                        x,
-                        y,
-                        color,
-                        size,
-                        font_id,
-                    } => {
-                        let bitmap = state.font_bitmaps.entry(font_id).or_default();
-                        draw_text(
-                            &text,
-                            &state.fonts[font_id],
-                            x,
-                            y,
-                            size,
-                            display_scale,
-                            framebuffer_width,
-                            buffer,
-                            color,
-                            bitmap,
-                            clip.scale(display_scale),
-                        );
-                    }
-                    // Command::Icon {
-                    //     icon,
-                    //     font,
-                    //     clip,
-                    //     x,
-                    //     y,
-                    //     color,
-                    //     size,
-                    // } => {
-                    //     //The library should probably handle font loading
-                    //     //and each font should have a unique ID that would be
-                    //     //used here instead of a pointer.
-                    //     let font_key = font as *const fontdue::Font as usize;
-                    //     let cache = self.icon_glyph_cache.entry(font_key).or_default();
-                    //     let mut icon_buffer = [0; 4];
-                    //     let icon = icon.encode_utf8(&mut icon_buffer);
-                    //     draw_text(
-                    //         icon,
-                    //         font,
-                    //         x,
-                    //         y,
-                    //         size,
-                    //         self.window.display_scale(),
-                    //         self_width,
-                    //         &mut self.window.buffer,
-                    //         color,
-                    //         cache,
-                    //         clip,
-                    //     );
-                    // }
-                    Command::Triangle {
-                        a: (ax, ay),
-                        b: (bx, by),
-                        c: (cx, cy),
-                        clip,
-                        color,
-                    } => draw_triangle_sdf(
-                        buffer,
-                        framebuffer_width,
-                        framebuffer_height,
-                        scale_f32(ax as f32, display_scale),
-                        scale_f32(ay as f32, display_scale),
-                        scale_f32(bx as f32, display_scale),
-                        scale_f32(by as f32, display_scale),
-                        scale_f32(cx as f32, display_scale),
-                        scale_f32(cy as f32, display_scale),
-                        color,
-                        clip.scale(display_scale),
-                    ),
-                };
-            }
+            layer.clear();
         }
+        state.render_cache.complete_frame();
+        present_damage(window, &damage);
+        state.render_cache.recycle_damage(damage);
     }
 
     pub fn animate_f32(&mut self, target: f32, duration: f32, ease: Ease) -> f32 {

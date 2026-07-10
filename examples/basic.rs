@@ -255,4 +255,7 @@ fn main() {
             ui.window.close();
         }
     }
+
+    #[cfg(feature = "profile")]
+    eprintln!("{}", ui.render_cache_stats());
 }

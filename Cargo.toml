@@ -24,3 +24,8 @@ required-features = ["bench"]
 name = "rect"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "cache"
+harness = false
+required-features = ["bench"]

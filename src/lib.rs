@@ -943,7 +943,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         };
 
         if self.scroll_y != 0 && self.mouse_position().intersects(bounds) {
+            #[cfg(target_os = "windows")]
             const WHEEL_STEP: usize = 30;
+
+            #[cfg(target_os = "macos")]
+            const WHEEL_STEP: usize = 1;
 
             if self.scroll_y > 0 {
                 *scroll_y = (*scroll_y).saturating_sub(self.scroll_y.unsigned_abs() as usize * WHEEL_STEP);

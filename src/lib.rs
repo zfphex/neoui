@@ -147,6 +147,7 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
             anim_state_color: FxHashMap::default(),
             last_frame_time: std::time::Instant::now(),
             animating: false,
+            hovered_depth: None,
         },
     }
 }
@@ -175,6 +176,7 @@ pub struct UiState<'a> {
 
     left_mouse_start: Option<Rect>,
     left_mouse_release: Option<Rect>,
+    hovered_depth: Option<usize>,
     layout_stack: Vec<Frame>,
 }
 
@@ -226,6 +228,7 @@ impl<'a> Context<'a> {
             frame.anim_counter = 0;
             frame.animating = false;
             frame.scroll_y = frame.window.scroll_delta().1.round() as i32;
+            frame.hovered_depth = None;
 
             if frame.window.mouse_pressed(Mouse::Left) {
                 frame.left_mouse_start = Some(frame.mouse_position());
@@ -510,6 +513,19 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         self.mouse_position().intersects(rect)
     }
 
+    pub fn hovered_depth(&mut self, rect: Rect, depth: usize) -> bool {
+        if !self.hovered(rect) {
+            return false;
+        }
+
+        if self.hovered_depth.is_some_and(|hovered_depth| depth < hovered_depth) {
+            return false;
+        }
+
+        self.hovered_depth = Some(depth);
+        true
+    }
+
     pub fn dragged(&self, rect: Rect) -> bool {
         let Some(initial) = self.left_mouse_start else {
             return false;
@@ -711,11 +727,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             };
         }
 
+        let depth = style.depth.unwrap_or(0);
         let clicked = self.clicked(rect);
-        let hovered = self.hovered(rect);
+        let hovered = self.hovered_depth(rect, depth);
         let pressed = self.pressed(rect);
         let released = self.released(rect);
-        let depth = style.depth.unwrap_or(0);
         let clip = self.layout_stack.last().expect("No active frame").clip;
 
         let bg = if selected && style.selected.is_some() {

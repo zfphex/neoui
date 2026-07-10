@@ -131,7 +131,6 @@ pub fn draw_rect(
     window_height: usize,
     color: u32,
 ) {
-    profile!();
     let (mut width, mut height) = (width as i32, height as i32);
     let (window_width, window_height) = (window_width as i32, window_height as i32);
 
@@ -169,7 +168,6 @@ pub fn draw_rect_outline(
     clip: Rect,
     sides: u8,
 ) {
-    profile!();
     use border::*;
 
     if width == 0 || height == 0 || window_width == 0 {
@@ -232,7 +230,6 @@ pub fn draw_rounded_rect(
     color: u32,
     clip: Rect,
 ) {
-    profile!();
     if width == 0 || height == 0 {
         return;
     }
@@ -387,7 +384,6 @@ pub fn draw_rounded_rect_outline(
     color: u32,
     clip: Rect,
 ) {
-    profile!();
     if width == 0 || height == 0 || thickness == 0 {
         return;
     }
@@ -476,7 +472,6 @@ pub fn draw_triangle_scanline(
     mut y2: usize,
     color: u32,
 ) {
-    profile!();
     if y0 > y1 {
         std::mem::swap(&mut y0, &mut y1);
         std::mem::swap(&mut x0, &mut x1);
@@ -550,7 +545,6 @@ pub fn draw_triangle_sdf(
     color: u32,
     clip: Rect,
 ) {
-    profile!();
     if y0 > y1 {
         std::mem::swap(&mut y0, &mut y1);
         std::mem::swap(&mut x0, &mut x1);
@@ -723,7 +717,6 @@ pub fn draw_text(
     cache: &mut FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
     clip: Rect,
 ) -> Rect {
-    profile!();
     if text.is_empty() || font_size == 0 || window_width == 0 {
         return Rect::default();
     }
@@ -869,7 +862,6 @@ pub fn measure_text(
     display_scale: f32,
     metrics: &mut FxHashMap<(char, usize), fontdue::Metrics>,
 ) -> Rect {
-    profile!();
     if text.is_empty() || font_size == 0 {
         return Rect::default();
     }

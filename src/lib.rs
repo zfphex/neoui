@@ -220,6 +220,7 @@ impl<'a> Context<'a> {
     where
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
     {
+        profile!();
         let state = &mut self.state;
 
         self.window.draw(|window| {
@@ -267,11 +268,11 @@ impl<'a> Context<'a> {
         });
 
         if self.state.animating {
-            self.window.wait_for_vsync();
+            // self.window.wait_for_vsync();
         } else {
             //Yeah so waiting for events doesn't work on macos for a number of reasons.
             #[cfg(target_os = "macos")]
-            self.window.wait_for_vsync();
+            // self.window.wait_for_vsync();
 
             #[cfg(target_os = "windows")]
             self.window.wait_for_event();

@@ -1,6 +1,7 @@
 use neoui::*;
 
 fn main() {
+    defer_results!();
     let mut ui = ui("Test", 1000, 700);
 
     let mut sidebar_open = false;

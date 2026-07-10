@@ -75,7 +75,15 @@ fn main() {
     let pause = "\u{e034}";
     let stop = "\u{e047}";
 
+    #[cfg(feature = "profile")]
+    let now = std::time::Instant::now();
+
     while ui.window.open() {
+        #[cfg(feature = "profile")]
+        if now.elapsed() > std::time::Duration::from_secs(2) {
+            ui.window.close();
+        }
+
         ui.frame(|ui| {
             let (top_nav_rect, body) = ui.split_v(30);
             let (sidebar_rect, track_rect) = ui.split_rect_h(body, 260);

@@ -892,6 +892,7 @@ pub fn draw_command(
     display_scale: f32,
     fonts: &[fontdue::Font],
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
     let clip = command_clip(command).scale(display_scale).intersection(damage);
     if clip.is_empty() {
@@ -976,6 +977,7 @@ pub fn draw_command(
             *fit,
             *opacity,
             scale(*radius, display_scale),
+            image_cache,
         ),
     }
 }
@@ -990,6 +992,7 @@ pub fn raster_damage(
     display_scale: f32,
     fonts: &[fontdue::Font],
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
     crate::profile!();
     for prepared in prepared {
@@ -1005,6 +1008,7 @@ pub fn raster_damage(
                     display_scale,
                     fonts,
                     font_bitmaps,
+                    image_cache,
                 );
             }
         }

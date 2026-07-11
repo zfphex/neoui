@@ -87,6 +87,7 @@ struct ScrollBench {
     buffer: Vec<u32>,
     fonts: Vec<fontdue::Font>,
     bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: FxHashMap<ImageKey, ImageEntry>,
     frames: [[Vec<Command<'static>>; 16]; 2],
     step: usize,
     /// last frame metrics (for reporting, not timed)
@@ -107,6 +108,7 @@ impl ScrollBench {
             buffer: vec![0u32; FB_W * FB_H],
             fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
             bitmaps: FxHashMap::default(),
+            image_cache: FxHashMap::default(),
             frames,
             step: 0,
             last_damage_rects: 0,
@@ -140,6 +142,7 @@ impl ScrollBench {
                 1.0,
                 &self.fonts,
                 &mut self.bitmaps,
+                &mut self.image_cache,
             );
         }
         self.cache.finish();
@@ -190,11 +193,12 @@ fn scroll_path_six_steps_full(bencher: divan::Bencher) {
             let buffer = vec![0u32; FB_W * FB_H];
             let fonts = vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()];
             let bitmaps = FxHashMap::default();
+            let image_cache = FxHashMap::default();
             cache.update(&sequence[0], 1.0, FB_W, FB_H, black());
             cache.finish();
-            (cache, buffer, fonts, bitmaps, 0usize)
+            (cache, buffer, fonts, bitmaps, image_cache, 0usize)
         })
-        .bench_refs(|(cache, buffer, fonts, bitmaps, idx)| {
+        .bench_refs(|(cache, buffer, fonts, bitmaps, image_cache, idx)| {
             *idx = (*idx + 1) % sequence.len();
             let commands = &sequence[*idx];
             if cache.update(commands, 1.0, FB_W, FB_H, black()) {
@@ -209,6 +213,7 @@ fn scroll_path_six_steps_full(bencher: divan::Bencher) {
                     1.0,
                     fonts,
                     bitmaps,
+                    image_cache,
                 );
             }
             cache.finish();

@@ -1,7 +1,25 @@
 use crate::Rect;
+use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_IMAGE_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ImageKey {
+    pub image_id: u64,
+    pub width: u32,
+    pub height: u32,
+    pub fit: ImageFit,
+    pub opacity: u8,
+    pub radius: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageEntry {
+    pub width: usize,
+    pub height: usize,
+    pub pixels: Box<[u32]>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Image {
@@ -230,7 +248,9 @@ pub fn draw_image(
     fit: ImageFit,
     opacity: u8,
     radius: usize,
+    cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
+    mini::profile!();
     if bounds.is_empty() || clip.is_empty() || opacity == 0 || framebuffer_width == 0 || framebuffer_height == 0 {
         return;
     }
@@ -238,33 +258,60 @@ pub fn draw_image(
     let draw = target
         .intersection(clip)
         .clamp_to_size(framebuffer_width as i32, framebuffer_height as i32);
-    if draw.is_empty() {
+    if draw.is_empty() || target.width <= 0 || target.height <= 0 {
         return;
     }
-    let radius = radius.min((target.width.min(target.height).max(0) / 2) as usize) as f32;
+    let tw = target.width as usize;
+    let th = target.height as usize;
+    let radius = radius.min(tw.min(th) / 2);
+    let key = ImageKey {
+        image_id: image.id,
+        width: tw as u32,
+        height: th as u32,
+        fit,
+        opacity,
+        radius: radius as u32,
+    };
+    let entry = cache
+        .entry(key)
+        .or_insert_with(|| rasterize_image(image, tw, th, fit, opacity, radius));
+    blit_image(buffer, framebuffer_width, entry, target.x, target.y, draw);
+}
+
+fn rasterize_image(
+    image: &Image,
+    width: usize,
+    height: usize,
+    fit: ImageFit,
+    opacity: u8,
+    radius: usize,
+) -> ImageEntry {
+    mini::profile!();
+    let mut pixels = vec![0u32; width * height].into_boxed_slice();
+    let local = Rect::new(0, 0, width as i32, height as i32);
+    let radius = radius.min(width.min(height) / 2) as f32;
     let (scale_x, scale_y) = match fit {
-        ImageFit::Stretch | ImageFit::Contain => (
-            image.width as f32 / target.width as f32,
-            image.height as f32 / target.height as f32,
-        ),
+        ImageFit::Stretch | ImageFit::Contain => {
+            (image.width as f32 / width as f32, image.height as f32 / height as f32)
+        }
         ImageFit::Cover => {
-            let scale = (bounds.width as f32 / image.width as f32).max(bounds.height as f32 / image.height as f32);
+            let scale = (width as f32 / image.width as f32).max(height as f32 / image.height as f32);
             (1.0 / scale, 1.0 / scale)
         }
     };
-    let visible_src_w = target.width as f32 * scale_x;
-    let visible_src_h = target.height as f32 * scale_y;
+    let visible_src_w = width as f32 * scale_x;
+    let visible_src_h = height as f32 * scale_y;
     let src_x0 = (image.width as f32 - visible_src_w) * 0.5;
     let src_y0 = (image.height as f32 - visible_src_h) * 0.5;
 
-    for y in draw.y..draw.bottom() {
-        for x in draw.x..draw.right() {
-            let coverage = rounded_coverage(x, y, target, radius);
+    for y in 0..height as i32 {
+        for x in 0..width as i32 {
+            let coverage = rounded_coverage(x, y, local, radius);
             if coverage <= 0.0 {
                 continue;
             }
-            let sx = src_x0 + (x as f32 + 0.5 - target.x as f32) * scale_x - 0.5;
-            let sy = src_y0 + (y as f32 + 0.5 - target.y as f32) * scale_y - 0.5;
+            let sx = src_x0 + (x as f32 + 0.5) * scale_x - 0.5;
+            let sy = src_y0 + (y as f32 + 0.5) * scale_y - 0.5;
             let pixel = sample_bilinear(image, sx, sy);
             let alpha_scale = opacity as f32 / 255.0 * coverage;
             let a = (((pixel >> 24) & 255) as f32 * alpha_scale).round() as u32;
@@ -274,6 +321,27 @@ pub fn draw_image(
             let r = (((pixel >> 16) & 255) as f32 * alpha_scale).round() as u32;
             let g = (((pixel >> 8) & 255) as f32 * alpha_scale).round() as u32;
             let b = ((pixel & 255) as f32 * alpha_scale).round() as u32;
+            pixels[y as usize * width + x as usize] = a << 24 | r << 16 | g << 8 | b;
+        }
+    }
+
+    ImageEntry { width, height, pixels }
+}
+
+fn blit_image(buffer: &mut [u32], framebuffer_width: usize, entry: &ImageEntry, dest_x: i32, dest_y: i32, draw: Rect) {
+    for y in draw.y..draw.bottom() {
+        let ly = (y - dest_y) as usize;
+        let row = ly * entry.width;
+        for x in draw.x..draw.right() {
+            let lx = (x - dest_x) as usize;
+            let pixel = entry.pixels[row + lx];
+            let a = (pixel >> 24) & 255;
+            if a == 0 {
+                continue;
+            }
+            let r = (pixel >> 16) & 255;
+            let g = (pixel >> 8) & 255;
+            let b = pixel & 255;
             let index = y as usize * framebuffer_width + x as usize;
             if a >= 255 {
                 buffer[index] = r << 16 | g << 8 | b;
@@ -355,6 +423,7 @@ mod tests {
     fn blending_and_contain_are_correct() {
         let image = Image::from_rgba8(1, 1, [255, 0, 0, 128]).unwrap();
         let mut buffer = vec![0x0000ff; 4];
+        let mut cache = FxHashMap::default();
         draw_image(
             &mut buffer,
             2,
@@ -365,13 +434,78 @@ mod tests {
             ImageFit::Stretch,
             255,
             0,
+            &mut cache,
         );
         assert_eq!(buffer, vec![0x80007f; 4]);
+        assert_eq!(cache.len(), 1);
+
+        // Second draw reuses the rasterized entry.
+        let mut buffer2 = vec![0x0000ff; 4];
+        draw_image(
+            &mut buffer2,
+            2,
+            2,
+            &image,
+            Rect::new(0, 0, 2, 2),
+            Rect::new(0, 0, 2, 2),
+            ImageFit::Stretch,
+            255,
+            0,
+            &mut cache,
+        );
+        assert_eq!(buffer2, buffer);
+        assert_eq!(cache.len(), 1);
+
         let wide = Image::from_rgba8(2, 1, [255, 255, 255, 255, 255, 255, 255, 255]).unwrap();
         assert_eq!(
             fitted_bounds(Rect::new(0, 0, 4, 4), &wide, ImageFit::Contain),
             Rect::new(0, 1, 4, 2)
         );
+    }
+
+    #[test]
+    fn raster_cache_keys_on_size_and_style() {
+        let image =
+            Image::from_rgba8(2, 2, [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]).unwrap();
+        let mut cache = FxHashMap::default();
+        let mut buffer = vec![0u32; 64];
+        draw_image(
+            &mut buffer,
+            8,
+            8,
+            &image,
+            Rect::new(0, 0, 4, 4),
+            Rect::new(0, 0, 8, 8),
+            ImageFit::Stretch,
+            255,
+            0,
+            &mut cache,
+        );
+        draw_image(
+            &mut buffer,
+            8,
+            8,
+            &image,
+            Rect::new(0, 0, 4, 4),
+            Rect::new(0, 0, 8, 8),
+            ImageFit::Stretch,
+            128,
+            0,
+            &mut cache,
+        );
+        draw_image(
+            &mut buffer,
+            8,
+            8,
+            &image,
+            Rect::new(0, 0, 6, 6),
+            Rect::new(0, 0, 8, 8),
+            ImageFit::Stretch,
+            255,
+            0,
+            &mut cache,
+        );
+        assert_eq!(cache.len(), 3);
     }
 
     #[cfg(feature = "png")]

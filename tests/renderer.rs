@@ -17,12 +17,13 @@ fn render_full(
     commands: &[Vec<Command<'static>>; 16],
     fonts: &[fontdue::Font],
     bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
     buffer.fill(clear);
     let damage = Rect::new(0, 0, width as i32, height as i32);
     for layer in commands {
         for command in layer {
-            draw_command(command, damage, buffer, width, height, 1.0, fonts, bitmaps);
+            draw_command(command, damage, buffer, width, height, 1.0, fonts, bitmaps, image_cache);
         }
     }
 }
@@ -36,6 +37,7 @@ fn render_cached(
     commands: &[Vec<Command<'static>>; 16],
     fonts: &[fontdue::Font],
     bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) -> Vec<Rect> {
     let dirty = cache.update(commands, 1.0, width, height, clear);
     let damage = cache.damage().to_vec();
@@ -51,6 +53,7 @@ fn render_cached(
             1.0,
             fonts,
             bitmaps,
+            image_cache,
         );
     }
     cache.finish();
@@ -76,6 +79,8 @@ fn cached_rectangles_match_full_redraw_across_changes() {
     let mut full = vec![0; width * height];
     let mut cached_bitmaps = FxHashMap::default();
     let mut full_bitmaps = FxHashMap::default();
+    let mut cached_images = FxHashMap::default();
+    let mut full_images = FxHashMap::default();
 
     let frames = [
         layers(vec![rect(5, 7, 50, 40, rgb(200, 0, 0))]),
@@ -98,8 +103,18 @@ fn cached_rectangles_match_full_redraw_across_changes() {
             commands,
             &fonts,
             &mut cached_bitmaps,
+            &mut cached_images,
         );
-        render_full(&mut full, width, height, clear, commands, &fonts, &mut full_bitmaps);
+        render_full(
+            &mut full,
+            width,
+            height,
+            clear,
+            commands,
+            &fonts,
+            &mut full_bitmaps,
+            &mut full_images,
+        );
         assert_eq!(cached, full, "pixel mismatch on frame {index}");
         if index == 1 {
             assert!(damage.is_empty(), "identical frame should have no damage");
@@ -116,6 +131,8 @@ fn cached_outlines_and_triangles_match_full_redraw() {
     let mut full = vec![0; width * height];
     let mut cached_bitmaps = FxHashMap::default();
     let mut full_bitmaps = FxHashMap::default();
+    let mut cached_images = FxHashMap::default();
+    let mut full_images = FxHashMap::default();
 
     for offset in [0, 70] {
         let commands = layers(vec![
@@ -144,8 +161,18 @@ fn cached_outlines_and_triangles_match_full_redraw() {
             &commands,
             &fonts,
             &mut cached_bitmaps,
+            &mut cached_images,
         );
-        render_full(&mut full, width, height, black(), &commands, &fonts, &mut full_bitmaps);
+        render_full(
+            &mut full,
+            width,
+            height,
+            black(),
+            &commands,
+            &fonts,
+            &mut full_bitmaps,
+            &mut full_images,
+        );
         assert_eq!(cached, full);
     }
 }
@@ -159,6 +186,8 @@ fn cached_text_and_clipping_match_full_redraw() {
     let mut full = vec![0; width * height];
     let mut cached_bitmaps = FxHashMap::default();
     let mut full_bitmaps = FxHashMap::default();
+    let mut cached_images = FxHashMap::default();
+    let mut full_images = FxHashMap::default();
     let mut layout_metrics = FxHashMap::default();
 
     for (text, x, clip) in [
@@ -183,8 +212,18 @@ fn cached_text_and_clipping_match_full_redraw() {
             &commands,
             &fonts,
             &mut cached_bitmaps,
+            &mut cached_images,
         );
-        render_full(&mut full, width, height, black(), &commands, &fonts, &mut full_bitmaps);
+        render_full(
+            &mut full,
+            width,
+            height,
+            black(),
+            &commands,
+            &fonts,
+            &mut full_bitmaps,
+            &mut full_images,
+        );
         assert_eq!(cached, full);
     }
 }
@@ -201,6 +240,8 @@ fn images_blend_clip_fit_and_match_cached_rendering() {
     let mut full = cached.clone();
     let mut cached_bitmaps = FxHashMap::default();
     let mut full_bitmaps = FxHashMap::default();
+    let mut cached_images = FxHashMap::default();
+    let mut full_images = FxHashMap::default();
 
     for (fit, opacity, radius, x) in [
         (ImageFit::Stretch, 255, 0, -4),
@@ -224,6 +265,7 @@ fn images_blend_clip_fit_and_match_cached_rendering() {
             &commands,
             &fonts,
             &mut cached_bitmaps,
+            &mut cached_images,
         );
         render_full(
             &mut full,
@@ -233,6 +275,7 @@ fn images_blend_clip_fit_and_match_cached_rendering() {
             &commands,
             &fonts,
             &mut full_bitmaps,
+            &mut full_images,
         );
         assert_eq!(cached, full);
     }

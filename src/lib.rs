@@ -129,6 +129,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
             font_metrics: FxHashMap::default(),
+            image_cache: FxHashMap::default(),
             default_font_size: 32,
             clear_color: black(),
             scroll_y: 0,
@@ -156,6 +157,7 @@ pub struct UiState {
     pub fonts: Vec<fontdue::Font>,
     pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
+    pub image_cache: FxHashMap<ImageKey, ImageEntry>,
     pub default_font_size: usize,
     pub clear_color: u32,
     pub scroll_y: i32,
@@ -1117,6 +1119,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 display_scale,
                 &state.fonts,
                 &mut state.font_bitmaps,
+                &mut state.image_cache,
             );
             window.present();
         }

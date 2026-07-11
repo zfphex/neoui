@@ -104,6 +104,9 @@ pub struct State {
     pub pressed: bool,
     pub released: bool,
     pub clicked: bool,
+    /// Platform double-click (miniwin / OS double-click timing & distance).
+    /// When true, `clicked` is also true for the completing click.
+    pub double_clicked: bool,
     pub hovered: bool,
     pub rect: Rect,
 }
@@ -512,6 +515,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.window.mouse_clicked(Mouse::Left, rect)
     }
 
+    pub fn double_clicked(&self, rect: Rect) -> bool {
+        self.window.mouse_double_clicked(Mouse::Left, rect)
+    }
+
     pub fn pressed(&self, rect: Rect) -> bool {
         self.window.mouse_pressed(Mouse::Left) && self.mouse_position().intersects(rect)
     }
@@ -738,6 +745,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         if rect.is_empty() {
             return State {
                 clicked: false,
+                double_clicked: false,
                 hovered: false,
                 pressed: false,
                 released: false,
@@ -749,6 +757,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let hovered = self.hovered_depth(rect, depth);
         // Input follows the same depth ordering as hover.
         let clicked = hovered && self.clicked(rect);
+        let double_clicked = hovered && self.double_clicked(rect);
         let pressed = hovered && self.pressed(rect);
         let released = hovered && self.released(rect);
         let clip = self.layout_stack.last().expect("No active frame").clip;
@@ -810,6 +819,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         State {
             clicked,
+            double_clicked,
             hovered,
             rect,
             pressed,
@@ -955,7 +965,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         if self.scroll_y != 0 && self.mouse_position().intersects(bounds) {
             #[cfg(target_os = "windows")]
-            const WHEEL_STEP: usize = 30;
+            const WHEEL_STEP: usize = 50;
 
             #[cfg(target_os = "macos")]
             const WHEEL_STEP: usize = 1;

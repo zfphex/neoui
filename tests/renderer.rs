@@ -188,3 +188,52 @@ fn cached_text_and_clipping_match_full_redraw() {
         assert_eq!(cached, full);
     }
 }
+
+#[test]
+fn images_blend_clip_fit_and_match_cached_rendering() {
+    let (width, height) = (96, 80);
+    let image = Box::leak(Box::new(
+        Image::from_rgba8(2, 1, [255, 0, 0, 255, 0, 255, 0, 128]).unwrap(),
+    ));
+    let fonts = Vec::new();
+    let mut cache = RenderCache::default();
+    let mut cached = vec![rgb(0, 0, 255); width * height];
+    let mut full = cached.clone();
+    let mut cached_bitmaps = FxHashMap::default();
+    let mut full_bitmaps = FxHashMap::default();
+
+    for (fit, opacity, radius, x) in [
+        (ImageFit::Stretch, 255, 0, -4),
+        (ImageFit::Contain, 220, 4, 8),
+        (ImageFit::Cover, 160, 12, 18),
+    ] {
+        let commands = layers(vec![Command::Image {
+            image,
+            bounds: Rect::new(x, 10, 50, 50),
+            clip: Rect::new(3, 4, 70, 62),
+            fit,
+            opacity,
+            radius,
+        }]);
+        render_cached(
+            &mut cache,
+            &mut cached,
+            width,
+            height,
+            rgb(0, 0, 255),
+            &commands,
+            &fonts,
+            &mut cached_bitmaps,
+        );
+        render_full(
+            &mut full,
+            width,
+            height,
+            rgb(0, 0, 255),
+            &commands,
+            &fonts,
+            &mut full_bitmaps,
+        );
+        assert_eq!(cached, full);
+    }
+}

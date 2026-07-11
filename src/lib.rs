@@ -7,6 +7,9 @@ pub use shapes::*;
 pub mod render_cache;
 pub use render_cache::*;
 
+pub mod image;
+pub use image::*;
+
 pub use mini::*;
 pub use miniwin::*;
 
@@ -48,7 +51,7 @@ pub struct AnimationStateF32 {
     pub elapsed: f32,
 }
 
-#[derive(Debug, Hash)]
+#[derive(Debug, std::hash::Hash)]
 pub enum Command<'a> {
     Rect {
         bounds: Rect,
@@ -78,6 +81,14 @@ pub enum Command<'a> {
         bounds: Rect,
         color: u32,
         size: usize,
+    },
+    Image {
+        image: &'a Image,
+        bounds: Rect,
+        clip: Rect,
+        fit: ImageFit,
+        opacity: u8,
+        radius: usize,
     },
 }
 
@@ -614,6 +625,23 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
     }
 
+    /// Queue an image for painting in the current layout clip.
+    pub fn paint_image(&mut self, rect: Rect, image: &'text Image, style: ImageStyle) {
+        assert!(style.depth < self.commands.len(), "image depth must be below 16");
+        if rect.is_empty() || style.opacity == 0 {
+            return;
+        }
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+        self.commands[style.depth].push(Command::Image {
+            image,
+            bounds: rect,
+            clip,
+            fit: style.fit,
+            opacity: style.opacity,
+            radius: style.radius,
+        });
+    }
+
     pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
         let state = &mut *self.state;
         let font = &state.fonts[font_id];
@@ -792,6 +820,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         scroll_y: usize,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> R {
+        let parent_scroll = self.layout_stack.last().map(|f| f.scroll_y).unwrap_or(0);
+
         let style = style.into();
         let mut bounds = self.current_frame_bounds();
 
@@ -809,6 +839,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         if let Some(y) = style.y {
             bounds.y = self.resolve_size(y, flow)
+        } else if parent_scroll != 0 {
+            bounds.y -= parent_scroll as i32;
         }
 
         let clip = self.layout_stack.last().expect("No active frame").clip;
@@ -836,6 +868,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             flow,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
+            // Nested flows are already placed in screen space; do not re-apply parent scroll
+            // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
             ..Default::default()
         };

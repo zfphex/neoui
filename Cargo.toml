@@ -10,10 +10,19 @@ rustc-hash = "2.1.2"
 divan = { version = "0.1.21", optional = true }
 # miniwin = { git = "https://github.com/zfphex/miniwin", version = "0.1.0" }
 miniwin = { version = "0.1.0", path = "../miniwin" }
+zune-jpeg = { version = "0.5.15", optional = true }
+zune-png = { version = "0.5.2", optional = true }
 
 [features]
 profile = ["mini/profile"]
 bench = ["divan"]
+jpeg = ["dep:zune-jpeg"]
+png = ["dep:zune-png"]
+image = ["jpeg", "png"]
+
+[[example]]
+name = "image"
+required-features = ["image"]
 
 [[bench]]
 name = "font"

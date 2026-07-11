@@ -234,7 +234,8 @@ pub fn command_clip(command: &Command<'_>) -> Rect {
         Command::Rect { clip, .. }
         | Command::RectOutline { clip, .. }
         | Command::Triangle { clip, .. }
-        | Command::Text { clip, .. } => *clip,
+        | Command::Text { clip, .. }
+        | Command::Image { clip, .. } => *clip,
     }
 }
 
@@ -264,6 +265,25 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
                 b.width.saturating_add(pad * 2),
                 b.height.saturating_add(pad * 2),
             )
+        }
+        Command::Image {
+            image,
+            bounds,
+            fit,
+            radius,
+            ..
+        } => {
+            let fitted = fitted_bounds(*bounds, image, *fit).scale(scale_factor);
+            if *radius == 0 {
+                fitted
+            } else {
+                Rect::new(
+                    fitted.x.saturating_sub(1),
+                    fitted.y.saturating_sub(1),
+                    fitted.width.saturating_add(2),
+                    fitted.height.saturating_add(2),
+                )
+            }
         }
     };
     bounds

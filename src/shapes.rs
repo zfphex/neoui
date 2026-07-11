@@ -959,6 +959,24 @@ pub fn draw_command(
             *color,
             clip,
         ),
+        Command::Image {
+            image,
+            bounds,
+            fit,
+            opacity,
+            radius,
+            ..
+        } => draw_image(
+            buffer,
+            framebuffer_width,
+            framebuffer_height,
+            image,
+            bounds.scale(display_scale),
+            clip,
+            *fit,
+            *opacity,
+            scale(*radius, display_scale),
+        ),
     }
 }
 

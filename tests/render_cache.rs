@@ -80,3 +80,33 @@ fn signed_rectangles_clip_to_the_framebuffer() {
         Rect::new(0, 0, 15, 25)
     );
 }
+
+#[test]
+fn image_identity_and_style_changes_invalidate_only_occupied_tiles() {
+    let image_a = Image::from_rgba8(1, 1, [255, 0, 0, 255]).unwrap();
+    let image_b = Image::from_rgba8(1, 1, [0, 255, 0, 255]).unwrap();
+    let image_command = |image: &'static Image, opacity| Command::Image {
+        image,
+        bounds: Rect::new(4, 4, 40, 40),
+        clip: Rect::new(0, 0, 128, 64),
+        fit: ImageFit::Stretch,
+        opacity,
+        radius: 0,
+    };
+    let image_a = Box::leak(Box::new(image_a));
+    let image_b = Box::leak(Box::new(image_b));
+    let mut cache = RenderCache::default();
+
+    let first = layers(vec![image_command(image_a, 255)]);
+    assert!(cache.update(&first, 1.0, 128, 64, 0));
+    cache.finish();
+    let identical = layers(vec![image_command(image_a, 255)]);
+    assert!(!cache.update(&identical, 1.0, 128, 64, 0));
+    cache.finish();
+    let replaced = layers(vec![image_command(image_b, 255)]);
+    assert!(cache.update(&replaced, 1.0, 128, 64, 0));
+    assert_eq!(cache.damage(), &[Rect::new(0, 0, 64, 64)]);
+    cache.finish();
+    let faded = layers(vec![image_command(image_b, 128)]);
+    assert!(cache.update(&faded, 1.0, 128, 64, 0));
+}

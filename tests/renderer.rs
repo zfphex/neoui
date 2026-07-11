@@ -247,6 +247,7 @@ fn images_blend_clip_fit_and_match_cached_rendering() {
         (ImageFit::Stretch, 255, 0, -4),
         (ImageFit::Contain, 220, 4, 8),
         (ImageFit::Cover, 160, 12, 18),
+        (ImageFit::Fixed, 255, 0, 10),
     ] {
         let commands = layers(vec![Command::Image {
             image,

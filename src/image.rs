@@ -44,10 +44,16 @@ pub enum ImageFormat {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFit {
+    /// Scale the image to fill the rect, ignoring aspect ratio.
     #[default]
     Stretch,
+    /// Scale uniformly to fit inside the rect (letterbox).
     Contain,
+    /// Scale uniformly to cover the rect (crop overflow).
     Cover,
+    /// Draw at the image's intrinsic pixel size, centered in the rect.
+    /// Overflow is clipped to the rect.
+    Fixed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -224,18 +230,33 @@ fn decode_error(format: ImageFormat, error: impl std::fmt::Debug) -> String {
 }
 
 pub fn fitted_bounds(bounds: Rect, image: &Image, fit: ImageFit) -> Rect {
-    if bounds.is_empty() || fit != ImageFit::Contain {
+    if bounds.is_empty() {
         return bounds;
     }
-    let scale = (bounds.width as f64 / image.width as f64).min(bounds.height as f64 / image.height as f64);
-    let width = (image.width as f64 * scale).round().max(1.0) as i32;
-    let height = (image.height as f64 * scale).round().max(1.0) as i32;
-    Rect::new(
-        bounds.x + (bounds.width - width) / 2,
-        bounds.y + (bounds.height - height) / 2,
-        width,
-        height,
-    )
+    match fit {
+        ImageFit::Stretch | ImageFit::Cover => bounds,
+        ImageFit::Contain => {
+            let scale = (bounds.width as f64 / image.width as f64).min(bounds.height as f64 / image.height as f64);
+            let width = (image.width as f64 * scale).round().max(1.0) as i32;
+            let height = (image.height as f64 * scale).round().max(1.0) as i32;
+            Rect::new(
+                bounds.x + (bounds.width - width) / 2,
+                bounds.y + (bounds.height - height) / 2,
+                width,
+                height,
+            )
+        }
+        ImageFit::Fixed => {
+            let width = image.width as i32;
+            let height = image.height as i32;
+            Rect::new(
+                bounds.x + (bounds.width - width) / 2,
+                bounds.y + (bounds.height - height) / 2,
+                width,
+                height,
+            )
+        }
+    }
 }
 
 pub fn draw_image(
@@ -248,14 +269,18 @@ pub fn draw_image(
     fit: ImageFit,
     opacity: u8,
     radius: usize,
+    scale_factor: f32,
     cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
     mini::profile!();
     if bounds.is_empty() || clip.is_empty() || opacity == 0 || framebuffer_width == 0 || framebuffer_height == 0 {
         return;
     }
-    let target = fitted_bounds(bounds, image, fit);
+    let scaled_bounds = bounds.scale(scale_factor);
+    let target = fitted_bounds(bounds, image, fit).scale(scale_factor);
+    // Fixed images may extend past the paint rect; always clip to it.
     let draw = target
+        .intersection(scaled_bounds)
         .intersection(clip)
         .clamp_to_size(framebuffer_width as i32, framebuffer_height as i32);
     if draw.is_empty() || target.width <= 0 || target.height <= 0 {
@@ -263,7 +288,7 @@ pub fn draw_image(
     }
     let tw = target.width as usize;
     let th = target.height as usize;
-    let radius = radius.min(tw.min(th) / 2);
+    let radius = crate::scale(radius, scale_factor).min(tw.min(th) / 2);
     let key = ImageKey {
         image_id: image.id,
         width: tw as u32,
@@ -291,7 +316,7 @@ fn rasterize_image(
     let local = Rect::new(0, 0, width as i32, height as i32);
     let radius = radius.min(width.min(height) / 2) as f32;
     let (scale_x, scale_y) = match fit {
-        ImageFit::Stretch | ImageFit::Contain => {
+        ImageFit::Stretch | ImageFit::Contain | ImageFit::Fixed => {
             (image.width as f32 / width as f32, image.height as f32 / height as f32)
         }
         ImageFit::Cover => {
@@ -434,6 +459,7 @@ mod tests {
             ImageFit::Stretch,
             255,
             0,
+            1.0,
             &mut cache,
         );
         assert_eq!(buffer, vec![0x80007f; 4]);
@@ -451,6 +477,7 @@ mod tests {
             ImageFit::Stretch,
             255,
             0,
+            1.0,
             &mut cache,
         );
         assert_eq!(buffer2, buffer);
@@ -460,6 +487,10 @@ mod tests {
         assert_eq!(
             fitted_bounds(Rect::new(0, 0, 4, 4), &wide, ImageFit::Contain),
             Rect::new(0, 1, 4, 2)
+        );
+        assert_eq!(
+            fitted_bounds(Rect::new(0, 0, 8, 8), &wide, ImageFit::Fixed),
+            Rect::new(3, 3, 2, 1)
         );
     }
 
@@ -479,6 +510,7 @@ mod tests {
             ImageFit::Stretch,
             255,
             0,
+            1.0,
             &mut cache,
         );
         draw_image(
@@ -491,6 +523,7 @@ mod tests {
             ImageFit::Stretch,
             128,
             0,
+            1.0,
             &mut cache,
         );
         draw_image(
@@ -503,9 +536,45 @@ mod tests {
             ImageFit::Stretch,
             255,
             0,
+            1.0,
             &mut cache,
         );
         assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn fixed_fit_uses_intrinsic_size_and_clips() {
+        // 4x2 solid white image in an 8x8 box → centered at (2, 3).
+        let image = Image::from_rgba8(4, 2, [255u8; 32]).unwrap();
+        assert_eq!(
+            fitted_bounds(Rect::new(0, 0, 8, 8), &image, ImageFit::Fixed),
+            Rect::new(2, 3, 4, 2)
+        );
+
+        // Larger than the box: centered and clipped to bounds when drawn.
+        let big = Image::from_rgba8(6, 6, vec![255u8; 6 * 6 * 4]).unwrap();
+        assert_eq!(
+            fitted_bounds(Rect::new(0, 0, 4, 4), &big, ImageFit::Fixed),
+            Rect::new(-1, -1, 6, 6)
+        );
+
+        let mut cache = FxHashMap::default();
+        let mut buffer = vec![0u32; 16];
+        draw_image(
+            &mut buffer,
+            4,
+            4,
+            &big,
+            Rect::new(0, 0, 4, 4),
+            Rect::new(0, 0, 4, 4),
+            ImageFit::Fixed,
+            255,
+            0,
+            1.0,
+            &mut cache,
+        );
+        // All framebuffer pixels covered (clipped center of the 6x6 image).
+        assert!(buffer.iter().all(|&p| p != 0));
     }
 
     #[cfg(feature = "png")]

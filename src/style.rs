@@ -71,6 +71,11 @@ pub struct Style {
 
     pub alignment: Option<Alignment>,
     pub gap: Option<Size>,
+
+    pub opacity: Option<u8>,
+
+    #[cfg(feature = "image")]
+    pub fit: Option<ImageFit>,
 }
 
 impl Style {
@@ -197,6 +202,17 @@ impl Style {
     /// ```
     pub fn font(mut self, font_id: usize) -> Style {
         self.font = font_id;
+        self
+    }
+
+    #[cfg(feature = "image")]
+    pub fn fit(mut self, fit: ImageFit) -> Self {
+        self.fit = Some(fit);
+        self
+    }
+
+    pub fn opacity(mut self, opacity: u8) -> Self {
+        self.opacity = Some(opacity);
         self
     }
 }

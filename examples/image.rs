@@ -19,11 +19,7 @@ fn main() {
             ui.paint_image(
                 Rect::new(24, 24, side, side),
                 &cover,
-                ImageStyle {
-                    fit: ImageFit::Cover,
-                    radius: 16,
-                    ..Default::default()
-                },
+                style().fit(ImageFit::Fixed).radius(16),
             );
 
             if ui.window.pressed(Key::Escape) {

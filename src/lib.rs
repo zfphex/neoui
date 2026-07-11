@@ -627,20 +627,23 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
     }
 
-    /// Queue an image for painting in the current layout clip.
-    pub fn paint_image(&mut self, rect: Rect, image: &'text Image, style: ImageStyle) {
-        assert!(style.depth < self.commands.len(), "image depth must be below 16");
-        if rect.is_empty() || style.opacity == 0 {
+    #[cfg(feature = "image")]
+    pub fn paint_image(&mut self, bounds: Rect, image: &'text Image, style: Style) {
+        if bounds.is_empty() {
             return;
         }
+        let depth = style.depth.unwrap_or(0);
+        let opacity = style.opacity.unwrap_or(255);
+        let fit = style.fit.unwrap_or_default();
+        let radius = style.radius.unwrap_or(0);
         let clip = self.layout_stack.last().expect("No active frame").clip;
-        self.commands[style.depth].push(Command::Image {
+        self.commands[depth].push(Command::Image {
             image,
-            bounds: rect,
+            bounds,
             clip,
-            fit: style.fit,
-            opacity: style.opacity,
-            radius: style.radius,
+            fit,
+            opacity,
+            radius,
         });
     }
 

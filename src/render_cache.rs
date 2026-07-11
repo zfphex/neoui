@@ -7,60 +7,11 @@ const MAX_DAMAGE_RECTS: usize = 128;
 const FNV_OFFSET: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct PhysicalRect {
-    pub x0: i32,
-    pub y0: i32,
-    pub x1: i32,
-    pub y1: i32,
-}
-
-impl PhysicalRect {
-    pub const fn new(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
-        Self { x0, y0, x1, y1 }
-    }
-
-    pub fn from_rect(rect: Rect) -> Self {
-        Self::new(
-            rect.x.min(i32::MAX as usize) as i32,
-            rect.y.min(i32::MAX as usize) as i32,
-            rect.x.saturating_add(rect.width).min(i32::MAX as usize) as i32,
-            rect.y.saturating_add(rect.height).min(i32::MAX as usize) as i32,
-        )
-    }
-
-    pub const fn is_empty(self) -> bool {
-        self.x0 >= self.x1 || self.y0 >= self.y1
-    }
-
-    pub fn intersection(self, other: Self) -> Self {
-        Self::new(
-            self.x0.max(other.x0),
-            self.y0.max(other.y0),
-            self.x1.min(other.x1),
-            self.y1.min(other.y1),
-        )
-    }
-
-    pub fn intersects(self, other: Self) -> bool {
-        !self.intersection(other).is_empty()
-    }
-
-    pub fn clamp_to_framebuffer(self, width: usize, height: usize) -> Self {
-        self.intersection(Self::new(
-            0,
-            0,
-            width.min(i32::MAX as usize) as i32,
-            height.min(i32::MAX as usize) as i32,
-        ))
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct PreparedCommand {
     pub layer: usize,
     pub index: usize,
-    pub bounds: PhysicalRect,
+    pub bounds: Rect,
     pub hash: u64,
 }
 
@@ -145,15 +96,17 @@ impl RenderCache {
     }
 
     pub fn add_command(&mut self, command: PreparedCommand) {
-        let bounds = command.bounds.clamp_to_framebuffer(self.width, self.height);
+        let bounds = command
+            .bounds
+            .clamp_to_size(self.width as i32, self.height as i32);
         if bounds.is_empty() || self.cols == 0 || self.rows == 0 {
             return;
         }
 
-        let x0 = bounds.x0 as usize / TILE_SIZE;
-        let y0 = bounds.y0 as usize / TILE_SIZE;
-        let x1 = (bounds.x1 as usize - 1) / TILE_SIZE;
-        let y1 = (bounds.y1 as usize - 1) / TILE_SIZE;
+        let x0 = bounds.x.max(0) as usize / TILE_SIZE;
+        let y0 = bounds.y.max(0) as usize / TILE_SIZE;
+        let x1 = (bounds.right().max(1) as usize - 1) / TILE_SIZE;
+        let y1 = (bounds.bottom().max(1) as usize - 1) / TILE_SIZE;
         for y in y0..=y1.min(self.rows - 1) {
             for x in x0..=x1.min(self.cols - 1) {
                 let cell = &mut self.current[x + y * self.cols];
@@ -199,10 +152,10 @@ impl RenderCache {
                 while x < self.cols && self.dirty[x + y * self.cols] {
                     x += 1;
                 }
-                let px = start * TILE_SIZE;
-                let py = y * TILE_SIZE;
-                let right = (x * TILE_SIZE).min(self.width);
-                let bottom = ((y + 1) * TILE_SIZE).min(self.height);
+                let px = (start * TILE_SIZE) as i32;
+                let py = (y * TILE_SIZE) as i32;
+                let right = (x * TILE_SIZE).min(self.width) as i32;
+                let bottom = ((y + 1) * TILE_SIZE).min(self.height) as i32;
                 let mut merged = false;
                 for rect in self.damage.iter_mut().rev() {
                     if rect.bottom() < py {
@@ -230,7 +183,8 @@ impl RenderCache {
 
     fn set_full_damage(&mut self) {
         self.damage.clear();
-        self.damage.push(Rect::new(0, 0, self.width, self.height));
+        self.damage
+            .push(Rect::new(0, 0, self.width as i32, self.height as i32));
         self.finish_stats(true);
     }
 
@@ -239,7 +193,7 @@ impl RenderCache {
         self.stats.damaged_pixels = self
             .damage
             .iter()
-            .map(|rect| rect.width.saturating_mul(rect.height))
+            .map(|rect| (rect.width.max(0) as usize).saturating_mul(rect.height.max(0) as usize))
             .sum();
         self.stats.full_redraw = full_redraw;
     }
@@ -304,10 +258,10 @@ fn fnv_mix_u64(mut state: u64, value: u64) -> u64 {
 }
 
 fn hash_rect(hasher: &mut Fnv1a, rect: Rect) {
-    hasher.write_usize(rect.x);
-    hasher.write_usize(rect.y);
-    hasher.write_usize(rect.width);
-    hasher.write_usize(rect.height);
+    hasher.write_i32(rect.x);
+    hasher.write_i32(rect.y);
+    hasher.write_i32(rect.width);
+    hasher.write_i32(rect.height);
 }
 
 pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
@@ -315,28 +269,19 @@ pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
     hasher.write_usize(layer);
     match command {
         Command::Rect {
-            x,
-            y,
-            width,
-            height,
+            bounds,
             clip,
             color,
             radius,
         } => {
             hasher.write_u8(0);
-            hasher.write_i32(*x);
-            hasher.write_i32(*y);
-            hasher.write_usize(*width);
-            hasher.write_usize(*height);
+            hash_rect(&mut hasher, *bounds);
             hash_rect(&mut hasher, *clip);
             hasher.write_u32(*color);
             hasher.write_usize(*radius);
         }
         Command::RectOutline {
-            x,
-            y,
-            width,
-            height,
+            bounds,
             clip,
             color,
             radius,
@@ -344,10 +289,7 @@ pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
             border_sides,
         } => {
             hasher.write_u8(1);
-            hasher.write_i32(*x);
-            hasher.write_i32(*y);
-            hasher.write_usize(*width);
-            hasher.write_usize(*height);
+            hash_rect(&mut hasher, *bounds);
             hash_rect(&mut hasher, *clip);
             hasher.write_u32(*color);
             hasher.write_usize(*radius);
@@ -369,10 +311,7 @@ pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
             text,
             font_id,
             clip,
-            x,
-            y,
-            width,
-            height,
+            bounds,
             color,
             size,
         } => {
@@ -381,26 +320,12 @@ pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
             hasher.write(text.as_bytes());
             hasher.write_usize(*font_id);
             hash_rect(&mut hasher, *clip);
-            hasher.write_i32(*x);
-            hasher.write_i32(*y);
-            hasher.write_usize(*width);
-            hasher.write_usize(*height);
+            hash_rect(&mut hasher, *bounds);
             hasher.write_u32(*color);
             hasher.write_usize(*size);
         }
     }
     hasher.finish()
-}
-
-fn scaled_box(x: i32, y: i32, width: usize, height: usize, scale_factor: f32) -> PhysicalRect {
-    let x0 = scale_f32(x as f32, scale_factor);
-    let y0 = scale_f32(y as f32, scale_factor);
-    PhysicalRect::new(
-        x0,
-        y0,
-        x0.saturating_add(scale(width, scale_factor).min(i32::MAX as usize) as i32),
-        y0.saturating_add(scale(height, scale_factor).min(i32::MAX as usize) as i32),
-    )
 }
 
 fn command_clip(command: &Command<'_>) -> Rect {
@@ -417,14 +342,9 @@ pub fn command_bounds(
     scale_factor: f32,
     framebuffer_width: usize,
     framebuffer_height: usize,
-) -> PhysicalRect {
+) -> Rect {
     let bounds = match command {
-        Command::Rect {
-            x, y, width, height, ..
-        }
-        | Command::RectOutline {
-            x, y, width, height, ..
-        } => scaled_box(*x, *y, *width, *height, scale_factor),
+        Command::Rect { bounds, .. } | Command::RectOutline { bounds, .. } => bounds.scale(scale_factor),
         Command::Triangle { a, b, c, .. } => {
             let ax = scale_f32(a.0 as f32, scale_factor);
             let ay = scale_f32(a.1 as f32, scale_factor);
@@ -432,35 +352,28 @@ pub fn command_bounds(
             let by = scale_f32(b.1 as f32, scale_factor);
             let cx = scale_f32(c.0 as f32, scale_factor);
             let cy = scale_f32(c.1 as f32, scale_factor);
-            PhysicalRect::new(
+            Rect::from_xyxy(
                 ax.min(bx).min(cx).saturating_sub(1),
                 ay.min(by).min(cy).saturating_sub(1),
                 ax.max(bx).max(cx).saturating_add(2),
                 ay.max(by).max(cy).saturating_add(2),
             )
         }
-        Command::Text {
-            x,
-            y,
-            width,
-            height,
-            size,
-            ..
-        } => {
+        Command::Text { bounds, size, .. } => {
             let padding = (scale(*size, scale_factor) / 2).max(4).min(i32::MAX as usize) as i32;
-            let bounds = scaled_box(*x, *y, *width, *height, scale_factor);
-            PhysicalRect::new(
-                bounds.x0.saturating_sub(padding),
-                bounds.y0.saturating_sub(padding),
-                bounds.x1.saturating_add(padding),
-                bounds.y1.saturating_add(padding),
+            let bounds = bounds.scale(scale_factor);
+            Rect::new(
+                bounds.x.saturating_sub(padding),
+                bounds.y.saturating_sub(padding),
+                bounds.width.saturating_add(padding.saturating_mul(2)),
+                bounds.height.saturating_add(padding.saturating_mul(2)),
             )
         }
     };
 
     bounds
-        .intersection(PhysicalRect::from_rect(command_clip(command).scale(scale_factor)))
-        .clamp_to_framebuffer(framebuffer_width, framebuffer_height)
+        .intersection(command_clip(command).scale(scale_factor))
+        .clamp_to_size(framebuffer_width as i32, framebuffer_height as i32)
 }
 
 pub fn prepare_commands(
@@ -487,9 +400,16 @@ pub fn prepare_commands(
 pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {
     crate::profile!();
     for rect in damage {
-        for y in rect.y..rect.bottom() {
-            let start = y * framebuffer_width + rect.x;
-            buffer[start..start + rect.width].fill(color);
+        if rect.is_empty() {
+            continue;
+        }
+        let x = rect.x.max(0) as usize;
+        let y0 = rect.y.max(0) as usize;
+        let y1 = rect.bottom().max(0) as usize;
+        let width = rect.width.max(0) as usize;
+        for y in y0..y1 {
+            let start = y * framebuffer_width + x;
+            buffer[start..start + width].fill(color);
         }
     }
 }
@@ -505,25 +425,22 @@ pub fn draw_command(
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
 ) {
     let clip = command_clip(command).scale(display_scale).intersection(damage);
-    if clip.width == 0 || clip.height == 0 {
+    if clip.is_empty() {
         return;
     }
 
     match command {
         Command::Rect {
-            x,
-            y,
-            width,
-            height,
+            bounds,
             color,
             radius,
             ..
         } => draw_rounded_rect(
             buffer,
-            scale_f32(*x as f32, display_scale),
-            scale_f32(*y as f32, display_scale),
-            scale(*width, display_scale),
-            scale(*height, display_scale),
+            scale_f32(bounds.x as f32, display_scale),
+            scale_f32(bounds.y as f32, display_scale),
+            scale(bounds.width.max(0) as usize, display_scale),
+            scale(bounds.height.max(0) as usize, display_scale),
             framebuffer_width,
             framebuffer_height,
             scale(*radius, display_scale),
@@ -531,19 +448,16 @@ pub fn draw_command(
             clip,
         ),
         Command::RectOutline {
-            x,
-            y,
-            width,
-            height,
+            bounds,
             color,
             border_sides,
             ..
         } => draw_rect_outline(
             buffer,
-            scale_f32(*x as f32, display_scale),
-            scale_f32(*y as f32, display_scale),
-            scale(*width, display_scale),
-            scale(*height, display_scale),
+            scale_f32(bounds.x as f32, display_scale),
+            scale_f32(bounds.y as f32, display_scale),
+            scale(bounds.width.max(0) as usize, display_scale),
+            scale(bounds.height.max(0) as usize, display_scale),
             framebuffer_width,
             *color,
             clip,
@@ -551,8 +465,7 @@ pub fn draw_command(
         ),
         Command::Text {
             text,
-            x,
-            y,
+            bounds,
             color,
             size,
             font_id,
@@ -562,8 +475,8 @@ pub fn draw_command(
             draw_text(
                 text,
                 &fonts[*font_id],
-                *x,
-                *y,
+                bounds.x,
+                bounds.y,
                 *size,
                 display_scale,
                 framebuffer_width,
@@ -604,7 +517,7 @@ pub fn raster_damage(
     for prepared in prepared {
         let command = &commands[prepared.layer][prepared.index];
         for region in damage {
-            if prepared.bounds.intersects(PhysicalRect::from_rect(*region)) {
+            if prepared.bounds.intersects(*region) {
                 draw_command(
                     command,
                     *region,

@@ -26,10 +26,10 @@ pub struct Frame {
     pub bounds: Rect,
     pub clip: Rect,
     pub flow: Flow,
-    pub cursor_x: usize,
-    pub cursor_y: usize,
-    pub max_child_width: usize,
-    pub max_child_height: usize,
+    pub cursor_x: i32,
+    pub cursor_y: i32,
+    pub max_child_width: i32,
+    pub max_child_height: i32,
     pub scroll_y: usize,
 }
 
@@ -64,19 +64,13 @@ pub struct AnimationStateF32 {
 #[derive(Debug)]
 pub enum Command<'a> {
     Rect {
-        x: i32,
-        y: i32,
-        width: usize,
-        height: usize,
+        bounds: Rect,
         clip: Rect,
         color: u32,
         radius: usize,
     },
     RectOutline {
-        x: i32,
-        y: i32,
-        width: usize,
-        height: usize,
+        bounds: Rect,
         clip: Rect,
         color: u32,
         radius: usize,
@@ -94,10 +88,7 @@ pub enum Command<'a> {
         text: Cow<'a, str>,
         font_id: usize,
         clip: Rect,
-        x: i32,
-        y: i32,
-        width: usize,
-        height: usize,
+        bounds: Rect,
         color: u32,
         size: usize,
     },
@@ -121,8 +112,8 @@ pub struct State {
 
 #[derive(Debug, Clone)]
 pub struct ScrollState {
-    pub max_scroll: usize,
-    pub content_height: usize,
+    pub max_scroll: i32,
+    pub content_height: i32,
     pub scrolled: bool,
     /// 1 up, -1 down.
     pub direction: i32,
@@ -299,7 +290,7 @@ impl<'a> Context<'a> {
             }
 
             let (width, height) = frame.window.content_size();
-            let bounds = Rect::new(0, 0, width, height);
+            let bounds = Rect::new(0, 0, width as i32, height as i32);
 
             frame.layout_stack.clear();
             frame.layout_stack.push(Frame {
@@ -353,7 +344,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
-    pub fn walk_layout(&mut self, width: usize, height: usize, gap: usize) -> Layout {
+    pub fn walk_layout(&mut self, width: i32, height: i32, gap: i32) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
         let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
 
@@ -373,8 +364,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         if frame.scroll_y == 0 {
             return Layout {
                 size: rect,
-                paint_x: rect.x as i32,
-                paint_y: rect.y as i32,
+                paint_x: rect.x,
+                paint_y: rect.y,
             };
         }
 
@@ -394,10 +385,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         //                     |
         //            VIEWPORT |
         //  ====================
-        let x = rect.x as i32;
-        let y = rect.y as i32 - frame.scroll_y as i32;
-        let clip_top = frame.clip.y as i32;
-        let clip_bottom = (frame.clip.y + frame.clip.height) as i32;
+        let x = rect.x;
+        let y = rect.y - frame.scroll_y as i32;
+        let clip_top = frame.clip.y;
+        let clip_bottom = frame.clip.bottom();
 
         // Check if the current item underflows the viewport.
         //
@@ -411,7 +402,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         // |                |
         // ==================
 
-        if y + height as i32 <= clip_top {
+        if y + height <= clip_top {
             return Layout {
                 paint_x: x,
                 paint_y: y,
@@ -439,8 +430,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             };
         }
 
-        let visible_y = y.max(clip_top).max(0) as usize;
-        let visible_bottom = (y + height as i32).min(clip_bottom).max(0) as usize;
+        let visible_y = y.max(clip_top).max(0);
+        let visible_bottom = (y + height).min(clip_bottom).max(0);
 
         Layout {
             size: Rect::new(rect.x, visible_y, width, visible_bottom.saturating_sub(visible_y)),
@@ -456,7 +447,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         id
     }
 
-    pub fn resolve_rect(&self, rect: Rect, flow: Flow, size: Size) -> usize {
+    pub fn resolve_rect(&self, rect: Rect, flow: Flow, size: Size) -> i32 {
         match size {
             Size::Pixel(px) => px,
             Size::Percentage(pct) => {
@@ -464,7 +455,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     Flow::Down => rect.height,
                     Flow::Right => rect.width,
                 };
-                (total as f32 * pct) as usize
+                (total as f32 * pct) as i32
             }
             Size::Fill => match flow {
                 Flow::Down => rect.height,
@@ -475,15 +466,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     Flow::Down => rect.height,
                     Flow::Right => rect.width,
                 };
-                remaining.saturating_sub(sub.abs() as usize)
+                remaining.saturating_sub(sub.abs())
             }
         }
     }
 
     pub fn split_rect_h(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
         let left_width = self.resolve_rect(rect, Flow::Right, size.into_size().unwrap_or_default());
-        let total_w = (rect.x + rect.width).saturating_sub(rect.x);
-        let total_h = (rect.y + rect.height).saturating_sub(rect.y);
+        let total_w = rect.width;
+        let total_h = rect.height;
         let left_w = left_width.min(total_w);
         let right_w = total_w.saturating_sub(left_w);
         let left_rect = Rect::new(rect.x, rect.y, left_w, total_h);
@@ -493,8 +484,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn split_rect_v(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
         let top_height = self.resolve_rect(rect, Flow::Down, size.into_size().unwrap_or_default());
-        let total_w = (rect.x + rect.width).saturating_sub(rect.x);
-        let total_h = (rect.y + rect.height).saturating_sub(rect.y);
+        let total_w = rect.width;
+        let total_h = rect.height;
         let top_h = top_height.min(total_h);
         let bottom_h = total_h.saturating_sub(top_h);
         let top_rect = Rect::new(rect.x, rect.y, total_w, top_h);
@@ -507,8 +498,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let left_width = self.resolve_size(left_width.into_size().unwrap_or_default(), Flow::Right);
         let frame = self.layout_stack.last().expect("No active frame");
 
-        let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-        let total_h = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+        let total_w = frame.bounds.right().saturating_sub(frame.cursor_x);
+        let total_h = frame.bounds.bottom().saturating_sub(frame.cursor_y);
 
         let left_w = left_width.min(total_w);
         let right_w = total_w.saturating_sub(left_w);
@@ -524,8 +515,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let top_height = self.resolve_size(top_height.into_size().unwrap_or_default(), Flow::Down);
         let frame = self.layout_stack.last().expect("No active frame");
 
-        let total_w = (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x);
-        let total_h = (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y);
+        let total_w = frame.bounds.right().saturating_sub(frame.cursor_x);
+        let total_h = frame.bounds.bottom().saturating_sub(frame.cursor_y);
 
         let top_h = top_height.min(total_h);
         let bottom_h = total_h.saturating_sub(top_h);
@@ -536,7 +527,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         (top_rect, bottom_rect)
     }
 
-    pub fn resolve_size(&self, size: Size, flow: Flow) -> usize {
+    pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
         match size {
             Size::Pixel(px) => px,
@@ -545,18 +536,18 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     Flow::Down => frame.bounds.height,
                     Flow::Right => frame.bounds.width,
                 };
-                (total as f32 * pct) as usize
+                (total as f32 * pct) as i32
             }
             Size::Fill => match flow {
-                Flow::Down => (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y),
-                Flow::Right => (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x),
+                Flow::Down => frame.bounds.bottom().saturating_sub(frame.cursor_y),
+                Flow::Right => frame.bounds.right().saturating_sub(frame.cursor_x),
             },
             Size::FillMinus(sub) => {
                 let remaining = match flow {
-                    Flow::Down => (frame.bounds.y + frame.bounds.height).saturating_sub(frame.cursor_y),
-                    Flow::Right => (frame.bounds.x + frame.bounds.width).saturating_sub(frame.cursor_x),
+                    Flow::Down => frame.bounds.bottom().saturating_sub(frame.cursor_y),
+                    Flow::Right => frame.bounds.right().saturating_sub(frame.cursor_x),
                 };
-                remaining.saturating_sub(sub.abs() as usize)
+                remaining.saturating_sub(sub.abs())
             }
         }
     }
@@ -626,6 +617,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         Some((y as f32 / rect.height as f32).clamp(0.0, 1.0))
     }
 
+
     /// Check if a rectangle is clicked off of
     pub fn lost_focus(&self, rect: Rect) -> bool {
         let Some(initial) = self.left_mouse_start else {
@@ -644,7 +636,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             return Rect::default();
         };
 
-        Rect::new(x.max(0.0) as usize, y.max(0.0) as usize, 1, 1)
+        Rect::new(x.max(0.0) as i32, y.max(0.0) as i32, 1, 1)
     }
 
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
@@ -653,10 +645,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Rect {
-                x: rect.x as i32,
-                y: rect.y as i32,
-                width: rect.width,
-                height: rect.height,
+                bounds: rect,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -665,10 +654,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         if let Some(color) = style.border {
             self.commands[depth].push(Command::RectOutline {
-                x: rect.x as i32,
-                y: rect.y as i32,
-                width: rect.width,
-                height: rect.height,
+                bounds: rect,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -678,14 +664,14 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
     }
 
-    pub fn paint_triangle(&mut self, a: (usize, usize), b: (usize, usize), c: (usize, usize), style: Style) {
+    pub fn paint_triangle(&mut self, a: (i32, i32), b: (i32, i32), c: (i32, i32), style: Style) {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Triangle {
-                a: (a.0 as i32, a.1 as i32),
-                b: (b.0 as i32, b.1 as i32),
-                c: (c.0 as i32, c.1 as i32),
+                a,
+                b,
+                c,
                 clip,
                 color,
             });
@@ -704,8 +690,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         text: impl Into<Cow<'a, str>>,
         paint_x: i32,
         paint_y: i32,
-        width: usize,
-        height: usize,
+        width: i32,
+        height: i32,
         color: u32,
         font_id: usize,
         font_size: usize,
@@ -733,10 +719,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         self.commands[depth].push(Command::Text {
             text,
             clip,
-            x,
-            y,
-            width: text_metrics.width,
-            height: text_metrics.height,
+            bounds: Rect::new(x, y, text_metrics.width, text_metrics.height),
             color,
             font_id,
             size: font_size,
@@ -772,18 +755,18 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let width = style
             .width
             .map(|w| self.resolve_size(w, Flow::Right))
-            .unwrap_or(text_metrics.width + padding.left + padding.right);
+            .unwrap_or(text_metrics.width + padding.left as i32 + padding.right as i32);
         let height = style
             .height
             .map(|h| self.resolve_size(h, Flow::Down))
-            .unwrap_or(text_metrics.height + padding.top + padding.bottom);
+            .unwrap_or(text_metrics.height + padding.top as i32 + padding.bottom as i32);
 
         let flow = self.layout_stack.last().expect("No active frame").flow;
         let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
         let layout = self.walk_layout(width, height, gap);
         let rect = layout.size;
 
-        if rect.width == 0 || rect.height == 0 {
+        if rect.is_empty() {
             return State {
                 clicked: false,
                 hovered: false,
@@ -800,6 +783,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let pressed = hovered && self.pressed(rect);
         let released = hovered && self.released(rect);
         let clip = self.layout_stack.last().expect("No active frame").clip;
+        let paint_bounds = Rect::new(layout.paint_x, layout.paint_y, width, height);
 
         let bg = if selected && style.selected.is_some() {
             style.selected
@@ -811,10 +795,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
-                x: layout.paint_x,
-                y: layout.paint_y,
-                width,
-                height,
+                bounds: paint_bounds,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -833,10 +814,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         // for text which means they can overlap...
         if let Some(border) = border {
             self.commands[depth].push(Command::RectOutline {
-                x: layout.paint_x,
-                y: layout.paint_y,
-                width,
-                height,
+                bounds: paint_bounds,
                 clip,
                 color: border,
                 radius: style.radius.unwrap_or(0),
@@ -901,18 +879,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let depth = style.depth.unwrap_or(0);
         let padding = style.padding.unwrap_or_default();
 
-        bounds.x += padding.left;
-        bounds.width = bounds.width.saturating_sub(padding.left + padding.right);
-        bounds.y += padding.top;
-        bounds.height = bounds.height.saturating_sub(padding.top + padding.bottom);
+        bounds.x += padding.left as i32;
+        bounds.width = bounds.width.saturating_sub((padding.left + padding.right) as i32);
+        bounds.y += padding.top as i32;
+        bounds.height = bounds.height.saturating_sub((padding.top + padding.bottom) as i32);
 
         // Draw the background first.
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Rect {
-                x: bounds.x as i32,
-                y: bounds.y as i32,
-                width: bounds.width,
-                height: bounds.height,
+                bounds,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -935,10 +910,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         // Draw the border over the content, idk.
         if let Some(color) = style.border {
             self.commands[depth].push(Command::RectOutline {
-                x: bounds.x as i32,
-                y: bounds.y as i32,
-                width: bounds.width,
-                height: bounds.height,
+                bounds,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -998,7 +970,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let bounds = frame.bounds;
         let content_height = frame.max_child_height;
 
-        let max_scroll = content_height.saturating_sub(bounds.height);
+        let max_scroll = content_height.saturating_sub(bounds.height).max(0);
         let mut state = ScrollState {
             max_scroll,
             content_height,
@@ -1021,13 +993,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             state.scrolled = true;
         }
 
-        *scroll_y = (*scroll_y).clamp(0, max_scroll);
+        *scroll_y = (*scroll_y).clamp(0, max_scroll as usize);
 
         state
     }
 
     #[deprecated]
-    pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> usize {
+    pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> i32 {
         let bounds = if let Some(bounds) = bounds {
             bounds
         } else {
@@ -1076,8 +1048,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         Rect::new(
             parent.cursor_x,
             parent.cursor_y,
-            (parent.bounds.x + parent.bounds.width).saturating_sub(parent.cursor_x),
-            (parent.bounds.y + parent.bounds.height).saturating_sub(parent.cursor_y),
+            parent.bounds.right().saturating_sub(parent.cursor_x),
+            parent.bounds.bottom().saturating_sub(parent.cursor_y),
         )
     }
 
@@ -1126,15 +1098,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn begin_grid_cell(
         &mut self,
-        col: usize,
-        row: usize,
-        col_width: usize,
-        row_height: usize,
+        col: i32,
+        row: i32,
+        col_width: i32,
+        row_height: i32,
         grid_bounds: Rect,
         flow: Flow,
     ) {
-        let cell_x = grid_bounds.x + (col * col_width);
-        let cell_y = grid_bounds.y + (row * row_height);
+        let cell_x = grid_bounds.x + col * col_width;
+        let cell_y = grid_bounds.y + row * row_height;
 
         let cell_w = col_width.min(grid_bounds.width.saturating_sub(col * col_width));
         let cell_h = row_height.min(grid_bounds.height.saturating_sub(row * row_height));

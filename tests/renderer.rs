@@ -19,7 +19,7 @@ fn render_full(
     bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
 ) {
     buffer.fill(clear);
-    let damage = Rect::new(0, 0, width, height);
+    let damage = Rect::new(0, 0, width as i32, height as i32);
     for layer in commands {
         for command in layer {
             draw_command(command, damage, buffer, width, height, 1.0, fonts, bitmaps);
@@ -54,7 +54,7 @@ fn render_cached(
     for prepared in &cache.prepared {
         let command = &commands[prepared.layer][prepared.index];
         for region in &damage {
-            if prepared.bounds.intersects(PhysicalRect::from_rect(*region)) {
+            if prepared.bounds.intersects(*region) {
                 draw_command(command, *region, buffer, width, height, 1.0, fonts, bitmaps);
             }
         }
@@ -63,12 +63,9 @@ fn render_cached(
     damage
 }
 
-fn rect(x: i32, y: i32, width: usize, height: usize, color: u32) -> Command<'static> {
+fn rect(x: i32, y: i32, width: i32, height: i32, color: u32) -> Command<'static> {
     Command::Rect {
-        x,
-        y,
-        width,
-        height,
+        bounds: Rect::new(x, y, width, height),
         clip: Rect::new(0, 0, 256, 192),
         color,
         radius: 0,
@@ -129,11 +126,8 @@ fn cached_outlines_and_triangles_match_full_redraw() {
     for offset in [0, 70] {
         let commands = layers(vec![
             Command::RectOutline {
-                x: 20 + offset,
-                y: 20,
-                width: 80,
-                height: 60,
-                clip: Rect::new(0, 0, width, height),
+                bounds: Rect::new(20 + offset, 20, 80, 60),
+                clip: Rect::new(0, 0, width as i32, height as i32),
                 color: rgb(100, 180, 220),
                 radius: 0,
                 border_thickness: 1,
@@ -143,7 +137,7 @@ fn cached_outlines_and_triangles_match_full_redraw() {
                 a: (30 + offset, 100),
                 b: (80 + offset, 140),
                 c: (110 + offset, 90),
-                clip: Rect::new(0, 0, width, height),
+                clip: Rect::new(0, 0, width as i32, height as i32),
                 color: rgb(220, 100, 40),
             },
         ]);
@@ -182,10 +176,7 @@ fn cached_text_and_clipping_match_full_redraw() {
             text: Cow::Owned(text.to_owned()),
             font_id: 0,
             clip,
-            x,
-            y: 5,
-            width: layout_bounds.width,
-            height: layout_bounds.height,
+            bounds: Rect::new(x, 5, layout_bounds.width, layout_bounds.height),
             color: white(),
             size: 20,
         }]);

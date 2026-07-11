@@ -7,7 +7,7 @@ fn half_open_bounds_do_not_touch_the_next_tile() {
     cache.add_command(PreparedCommand {
         layer: 0,
         index: 0,
-        bounds: PhysicalRect::new(0, 0, 64, 64),
+        bounds: Rect::new(0, 0, 64, 64),
         hash: 1,
     });
     cache.force_full_redraw = false;
@@ -17,7 +17,7 @@ fn half_open_bounds_do_not_touch_the_next_tile() {
     cache.add_command(PreparedCommand {
         layer: 0,
         index: 0,
-        bounds: PhysicalRect::new(0, 0, 64, 64),
+        bounds: Rect::new(0, 0, 64, 64),
         hash: 2,
     });
     assert_eq!(cache.compute_damage(), &[Rect::new(0, 0, 64, 64)]);
@@ -70,7 +70,7 @@ fn clear_color_and_explicit_invalidation_force_damage() {
 #[test]
 fn signed_rectangles_clip_to_the_framebuffer() {
     assert_eq!(
-        PhysicalRect::new(-10, -5, 20, 30).clamp_to_framebuffer(15, 25),
-        PhysicalRect::new(0, 0, 15, 25)
+        Rect::from_xyxy(-10, -5, 20, 30).clamp_to_size(15, 25),
+        Rect::new(0, 0, 15, 25)
     );
 }

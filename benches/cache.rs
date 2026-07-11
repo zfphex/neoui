@@ -1,13 +1,13 @@
 use divan::black_box;
 use neoui::Rect;
-use neoui::render_cache::{PhysicalRect, PreparedCommand, RenderCache};
+use neoui::render_cache::{PreparedCommand, RenderCache};
 
 fn main() {
     divan::main();
 }
 
-const WIDTH: usize = 1920;
-const HEIGHT: usize = 1080;
+const WIDTH: i32 = 1920;
+const HEIGHT: i32 = 1080;
 
 #[derive(Default)]
 struct CacheBench {
@@ -15,16 +15,16 @@ struct CacheBench {
 }
 
 impl CacheBench {
-    fn frame(&mut self, width: usize, height: usize, commands: &[(Rect, u64)], force_full: bool) -> (usize, usize) {
+    fn frame(&mut self, width: i32, height: i32, commands: &[(Rect, u64)], force_full: bool) -> (usize, usize) {
         if force_full {
             self.cache.invalidate();
         }
-        self.cache.begin_frame(width, height, 1.0, 0);
+        self.cache.begin_frame(width as usize, height as usize, 1.0, 0);
         for (index, (bounds, hash)) in commands.iter().enumerate() {
             self.cache.add_command(PreparedCommand {
                 layer: 0,
                 index,
-                bounds: PhysicalRect::from_rect(*bounds),
+                bounds: *bounds,
                 hash: *hash,
             });
         }
@@ -98,7 +98,7 @@ struct Scrolling {
 fn scrolling_list(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {
-            let make = |offset: usize| {
+            let make = |offset: i32| {
                 (0..100)
                     .map(|row| (Rect::new(200, row * 28 + offset, 900, 26), row as u64))
                     .collect()

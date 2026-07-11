@@ -159,7 +159,7 @@ fn main() {
                     let thumb_w = 12;
                     let thumb_h = 18;
                     let available_width = width.saturating_sub(thumb_w);
-                    let thumb_x = rect.x + (volume * available_width as f32).round() as usize;
+                    let thumb_x = rect.x + (volume * available_width as f32).round() as i32;
                     let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
                     let thumb_color = rgb(0, 102, 204);
 
@@ -246,8 +246,8 @@ fn main() {
                     scroll_y = (ratio * state.max_scroll as f32).round() as usize;
                 }
 
-                let y = s.y + (ratio * available_height).round() as usize;
-                let thumb = Rect::new(s.x, y, s.width, thumb_h as usize);
+                let y = s.y + (ratio * available_height).round() as i32;
+                let thumb = Rect::new(s.x, y, s.width, thumb_h as i32);
                 ui.paint_rect(thumb, bg(rgb(80, 80, 80)));
             }
         });

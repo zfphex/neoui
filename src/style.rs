@@ -2,7 +2,7 @@ use crate::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Size {
-    Pixel(usize),
+    Pixel(i32),
     /// 0.0 to 1.0 of parent's total space.
     Percentage(f32),
     /// Fill remaining space in container.
@@ -342,13 +342,13 @@ impl IntoSize for i32 {
         if self < 0 {
             Some(Size::FillMinus(self))
         } else {
-            Some(Size::Pixel(self as usize))
+            Some(Size::Pixel(self))
         }
     }
 }
 
 impl IntoSize for usize {
     fn into_size(self) -> Option<Size> {
-        Some(Size::Pixel(self))
+        Some(Size::Pixel(self as i32))
     }
 }

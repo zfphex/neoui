@@ -75,10 +75,10 @@ pub enum Alignment {
 pub fn align_rect(
     parent_x: i32,
     parent_y: i32,
-    parent_w: usize,
-    parent_h: usize,
-    child_w: usize,
-    child_h: usize,
+    parent_w: i32,
+    parent_h: i32,
+    child_w: i32,
+    child_h: i32,
     alignment: Alignment,
     padding: Padding,
 ) -> Option<(i32, i32)> {
@@ -86,11 +86,6 @@ pub fn align_rect(
     let pad_right = padding.right as i32;
     let pad_top = padding.top as i32;
     let pad_bottom = padding.bottom as i32;
-
-    let child_w = child_w as i32;
-    let child_h = child_h as i32;
-    let parent_w = parent_w as i32;
-    let parent_h = parent_h as i32;
 
     let available_w = parent_w - pad_left - pad_right;
     let available_h = parent_h - pad_top - pad_bottom;
@@ -176,14 +171,14 @@ pub fn draw_rect_outline(
 
     let right = x + width.saturating_sub(1) as i32;
     let bottom = y + height.saturating_sub(1) as i32;
-    let min_x = x.max(clip.x as i32).max(0).min(window_width as i32) as usize;
+    let min_x = x.max(clip.x).max(0).min(window_width as i32) as usize;
     let max_x = (right + 1)
-        .min((clip.x + clip.width) as i32)
+        .min(clip.right())
         .min(window_width as i32)
         .max(0) as usize;
-    let min_y = y.max(clip.y as i32).max(0).min((buffer.len() / window_width) as i32) as usize;
+    let min_y = y.max(clip.y).max(0).min((buffer.len() / window_width) as i32) as usize;
     let max_y = (bottom + 1)
-        .min((clip.y + clip.height) as i32)
+        .min(clip.bottom())
         .min((buffer.len() / window_width) as i32)
         .max(0) as usize;
 
@@ -235,14 +230,14 @@ pub fn draw_rounded_rect(
     }
 
     let radius = radius.min(width / 2).min(height / 2);
-    let min_y = y.max(clip.y as i32).max(0).min(window_height as i32) as usize;
+    let min_y = y.max(clip.y).max(0).min(window_height as i32) as usize;
     let max_y = (y + height as i32)
-        .min((clip.y + clip.height) as i32)
+        .min(clip.bottom())
         .min(window_height as i32)
         .max(0) as usize;
-    let min_x = x.max(clip.x as i32).max(0).min(window_width as i32) as usize;
+    let min_x = x.max(clip.x).max(0).min(window_width as i32) as usize;
     let max_x = (x + width as i32)
-        .min((clip.x + clip.width) as i32)
+        .min(clip.right())
         .min(window_width as i32)
         .max(0) as usize;
 
@@ -393,14 +388,14 @@ pub fn draw_rounded_rect_outline(
     }
 
     let radius = radius.min(width / 2).min(height / 2);
-    let min_y = y.max(clip.y as i32).max(0).min(window_height as i32) as usize;
+    let min_y = y.max(clip.y).max(0).min(window_height as i32) as usize;
     let max_y = (y + height as i32)
-        .min((clip.y + clip.height) as i32)
+        .min(clip.bottom())
         .min(window_height as i32)
         .max(0) as usize;
-    let min_x = x.max(clip.x as i32).max(0).min(window_width as i32) as usize;
+    let min_x = x.max(clip.x).max(0).min(window_width as i32) as usize;
     let max_x = (x + width as i32)
-        .min((clip.x + clip.width) as i32)
+        .min(clip.right())
         .min(window_width as i32)
         .max(0) as usize;
 
@@ -612,9 +607,9 @@ pub fn draw_triangle_sdf(
 
     let pad_long = 1.5 + step_long.abs();
 
-    let min_y = y0.max(clip.y as i32).max(0);
+    let min_y = y0.max(clip.y).max(0);
     let max_y = y2
-        .min((clip.y + clip.height).saturating_sub(1) as i32)
+        .min(clip.bottom().saturating_sub(1))
         .min(window_height.saturating_sub(1) as i32);
 
     if min_y > max_y {
@@ -635,10 +630,11 @@ pub fn draw_triangle_sdf(
         let left_bound = (x_long - pad_long).min(x_short - pad_short);
         let right_bound = (x_long + pad_long).max(x_short + pad_short);
 
-        let min_x = (left_bound.max(0.0) as usize).max(clip.x).min(window_width);
-        let max_x = (right_bound.max(0.0) as usize)
-            .min(clip.x + clip.width)
-            .min(window_width);
+        let min_x = (left_bound.max(0.0) as i32).max(clip.x).max(0).min(window_width as i32) as usize;
+        let max_x = (right_bound.max(0.0) as i32)
+            .min(clip.right())
+            .max(0)
+            .min(window_width as i32) as usize;
 
         let mut solid_start = window_width;
         let mut solid_end = 0;
@@ -737,10 +733,10 @@ pub fn draw_text(
     let mut max_x = x_start.max(0.0) as usize;
     let mut max_y = y_start.max(0.0) as usize;
 
-    let clip_x = clip.x as i32;
-    let clip_y = clip.y as i32;
-    let clip_right = (clip.x + clip.width) as i32;
-    let clip_bottom = (clip.y + clip.height) as i32;
+    let clip_x = clip.x;
+    let clip_y = clip.y;
+    let clip_right = clip.right();
+    let clip_bottom = clip.bottom();
     let buffer_height = (buffer.len() / window_width) as i32;
 
     for line in text.lines() {
@@ -839,16 +835,18 @@ pub fn draw_text(
         y_pos += line_metrics.new_line_size;
     }
 
+    let x0 = x_start as i32;
+    let y0 = y_start as i32;
     Rect {
-        x: x_start as usize,
-        y: y_start as usize,
-        width: if max_x >= x_start as usize {
-            max_x + 1 - x_start as usize
+        x: x0,
+        y: y0,
+        width: if max_x as i32 >= x0 {
+            max_x as i32 + 1 - x0
         } else {
             0
         },
-        height: if max_y >= y_start as usize {
-            max_y + 1 - y_start as usize
+        height: if max_y as i32 >= y0 {
+            max_y as i32 + 1 - y0
         } else {
             0
         },
@@ -893,7 +891,7 @@ pub fn measure_text(
     Rect {
         x: 0,
         y: 0,
-        width: (max_width / display_scale).round() as usize,
-        height: ((lines as f32 * line_metrics.new_line_size) / display_scale).round() as usize,
+        width: (max_width / display_scale).round() as i32,
+        height: ((lines as f32 * line_metrics.new_line_size) / display_scale).round() as i32,
     }
 }

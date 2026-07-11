@@ -68,7 +68,7 @@ fn main() {
             });
 
             for (i, (icon, label)) in icons.iter().enumerate() {
-                let x = 20 + i * 140;
+                let x = 20 + i as i32 * 140;
                 let y = 260;
                 let icon_rect = Rect::new(x, y + 80, 96, 96);
                 let label_rect = Rect::new(x, y + 190, 96, 28);
@@ -76,8 +76,8 @@ fn main() {
                 ui.paint_rect(icon_rect, style().bg(rgb(24, 24, 24)).border(rgb(55, 55, 55)));
                 ui.paint_text(
                     *icon,
-                    icon_rect.x as i32,
-                    icon_rect.y as i32,
+                    icon_rect.x,
+                    icon_rect.y,
                     icon_rect.width,
                     icon_rect.height,
                     white(),

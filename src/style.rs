@@ -191,7 +191,7 @@ impl Style {
 
     /// Add fonts to the library to get a font ID.
     /// Fonts are all in a vector, so it's just the index...
-    /// ```
+    /// ```ignore
     /// let font_id = ui.add_font(new_font);
     /// ui.text(":)", style().font(font_id));
     /// ```

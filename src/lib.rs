@@ -1165,7 +1165,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             framebuffer_height,
         );
 
-        compute_damage(&mut state.render_cache);
+        state.render_cache.compute_damage();
         let frame_stats = state.render_cache.stats;
         state.render_cache_stats.frames += 1;
         state.render_cache_stats.zero_damage_frames += u64::from(frame_stats.dirty_tiles == 0);
@@ -1197,8 +1197,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         for layer in &mut state.commands {
             layer.clear();
         }
+
         state.render_cache.complete_frame();
-        present_damage(window, &damage);
+
+        if !damage.is_empty() {
+            window.present();
+        }
+
         state.render_cache.recycle_damage(damage);
     }
 

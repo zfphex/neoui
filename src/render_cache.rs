@@ -484,11 +484,6 @@ pub fn prepare_commands(
     }
 }
 
-pub fn compute_damage(cache: &mut RenderCache) {
-    crate::profile!();
-    cache.compute_damage();
-}
-
 pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {
     crate::profile!();
     for rect in damage {
@@ -623,9 +618,4 @@ pub fn raster_damage(
             }
         }
     }
-}
-
-pub fn present_damage(window: &Window, damage: &[Rect]) {
-    crate::profile!();
-    window.present_regions(damage);
 }

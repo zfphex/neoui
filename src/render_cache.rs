@@ -9,6 +9,8 @@ const MAX_DAMAGE_RECTS: usize = 128;
 const HASH_SEED: u64 = 0xcbf2_9ce4_8422_2325;
 /// Multiplier for mixing (2^64 / φ, truncated).
 const HASH_MIX: u64 = 0x9e37_79b9_7f4a_7c15;
+/// Separates byte slices of different lengths after word-at-a-time hashing.
+const BYTE_LEN_TAG: u64 = 0x6c62_79f5_aa2d_4f1b;
 /// Seed tag so clear-color hashes don't collide with empty tiles.
 const CLEAR_HASH_TAG: u64 = 0xff;
 
@@ -22,9 +24,15 @@ impl MixHasher {
 
 impl Hasher for MixHasher {
     fn write(&mut self, bytes: &[u8]) {
-        for &b in bytes {
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in chunks.by_ref() {
+            let v = u64::from_le_bytes(chunk.try_into().unwrap());
+            self.0 = mix(self.0, v);
+        }
+        for &b in chunks.remainder() {
             self.0 = mix(self.0, b as u64);
         }
+        self.0 = mix(self.0, BYTE_LEN_TAG ^ bytes.len() as u64);
     }
 
     fn write_u8(&mut self, i: u8) {
@@ -215,9 +223,10 @@ impl RenderCache {
     }
 }
 
+/// Order-dependent fold used for both command hashing and per-tile accumulation.
 #[inline]
 fn mix(h: u64, v: u64) -> u64 {
-    h ^ v.wrapping_mul(HASH_MIX)
+    h.wrapping_mul(HASH_MIX).wrapping_add(v).rotate_left(27)
 }
 
 pub fn command_clip(command: &Command<'_>) -> Rect {

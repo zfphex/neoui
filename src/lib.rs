@@ -615,7 +615,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let state = &mut *self.state;
         let font = &state.fonts[font_id];
         let metrics = state.font_metrics.entry(font_id).or_default();
-        measure_text(text, font, font_size, 1.0, metrics)
+        measure_text(text, font, font_size, metrics)
     }
 
     pub fn paint_text(
@@ -1051,10 +1051,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         profile!();
         let window = &mut *self.window;
         let state = &mut *self.state;
-        let (self_width, self_height) = window.content_size();
         let display_scale = window.scale_factor() as f32;
-        let framebuffer_width = scale(self_width, display_scale);
-        let framebuffer_height = scale(self_height, display_scale);
+        let (framebuffer_width, framebuffer_height) = window.framebuffer_size();
 
         let dirty = state.render_cache.update(
             &state.commands,

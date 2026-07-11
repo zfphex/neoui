@@ -27,7 +27,7 @@ fn bench_draw_text(bencher: divan::Bencher) {
                 &ctx.font,
                 0,
                 0,
-                32.0,
+                32,
                 10000,
                 &mut ctx.buffer,
                 white(),

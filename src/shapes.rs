@@ -47,12 +47,12 @@ pub const fn const_sqrt(x: f32) -> f32 {
     guess
 }
 
-pub const fn scale(value: usize, scale: f32) -> usize {
-    (value as f32 * scale).round() as usize
+pub const fn scale(value: usize, factor: f32) -> usize {
+    (value as f32 * factor).round() as usize
 }
 
-pub const fn scale_i32(value: i32, scale: f32) -> i32 {
-    (value as f32 * scale).round() as i32
+pub const fn scale_i32(value: i32, factor: f32) -> i32 {
+    (value as f32 * factor).round() as i32
 }
 
 /// Returns `None` if fully clipped.
@@ -695,22 +695,22 @@ pub fn draw_text(
     font: &fontdue::Font,
     x: i32,
     y: i32,
-    font_size: f32,
+    font_size: usize,
     window_width: usize,
     buffer: &mut [u32],
     color: u32,
     cache: &mut FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
     clip: Rect,
 ) -> Rect {
-    if text.is_empty() || font_size <= 0.0 || window_width == 0 {
+    if text.is_empty() || font_size == 0 || window_width == 0 {
         return Rect::default();
     }
 
-    let scaled_font_size = font_size.round();
+    let size = font_size as f32;
     let x_start = x as f32;
     let y_start = y as f32;
 
-    let line_metrics = font.horizontal_line_metrics(scaled_font_size).unwrap();
+    let line_metrics = font.horizontal_line_metrics(size).unwrap();
     let ascent = line_metrics.ascent;
 
     let (txt_r, txt_g, txt_b) = split(color);
@@ -733,8 +733,8 @@ pub fn draw_text(
         let baseline_y = y_pos + ascent;
 
         for ch in line.chars() {
-            let (metrics, bitmap) = cache.entry((ch, scaled_font_size as usize)).or_insert_with(|| {
-                let (metrics, mut bitmap) = font.rasterize_subpixel(ch, scaled_font_size);
+            let (metrics, bitmap) = cache.entry((ch, font_size)).or_insert_with(|| {
+                let (metrics, mut bitmap) = font.rasterize_subpixel(ch, size);
                 apply_lcd_filter(&mut bitmap, metrics.width, metrics.height);
                 (metrics, bitmap)
             });
@@ -830,15 +830,14 @@ pub fn measure_text(
     text: &str,
     font: &fontdue::Font,
     font_size: usize,
-    display_scale: f32,
     metrics: &mut FxHashMap<(char, usize), fontdue::Metrics>,
 ) -> Rect {
     if text.is_empty() || font_size == 0 {
         return Rect::default();
     }
 
-    let scaled_font_size = (font_size as f32 * display_scale).round();
-    let line_metrics = font.horizontal_line_metrics(scaled_font_size).unwrap();
+    let size = font_size as f32;
+    let line_metrics = font.horizontal_line_metrics(size).unwrap();
 
     let mut max_width = 0.0f32;
     let mut current_width = 0.0f32;
@@ -852,9 +851,7 @@ pub fn measure_text(
             continue;
         }
 
-        let metrics = metrics
-            .entry((ch, scaled_font_size as usize))
-            .or_insert_with(|| font.metrics(ch, scaled_font_size));
+        let metrics = metrics.entry((ch, font_size)).or_insert_with(|| font.metrics(ch, size));
 
         current_width += metrics.advance_width;
     }
@@ -864,8 +861,8 @@ pub fn measure_text(
     Rect {
         x: 0,
         y: 0,
-        width: (max_width / display_scale).round() as i32,
-        height: ((lines as f32 * line_metrics.new_line_size) / display_scale).round() as i32,
+        width: max_width.round() as i32,
+        height: (lines as f32 * line_metrics.new_line_size).round() as i32,
     }
 }
 
@@ -941,7 +938,7 @@ pub fn draw_command(
                 &fonts[*font_id],
                 origin.x,
                 origin.y,
-                scale(*size, display_scale) as f32,
+                scale(*size, display_scale),
                 framebuffer_width,
                 buffer,
                 *color,

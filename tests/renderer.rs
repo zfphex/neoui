@@ -165,7 +165,7 @@ fn cached_text_and_clipping_match_full_redraw() {
         ("jazz\nÅngström", -2, Rect::new(0, 0, 180, 100)),
         ("jazz!\nÅngström", 50, Rect::new(30, 0, 120, 100)),
     ] {
-        let layout_bounds = measure_text(text, &fonts[0], 20, 1.0, &mut layout_metrics);
+        let layout_bounds = measure_text(text, &fonts[0], 20, &mut layout_metrics);
         let commands = layers(vec![Command::Text {
             text: Cow::Owned(text.to_owned()),
             font_id: 0,

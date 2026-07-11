@@ -1,310 +1,186 @@
 use crate::*;
-use rustc_hash::FxHashMap;
 
 pub const TILE_SIZE: usize = 64;
 const FULL_REDRAW_PERCENT: usize = 60;
 const MAX_DAMAGE_RECTS: usize = 128;
-const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-const FNV_PRIME: u64 = 0x100000001b3;
+
+/// Hash seed (FNV-1a 64-bit offset basis).
+const HASH_SEED: u64 = 0xcbf2_9ce4_8422_2325;
+/// Multiplier for mixing (2^64 / φ, truncated).
+const HASH_MIX: u64 = 0x9e37_79b9_7f4a_7c15;
+/// Seed tag so clear-color hashes don't collide with empty tiles.
+const CLEAR_HASH_TAG: u64 = 0xff;
+
+const CMD_RECT: u64 = 0;
+const CMD_RECT_OUTLINE: u64 = 1;
+const CMD_TRIANGLE: u64 = 2;
+const CMD_TEXT: u64 = 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparedCommand {
     pub layer: usize,
     pub index: usize,
     pub bounds: Rect,
-    pub hash: u64,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CacheFrameStats {
-    pub dirty_tiles: usize,
-    pub damage_rects: usize,
-    pub damaged_pixels: usize,
-    pub full_redraw: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RenderCacheStats {
-    pub frames: u64,
-    pub zero_damage_frames: u64,
-    pub full_redraw_frames: u64,
-    pub total_dirty_tiles: u64,
-    pub total_damage_rects: u64,
-    pub total_damaged_pixels: u64,
-    pub total_framebuffer_pixels: u64,
-}
-
-impl RenderCacheStats {
-    pub fn mean_dirty_tiles(&self) -> f64 {
-        self.total_dirty_tiles as f64 / self.frames.max(1) as f64
-    }
-
-    pub fn mean_damage_rects(&self) -> f64 {
-        self.total_damage_rects as f64 / self.frames.max(1) as f64
-    }
-
-    pub fn mean_damaged_percent(&self) -> f64 {
-        self.total_damaged_pixels as f64 * 100.0 / self.total_framebuffer_pixels.max(1) as f64
-    }
-}
-
-impl std::fmt::Display for RenderCacheStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "render cache: {} frames, {} zero-damage, {} full redraws, mean {:.2} dirty tiles, \
-             mean {:.2} regions, mean {:.3}% damaged pixels",
-            self.frames,
-            self.zero_damage_frames,
-            self.full_redraw_frames,
-            self.mean_dirty_tiles(),
-            self.mean_damage_rects(),
-            self.mean_damaged_percent(),
-        )
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RenderCache {
-    pub current: Vec<u64>,
-    pub previous: Vec<u64>,
-    pub dirty: Vec<bool>,
-    pub damage: Vec<Rect>,
-    pub prepared: Vec<PreparedCommand>,
-    pub cols: usize,
-    pub rows: usize,
-    pub width: usize,
-    pub height: usize,
-    pub scale_bits: u64,
-    pub force_full_redraw: bool,
-    pub initialized: bool,
-    pub stats: CacheFrameStats,
-}
-
-impl Default for RenderCache {
-    fn default() -> Self {
-        Self {
-            current: Vec::new(),
-            previous: Vec::new(),
-            dirty: Vec::new(),
-            damage: Vec::new(),
-            prepared: Vec::new(),
-            cols: 0,
-            rows: 0,
-            width: 0,
-            height: 0,
-            scale_bits: 0,
-            force_full_redraw: true,
-            initialized: false,
-            stats: CacheFrameStats::default(),
-        }
-    }
+    current: Vec<u64>,
+    previous: Vec<u64>,
+    prepared: Vec<PreparedCommand>,
+    damage: Vec<Rect>,
+    width: usize,
+    height: usize,
+    force_full: bool,
 }
 
 impl RenderCache {
     pub fn invalidate(&mut self) {
-        self.force_full_redraw = true;
+        self.force_full = true;
     }
 
-    pub fn begin_frame(&mut self, width: usize, height: usize, scale: f64, clear_color: u32) {
+    /// Hash the command list into tiles. Returns true if any damage must be redrawn.
+    pub fn update(
+        &mut self,
+        commands: &[Vec<Command<'_>>; 16],
+        scale: f32,
+        width: usize,
+        height: usize,
+        clear: u32,
+    ) -> bool {
+        crate::profile!();
         let cols = width.div_ceil(TILE_SIZE);
         let rows = height.div_ceil(TILE_SIZE);
-        let scale_bits = scale.to_bits();
-        let changed =
-            !self.initialized || self.width != width || self.height != height || self.scale_bits != scale_bits;
-
-        if changed {
+        if self.width != width || self.height != height {
             self.width = width;
             self.height = height;
-            self.cols = cols;
-            self.rows = rows;
-            self.scale_bits = scale_bits;
             let len = cols.saturating_mul(rows);
             self.current.resize(len, 0);
             self.previous.resize(len, 0);
-            self.dirty.resize(len, false);
-            self.force_full_redraw = true;
-            self.initialized = true;
+            self.force_full = true;
         }
 
-        let mut background = Fnv1a::new();
-        background.write_u8(0xff);
-        background.write_u32(clear_color);
-        self.current.fill(background.finish());
+        let bg = mix(CLEAR_HASH_TAG, clear as u64);
+        self.current.fill(bg);
         self.prepared.clear();
         self.damage.clear();
-        self.stats = CacheFrameStats::default();
+
+        for (layer, cmds) in commands.iter().enumerate() {
+            for (index, command) in cmds.iter().enumerate() {
+                let bounds = command_bounds(command, scale, width, height);
+                if bounds.is_empty() || cols == 0 || rows == 0 {
+                    continue;
+                }
+                let hash = command_hash(command, layer);
+                let x0 = bounds.x.max(0) as usize / TILE_SIZE;
+                let y0 = bounds.y.max(0) as usize / TILE_SIZE;
+                let x1 = (bounds.right().max(1) as usize - 1) / TILE_SIZE;
+                let y1 = (bounds.bottom().max(1) as usize - 1) / TILE_SIZE;
+                for y in y0..=y1.min(rows - 1) {
+                    for x in x0..=x1.min(cols - 1) {
+                        let cell = &mut self.current[x + y * cols];
+                        *cell = mix(*cell, hash);
+                    }
+                }
+                self.prepared.push(PreparedCommand { layer, index, bounds });
+            }
+        }
+
+        self.build_damage(cols, rows);
+        !self.damage.is_empty()
     }
 
-    pub fn add_command(&mut self, command: PreparedCommand) {
-        let bounds = command.bounds.clamp_to_size(self.width as i32, self.height as i32);
-        if bounds.is_empty() || self.cols == 0 || self.rows == 0 {
+    pub fn prepared(&self) -> &[PreparedCommand] {
+        &self.prepared
+    }
+
+    pub fn damage(&self) -> &[Rect] {
+        &self.damage
+    }
+
+    pub fn finish(&mut self) {
+        std::mem::swap(&mut self.current, &mut self.previous);
+        self.force_full = false;
+        self.prepared.clear();
+    }
+
+    fn build_damage(&mut self, cols: usize, rows: usize) {
+        crate::profile!();
+        if self.current.is_empty() || self.width == 0 || self.height == 0 {
             return;
         }
 
-        let x0 = bounds.x.max(0) as usize / TILE_SIZE;
-        let y0 = bounds.y.max(0) as usize / TILE_SIZE;
-        let x1 = (bounds.right().max(1) as usize - 1) / TILE_SIZE;
-        let y1 = (bounds.bottom().max(1) as usize - 1) / TILE_SIZE;
-        for y in y0..=y1.min(self.rows - 1) {
-            for x in x0..=x1.min(self.cols - 1) {
-                let cell = &mut self.current[x + y * self.cols];
-                *cell = fnv_mix_u64(*cell, command.hash);
-            }
-        }
-        self.prepared.push(PreparedCommand { bounds, ..command });
-    }
-
-    pub fn compute_damage(&mut self) -> &[Rect] {
-        if self.current.is_empty() || self.width == 0 || self.height == 0 {
-            self.stats.dirty_tiles = 0;
-            self.stats.damage_rects = 0;
-            return &self.damage;
+        if self.force_full {
+            self.full_damage();
+            return;
         }
 
-        let mut dirty_tiles = 0;
+        let mut dirty = 0usize;
         for i in 0..self.current.len() {
-            let dirty = self.force_full_redraw || self.current[i] != self.previous[i];
-            self.dirty[i] = dirty;
-            dirty_tiles += usize::from(dirty);
+            dirty += usize::from(self.current[i] != self.previous[i]);
         }
-        self.stats.dirty_tiles = dirty_tiles;
-
-        if dirty_tiles == 0 {
-            return &self.damage;
+        if dirty == 0 {
+            return;
         }
-
-        if dirty_tiles.saturating_mul(100) >= self.current.len().saturating_mul(FULL_REDRAW_PERCENT) {
-            self.set_full_damage();
-            return &self.damage;
+        if dirty.saturating_mul(100) >= self.current.len().saturating_mul(FULL_REDRAW_PERCENT) {
+            self.full_damage();
+            return;
         }
 
-        for y in 0..self.rows {
+        for y in 0..rows {
             let mut x = 0;
-            while x < self.cols {
-                if !self.dirty[x + y * self.cols] {
+            while x < cols {
+                let i = x + y * cols;
+                if self.current[i] == self.previous[i] {
                     x += 1;
                     continue;
                 }
-
                 let start = x;
-                while x < self.cols && self.dirty[x + y * self.cols] {
+                x += 1;
+                while x < cols && self.current[x + y * cols] != self.previous[x + y * cols] {
                     x += 1;
                 }
                 let px = (start * TILE_SIZE) as i32;
                 let py = (y * TILE_SIZE) as i32;
                 let right = (x * TILE_SIZE).min(self.width) as i32;
                 let bottom = ((y + 1) * TILE_SIZE).min(self.height) as i32;
-                let mut merged = false;
-                for rect in self.damage.iter_mut().rev() {
-                    if rect.bottom() < py {
-                        break;
-                    }
-                    if rect.x == px && rect.width == right - px && rect.bottom() == py {
-                        rect.height = bottom - rect.y;
-                        merged = true;
-                        break;
-                    }
-                }
-                if !merged {
-                    self.damage.push(Rect::new(px, py, right - px, bottom - py));
+                self.damage.push(Rect::new(px, py, right - px, bottom - py));
+                if self.damage.len() > MAX_DAMAGE_RECTS {
+                    self.full_damage();
+                    return;
                 }
             }
         }
-
-        if self.damage.len() > MAX_DAMAGE_RECTS {
-            self.set_full_damage();
-        } else {
-            self.finish_stats(false);
-        }
-        &self.damage
     }
 
-    fn set_full_damage(&mut self) {
+    fn full_damage(&mut self) {
         self.damage.clear();
-        self.damage.push(Rect::new(0, 0, self.width as i32, self.height as i32));
-        self.finish_stats(true);
-    }
-
-    fn finish_stats(&mut self, full_redraw: bool) {
-        self.stats.damage_rects = self.damage.len();
-        self.stats.damaged_pixels = self
-            .damage
-            .iter()
-            .map(|rect| (rect.width.max(0) as usize).saturating_mul(rect.height.max(0) as usize))
-            .sum();
-        self.stats.full_redraw = full_redraw;
-    }
-
-    pub fn take_damage(&mut self) -> Vec<Rect> {
-        std::mem::take(&mut self.damage)
-    }
-
-    pub fn recycle_damage(&mut self, mut damage: Vec<Rect>) {
-        damage.clear();
-        self.damage = damage;
-    }
-
-    pub fn complete_frame(&mut self) {
-        std::mem::swap(&mut self.current, &mut self.previous);
-        self.force_full_redraw = false;
-        self.prepared.clear();
+        self.damage
+            .push(Rect::new(0, 0, self.width as i32, self.height as i32));
     }
 }
 
-pub struct Fnv1a(u64);
-
-impl Fnv1a {
-    pub const fn new() -> Self {
-        Self(FNV_OFFSET)
-    }
-
-    pub fn write(&mut self, bytes: &[u8]) {
-        for byte in bytes {
-            self.0 ^= *byte as u64;
-            self.0 = self.0.wrapping_mul(FNV_PRIME);
-        }
-    }
-
-    pub fn write_u8(&mut self, value: u8) {
-        self.write(&[value]);
-    }
-
-    pub fn write_u32(&mut self, value: u32) {
-        self.write(&value.to_le_bytes());
-    }
-
-    pub fn write_i32(&mut self, value: i32) {
-        self.write(&value.to_le_bytes());
-    }
-
-    pub fn write_usize(&mut self, value: usize) {
-        self.write(&(value as u64).to_le_bytes());
-    }
-
-    pub const fn finish(&self) -> u64 {
-        self.0
-    }
+#[inline]
+fn mix(h: u64, v: u64) -> u64 {
+    h ^ v.wrapping_mul(HASH_MIX)
 }
 
-fn fnv_mix_u64(mut state: u64, value: u64) -> u64 {
-    for byte in value.to_le_bytes() {
-        state ^= byte as u64;
-        state = state.wrapping_mul(FNV_PRIME);
+fn mix_bytes(mut h: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
+        h = mix(h, b as u64);
     }
-    state
+    h
 }
 
-fn hash_rect(hasher: &mut Fnv1a, rect: Rect) {
-    hasher.write_i32(rect.x);
-    hasher.write_i32(rect.y);
-    hasher.write_i32(rect.width);
-    hasher.write_i32(rect.height);
+fn hash_rect(mut h: u64, r: Rect) -> u64 {
+    h = mix(h, r.x as u32 as u64);
+    h = mix(h, r.y as u32 as u64);
+    h = mix(h, r.width as u32 as u64);
+    mix(h, r.height as u32 as u64)
 }
 
-pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
-    let mut hasher = Fnv1a::new();
-    hasher.write_usize(layer);
+fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
+    let mut h = mix(HASH_SEED, layer as u64);
     match command {
         Command::Rect {
             bounds,
@@ -312,11 +188,11 @@ pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
             color,
             radius,
         } => {
-            hasher.write_u8(0);
-            hash_rect(&mut hasher, *bounds);
-            hash_rect(&mut hasher, *clip);
-            hasher.write_u32(*color);
-            hasher.write_usize(*radius);
+            h = mix(h, CMD_RECT);
+            h = hash_rect(h, *bounds);
+            h = hash_rect(h, *clip);
+            h = mix(h, *color as u64);
+            mix(h, *radius as u64)
         }
         Command::RectOutline {
             bounds,
@@ -326,24 +202,24 @@ pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
             border_thickness,
             border_sides,
         } => {
-            hasher.write_u8(1);
-            hash_rect(&mut hasher, *bounds);
-            hash_rect(&mut hasher, *clip);
-            hasher.write_u32(*color);
-            hasher.write_usize(*radius);
-            hasher.write_usize(*border_thickness);
-            hasher.write_u8(*border_sides);
+            h = mix(h, CMD_RECT_OUTLINE);
+            h = hash_rect(h, *bounds);
+            h = hash_rect(h, *clip);
+            h = mix(h, *color as u64);
+            h = mix(h, *radius as u64);
+            h = mix(h, *border_thickness as u64);
+            mix(h, *border_sides as u64)
         }
         Command::Triangle { a, b, c, clip, color } => {
-            hasher.write_u8(2);
-            hasher.write_i32(a.0);
-            hasher.write_i32(a.1);
-            hasher.write_i32(b.0);
-            hasher.write_i32(b.1);
-            hasher.write_i32(c.0);
-            hasher.write_i32(c.1);
-            hash_rect(&mut hasher, *clip);
-            hasher.write_u32(*color);
+            h = mix(h, CMD_TRIANGLE);
+            h = mix(h, a.0 as u32 as u64);
+            h = mix(h, a.1 as u32 as u64);
+            h = mix(h, b.0 as u32 as u64);
+            h = mix(h, b.1 as u32 as u64);
+            h = mix(h, c.0 as u32 as u64);
+            h = mix(h, c.1 as u32 as u64);
+            h = hash_rect(h, *clip);
+            mix(h, *color as u64)
         }
         Command::Text {
             text,
@@ -353,20 +229,18 @@ pub fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
             color,
             size,
         } => {
-            hasher.write_u8(3);
-            hasher.write_usize(text.len());
-            hasher.write(text.as_bytes());
-            hasher.write_usize(*font_id);
-            hash_rect(&mut hasher, *clip);
-            hash_rect(&mut hasher, *bounds);
-            hasher.write_u32(*color);
-            hasher.write_usize(*size);
+            h = mix(h, CMD_TEXT);
+            h = mix_bytes(h, text.as_bytes());
+            h = mix(h, *font_id as u64);
+            h = hash_rect(h, *clip);
+            h = hash_rect(h, *bounds);
+            h = mix(h, *color as u64);
+            mix(h, *size as u64)
         }
     }
-    hasher.finish()
 }
 
-fn command_clip(command: &Command<'_>) -> Rect {
+pub(crate) fn command_clip(command: &Command<'_>) -> Rect {
     match command {
         Command::Rect { clip, .. }
         | Command::RectOutline { clip, .. }
@@ -378,8 +252,8 @@ fn command_clip(command: &Command<'_>) -> Rect {
 pub fn command_bounds(
     command: &Command<'_>,
     scale_factor: f32,
-    framebuffer_width: usize,
-    framebuffer_height: usize,
+    fb_w: usize,
+    fb_h: usize,
 ) -> Rect {
     let bounds = match command {
         Command::Rect { bounds, .. } | Command::RectOutline { bounds, .. } => bounds.scale(scale_factor),
@@ -398,172 +272,18 @@ pub fn command_bounds(
             )
         }
         Command::Text { bounds, size, .. } => {
-            let padding = (scale(*size, scale_factor) / 2).max(4).min(i32::MAX as usize) as i32;
-            let bounds = bounds.scale(scale_factor);
+            let pad = (scale(*size, scale_factor) / 2).max(4) as i32;
+            let b = bounds.scale(scale_factor);
             Rect::new(
-                bounds.x.saturating_sub(padding),
-                bounds.y.saturating_sub(padding),
-                bounds.width.saturating_add(padding.saturating_mul(2)),
-                bounds.height.saturating_add(padding.saturating_mul(2)),
+                b.x.saturating_sub(pad),
+                b.y.saturating_sub(pad),
+                b.width.saturating_add(pad * 2),
+                b.height.saturating_add(pad * 2),
             )
         }
     };
-
     bounds
         .intersection(command_clip(command).scale(scale_factor))
-        .clamp_to_size(framebuffer_width as i32, framebuffer_height as i32)
+        .clamp_to_size(fb_w as i32, fb_h as i32)
 }
 
-pub fn prepare_commands(
-    commands: &[Vec<Command<'_>>; 16],
-    cache: &mut RenderCache,
-    display_scale: f32,
-    framebuffer_width: usize,
-    framebuffer_height: usize,
-) {
-    crate::profile!();
-    for (layer_index, layer) in commands.iter().enumerate() {
-        for (command_index, command) in layer.iter().enumerate() {
-            let bounds = command_bounds(command, display_scale, framebuffer_width, framebuffer_height);
-            cache.add_command(PreparedCommand {
-                layer: layer_index,
-                index: command_index,
-                bounds,
-                hash: command_hash(command, layer_index),
-            });
-        }
-    }
-}
-
-pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {
-    crate::profile!();
-    for rect in damage {
-        if rect.is_empty() {
-            continue;
-        }
-        let x = rect.x.max(0) as usize;
-        let y0 = rect.y.max(0) as usize;
-        let y1 = rect.bottom().max(0) as usize;
-        let width = rect.width.max(0) as usize;
-        for y in y0..y1 {
-            let start = y * framebuffer_width + x;
-            buffer[start..start + width].fill(color);
-        }
-    }
-}
-
-pub fn draw_command(
-    command: &Command<'_>,
-    damage: Rect,
-    buffer: &mut [u32],
-    framebuffer_width: usize,
-    framebuffer_height: usize,
-    display_scale: f32,
-    fonts: &[fontdue::Font],
-    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-) {
-    let clip = command_clip(command).scale(display_scale).intersection(damage);
-    if clip.is_empty() {
-        return;
-    }
-
-    match command {
-        Command::Rect {
-            bounds, color, radius, ..
-        } => draw_rounded_rect(
-            buffer,
-            scale_f32(bounds.x as f32, display_scale),
-            scale_f32(bounds.y as f32, display_scale),
-            scale(bounds.width.max(0) as usize, display_scale),
-            scale(bounds.height.max(0) as usize, display_scale),
-            framebuffer_width,
-            framebuffer_height,
-            scale(*radius, display_scale),
-            *color,
-            clip,
-        ),
-        Command::RectOutline {
-            bounds,
-            color,
-            border_sides,
-            ..
-        } => draw_rect_outline(
-            buffer,
-            scale_f32(bounds.x as f32, display_scale),
-            scale_f32(bounds.y as f32, display_scale),
-            scale(bounds.width.max(0) as usize, display_scale),
-            scale(bounds.height.max(0) as usize, display_scale),
-            framebuffer_width,
-            *color,
-            clip,
-            *border_sides,
-        ),
-        Command::Text {
-            text,
-            bounds,
-            color,
-            size,
-            font_id,
-            ..
-        } => {
-            let bitmap = font_bitmaps.entry(*font_id).or_default();
-            draw_text(
-                text,
-                &fonts[*font_id],
-                bounds.x,
-                bounds.y,
-                *size,
-                display_scale,
-                framebuffer_width,
-                buffer,
-                *color,
-                bitmap,
-                clip,
-            );
-        }
-        Command::Triangle { a, b, c, color, .. } => draw_triangle_sdf(
-            buffer,
-            framebuffer_width,
-            framebuffer_height,
-            scale_f32(a.0 as f32, display_scale),
-            scale_f32(a.1 as f32, display_scale),
-            scale_f32(b.0 as f32, display_scale),
-            scale_f32(b.1 as f32, display_scale),
-            scale_f32(c.0 as f32, display_scale),
-            scale_f32(c.1 as f32, display_scale),
-            *color,
-            clip,
-        ),
-    }
-}
-
-pub fn raster_damage(
-    commands: &[Vec<Command<'_>>; 16],
-    prepared: &[PreparedCommand],
-    damage: &[Rect],
-    buffer: &mut [u32],
-    framebuffer_width: usize,
-    framebuffer_height: usize,
-    display_scale: f32,
-    fonts: &[fontdue::Font],
-    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-) {
-    crate::profile!();
-    for prepared in prepared {
-        let command = &commands[prepared.layer][prepared.index];
-        for region in damage {
-            if prepared.bounds.intersects(*region) {
-                draw_command(
-                    command,
-                    *region,
-                    buffer,
-                    framebuffer_width,
-                    framebuffer_height,
-                    display_scale,
-                    fonts,
-                    font_bitmaps,
-                );
-            }
-        }
-    }
-}

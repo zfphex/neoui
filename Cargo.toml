@@ -29,3 +29,8 @@ required-features = ["bench"]
 name = "cache"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "scroll"
+harness = false
+required-features = ["bench"]

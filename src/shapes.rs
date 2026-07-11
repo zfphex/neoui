@@ -895,3 +895,136 @@ pub fn measure_text(
         height: ((lines as f32 * line_metrics.new_line_size) / display_scale).round() as i32,
     }
 }
+
+pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {
+    crate::profile!();
+    for rect in damage {
+        if rect.is_empty() {
+            continue;
+        }
+        let x = rect.x.max(0) as usize;
+        let y0 = rect.y.max(0) as usize;
+        let y1 = rect.bottom().max(0) as usize;
+        let width = rect.width.max(0) as usize;
+        for y in y0..y1 {
+            let start = y * framebuffer_width + x;
+            buffer[start..start + width].fill(color);
+        }
+    }
+}
+
+pub fn draw_command(
+    command: &Command<'_>,
+    damage: Rect,
+    buffer: &mut [u32],
+    framebuffer_width: usize,
+    framebuffer_height: usize,
+    display_scale: f32,
+    fonts: &[fontdue::Font],
+    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+) {
+    let clip = command_clip(command).scale(display_scale).intersection(damage);
+    if clip.is_empty() {
+        return;
+    }
+
+    match command {
+        Command::Rect {
+            bounds, color, radius, ..
+        } => draw_rounded_rect(
+            buffer,
+            scale_f32(bounds.x as f32, display_scale),
+            scale_f32(bounds.y as f32, display_scale),
+            scale(bounds.width.max(0) as usize, display_scale),
+            scale(bounds.height.max(0) as usize, display_scale),
+            framebuffer_width,
+            framebuffer_height,
+            scale(*radius, display_scale),
+            *color,
+            clip,
+        ),
+        Command::RectOutline {
+            bounds,
+            color,
+            border_sides,
+            ..
+        } => draw_rect_outline(
+            buffer,
+            scale_f32(bounds.x as f32, display_scale),
+            scale_f32(bounds.y as f32, display_scale),
+            scale(bounds.width.max(0) as usize, display_scale),
+            scale(bounds.height.max(0) as usize, display_scale),
+            framebuffer_width,
+            *color,
+            clip,
+            *border_sides,
+        ),
+        Command::Text {
+            text,
+            bounds,
+            color,
+            size,
+            font_id,
+            ..
+        } => {
+            let bitmap = font_bitmaps.entry(*font_id).or_default();
+            draw_text(
+                text,
+                &fonts[*font_id],
+                bounds.x,
+                bounds.y,
+                *size,
+                display_scale,
+                framebuffer_width,
+                buffer,
+                *color,
+                bitmap,
+                clip,
+            );
+        }
+        Command::Triangle { a, b, c, color, .. } => draw_triangle_sdf(
+            buffer,
+            framebuffer_width,
+            framebuffer_height,
+            scale_f32(a.0 as f32, display_scale),
+            scale_f32(a.1 as f32, display_scale),
+            scale_f32(b.0 as f32, display_scale),
+            scale_f32(b.1 as f32, display_scale),
+            scale_f32(c.0 as f32, display_scale),
+            scale_f32(c.1 as f32, display_scale),
+            *color,
+            clip,
+        ),
+    }
+}
+
+pub fn raster_damage(
+    commands: &[Vec<Command<'_>>; 16],
+    prepared: &[PreparedCommand],
+    damage: &[Rect],
+    buffer: &mut [u32],
+    framebuffer_width: usize,
+    framebuffer_height: usize,
+    display_scale: f32,
+    fonts: &[fontdue::Font],
+    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+) {
+    crate::profile!();
+    for prepared in prepared {
+        let command = &commands[prepared.layer][prepared.index];
+        for region in damage {
+            if prepared.bounds.intersects(*region) {
+                draw_command(
+                    command,
+                    *region,
+                    buffer,
+                    framebuffer_width,
+                    framebuffer_height,
+                    display_scale,
+                    fonts,
+                    font_bitmaps,
+                );
+            }
+        }
+    }
+}

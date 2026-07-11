@@ -257,6 +257,4 @@ fn main() {
         }
     }
 
-    #[cfg(feature = "profile")]
-    eprintln!("{}", ui.render_cache_stats());
 }

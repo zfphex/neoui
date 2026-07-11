@@ -37,29 +37,23 @@ fn render_cached(
     fonts: &[fontdue::Font],
     bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
 ) -> Vec<Rect> {
-    cache.begin_frame(width, height, 1.0, clear);
-    for (layer, commands) in commands.iter().enumerate() {
-        for (index, command) in commands.iter().enumerate() {
-            cache.add_command(PreparedCommand {
-                layer,
-                index,
-                bounds: command_bounds(command, 1.0, width, height),
-                hash: command_hash(command, layer),
-            });
-        }
+    let dirty = cache.update(commands, 1.0, width, height, clear);
+    let damage = cache.damage().to_vec();
+    if dirty {
+        clear_damage(buffer, width, &damage, clear);
+        raster_damage(
+            commands,
+            cache.prepared(),
+            &damage,
+            buffer,
+            width,
+            height,
+            1.0,
+            fonts,
+            bitmaps,
+        );
     }
-    cache.compute_damage();
-    let damage = cache.take_damage();
-    clear_damage(buffer, width, &damage, clear);
-    for prepared in &cache.prepared {
-        let command = &commands[prepared.layer][prepared.index];
-        for region in &damage {
-            if prepared.bounds.intersects(*region) {
-                draw_command(command, *region, buffer, width, height, 1.0, fonts, bitmaps);
-            }
-        }
-    }
-    cache.complete_frame();
+    cache.finish();
     damage
 }
 

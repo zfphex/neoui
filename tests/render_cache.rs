@@ -1,70 +1,79 @@
 use neoui::*;
 
-#[test]
-fn half_open_bounds_do_not_touch_the_next_tile() {
-    let mut cache = RenderCache::default();
-    cache.begin_frame(128, 64, 1.0, 0);
-    cache.add_command(PreparedCommand {
-        layer: 0,
-        index: 0,
-        bounds: Rect::new(0, 0, 64, 64),
-        hash: 1,
-    });
-    cache.force_full_redraw = false;
-    cache.previous = cache.current.clone();
+fn layers(commands: Vec<Command<'static>>) -> [Vec<Command<'static>>; 16] {
+    let mut layers = std::array::from_fn(|_| Vec::new());
+    layers[0] = commands;
+    layers
+}
 
-    cache.begin_frame(128, 64, 1.0, 0);
-    cache.add_command(PreparedCommand {
-        layer: 0,
-        index: 0,
-        bounds: Rect::new(0, 0, 64, 64),
-        hash: 2,
-    });
-    assert_eq!(cache.compute_damage(), &[Rect::new(0, 0, 64, 64)]);
+fn rect(x: i32, y: i32, w: i32, h: i32, color: u32) -> Command<'static> {
+    Command::Rect {
+        bounds: Rect::new(x, y, w, h),
+        clip: Rect::new(0, 0, 1920, 1080),
+        color,
+        radius: 0,
+    }
 }
 
 #[test]
-fn equal_horizontal_runs_merge_vertically() {
+fn half_open_bounds_do_not_touch_the_next_tile() {
     let mut cache = RenderCache::default();
-    cache.begin_frame(192, 192, 1.0, 0);
-    cache.force_full_redraw = false;
-    cache.previous.clone_from(&cache.current);
-    cache.current[0] ^= 1;
-    cache.current[1] ^= 1;
-    cache.current[3] ^= 1;
-    cache.current[4] ^= 1;
+    let a = layers(vec![rect(0, 0, 64, 64, 1)]);
+    assert!(cache.update(&a, 1.0, 128, 64, 0));
+    cache.finish();
 
-    assert_eq!(cache.compute_damage(), &[Rect::new(0, 0, 128, 128)]);
+    let b = layers(vec![rect(0, 0, 64, 64, 2)]);
+    assert!(cache.update(&b, 1.0, 128, 64, 0));
+    assert_eq!(cache.damage(), &[Rect::new(0, 0, 64, 64)]);
+}
+
+#[test]
+fn horizontal_runs_emit_one_rect_per_row() {
+    // Two rows of two dirty tiles each → two horizontal damage rects (no vertical merge).
+    let mut cache = RenderCache::default();
+    let empty = layers(Vec::new());
+    assert!(cache.update(&empty, 1.0, 192, 192, 0));
+    cache.finish();
+
+    // Stamp tiles (0,0),(1,0),(0,1),(1,1) via a 128×128 rect.
+    let filled = layers(vec![rect(0, 0, 128, 128, 1)]);
+    assert!(cache.update(&filled, 1.0, 192, 192, 0));
+    assert_eq!(
+        cache.damage(),
+        &[Rect::new(0, 0, 128, 64), Rect::new(0, 64, 128, 64)]
+    );
 }
 
 #[test]
 fn changed_dimensions_force_full_damage() {
     let mut cache = RenderCache::default();
-    cache.begin_frame(100, 70, 2.0, 0);
-    assert_eq!(cache.compute_damage(), &[Rect::new(0, 0, 100, 70)]);
-    cache.complete_frame();
-    cache.begin_frame(120, 70, 2.0, 0);
-    assert_eq!(cache.compute_damage(), &[Rect::new(0, 0, 120, 70)]);
+    let empty = layers(Vec::new());
+    assert!(cache.update(&empty, 1.0, 100, 70, 0));
+    assert_eq!(cache.damage(), &[Rect::new(0, 0, 100, 70)]);
+    cache.finish();
+
+    assert!(cache.update(&empty, 1.0, 120, 70, 0));
+    assert_eq!(cache.damage(), &[Rect::new(0, 0, 120, 70)]);
 }
 
 #[test]
 fn clear_color_and_explicit_invalidation_force_damage() {
     let mut cache = RenderCache::default();
-    cache.begin_frame(256, 128, 1.0, 1);
-    cache.compute_damage();
-    cache.complete_frame();
+    let empty = layers(Vec::new());
 
-    cache.begin_frame(256, 128, 1.0, 1);
-    assert!(cache.compute_damage().is_empty());
-    cache.complete_frame();
+    assert!(cache.update(&empty, 1.0, 256, 128, 1));
+    cache.finish();
 
-    cache.begin_frame(256, 128, 1.0, 2);
-    assert_eq!(cache.compute_damage(), &[Rect::new(0, 0, 256, 128)]);
-    cache.complete_frame();
+    assert!(!cache.update(&empty, 1.0, 256, 128, 1));
+    cache.finish();
+
+    assert!(cache.update(&empty, 1.0, 256, 128, 2));
+    assert_eq!(cache.damage(), &[Rect::new(0, 0, 256, 128)]);
+    cache.finish();
 
     cache.invalidate();
-    cache.begin_frame(256, 128, 1.0, 2);
-    assert_eq!(cache.compute_damage(), &[Rect::new(0, 0, 256, 128)]);
+    assert!(cache.update(&empty, 1.0, 256, 128, 2));
+    assert_eq!(cache.damage(), &[Rect::new(0, 0, 256, 128)]);
 }
 
 #[test]

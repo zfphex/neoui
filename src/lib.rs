@@ -133,7 +133,6 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
             animating: false,
             hovered_depth: None,
             render_cache: RenderCache::default(),
-            render_cache_stats: RenderCacheStats::default(),
         },
     }
 }
@@ -166,7 +165,6 @@ pub struct UiState<'a> {
     hovered_depth: Option<usize>,
     layout_stack: Vec<Frame>,
     render_cache: RenderCache,
-    render_cache_stats: RenderCacheStats,
 }
 
 pub struct FrameContext<'frame, 'a> {
@@ -278,9 +276,6 @@ impl<'a> UiState<'a> {
         id
     }
 
-    pub fn render_cache_stats(&self) -> RenderCacheStats {
-        self.render_cache_stats
-    }
 }
 
 impl<'frame, 'a> FrameContext<'frame, 'a> {
@@ -1062,41 +1057,21 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let framebuffer_width = scale(self_width, display_scale);
         let framebuffer_height = scale(self_height, display_scale);
 
-        state.render_cache.begin_frame(
-            framebuffer_width,
-            framebuffer_height,
-            window.scale_factor(),
-            state.clear_color,
-        );
-
-        prepare_commands(
+        let dirty = state.render_cache.update(
             &state.commands,
-            &mut state.render_cache,
             display_scale,
             framebuffer_width,
             framebuffer_height,
+            state.clear_color,
         );
 
-        state.render_cache.compute_damage();
-        let frame_stats = state.render_cache.stats;
-        state.render_cache_stats.frames += 1;
-        state.render_cache_stats.zero_damage_frames += u64::from(frame_stats.dirty_tiles == 0);
-        state.render_cache_stats.full_redraw_frames += u64::from(frame_stats.full_redraw);
-        state.render_cache_stats.total_dirty_tiles += frame_stats.dirty_tiles as u64;
-        state.render_cache_stats.total_damage_rects += frame_stats.damage_rects as u64;
-        state.render_cache_stats.total_damaged_pixels += frame_stats.damaged_pixels as u64;
-        state.render_cache_stats.total_framebuffer_pixels +=
-            framebuffer_width.saturating_mul(framebuffer_height) as u64;
-        let damage = state.render_cache.take_damage();
-
-        if !damage.is_empty() {
+        if dirty {
             let buffer = window.framebuffer();
-            clear_damage(buffer, framebuffer_width, &damage, state.clear_color);
-
+            clear_damage(buffer, framebuffer_width, state.render_cache.damage(), state.clear_color);
             raster_damage(
                 &state.commands,
-                &state.render_cache.prepared,
-                &damage,
+                state.render_cache.prepared(),
+                state.render_cache.damage(),
                 buffer,
                 framebuffer_width,
                 framebuffer_height,
@@ -1104,19 +1079,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 &state.fonts,
                 &mut state.font_bitmaps,
             );
+            window.present();
         }
 
         for layer in &mut state.commands {
             layer.clear();
         }
-
-        state.render_cache.complete_frame();
-
-        if !damage.is_empty() {
-            window.present();
-        }
-
-        state.render_cache.recycle_damage(damage);
+        state.render_cache.finish();
     }
 
     pub fn animate_f32(&mut self, target: f32, duration: f32, ease: Ease) -> f32 {

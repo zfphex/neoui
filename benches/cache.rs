@@ -1,6 +1,5 @@
 use divan::black_box;
-use neoui::Rect;
-use neoui::render_cache::{PreparedCommand, RenderCache};
+use neoui::*;
 
 fn main() {
     divan::main();
@@ -9,53 +8,62 @@ fn main() {
 const WIDTH: i32 = 1920;
 const HEIGHT: i32 = 1080;
 
+fn layers(commands: Vec<Command<'static>>) -> [Vec<Command<'static>>; 16] {
+    let mut layers = std::array::from_fn(|_| Vec::new());
+    layers[0] = commands;
+    layers
+}
+
+fn rect(x: i32, y: i32, w: i32, h: i32, color: u32) -> Command<'static> {
+    Command::Rect {
+        bounds: Rect::new(x, y, w, h),
+        clip: Rect::new(0, 0, WIDTH, HEIGHT),
+        color,
+        radius: 0,
+    }
+}
+
 #[derive(Default)]
 struct CacheBench {
     cache: RenderCache,
 }
 
 impl CacheBench {
-    fn frame(&mut self, width: i32, height: i32, commands: &[(Rect, u64)], force_full: bool) -> (usize, usize) {
+    fn frame(&mut self, commands: &[Vec<Command<'static>>; 16], force_full: bool) -> usize {
         if force_full {
             self.cache.invalidate();
         }
-        self.cache.begin_frame(width as usize, height as usize, 1.0, 0);
-        for (index, (bounds, hash)) in commands.iter().enumerate() {
-            self.cache.add_command(PreparedCommand {
-                layer: 0,
-                index,
-                bounds: *bounds,
-                hash: *hash,
-            });
-        }
-        self.cache.compute_damage();
-        let result = (self.cache.stats.damage_rects, self.cache.stats.damaged_pixels);
-        self.cache.complete_frame();
-        result
+        self.cache
+            .update(commands, 1.0, WIDTH as usize, HEIGHT as usize, 0);
+        let n = self.cache.damage().len();
+        self.cache.finish();
+        n
     }
 }
 
 #[divan::bench]
 fn full_initial(bencher: divan::Bencher) {
+    let cmds = layers(vec![rect(0, 0, WIDTH, HEIGHT, 1)]);
     bencher
         .with_inputs(CacheBench::default)
-        .bench_refs(|cache| black_box(cache.frame(WIDTH, HEIGHT, &[(Rect::new(0, 0, WIDTH, HEIGHT), 1)], true)));
+        .bench_refs(|cache| black_box(cache.frame(&cmds, true)));
 }
 
 #[divan::bench]
 fn identical_frame(bencher: divan::Bencher) {
+    let cmds = layers(vec![rect(100, 100, 400, 300, 1)]);
     bencher
         .with_inputs(|| {
             let mut cache = CacheBench::default();
-            cache.frame(WIDTH, HEIGHT, &[(Rect::new(100, 100, 400, 300), 1)], false);
+            cache.frame(&cmds, false);
             cache
         })
-        .bench_refs(|cache| black_box(cache.frame(WIDTH, HEIGHT, &[(Rect::new(100, 100, 400, 300), 1)], false)));
+        .bench_refs(|cache| black_box(cache.frame(&cmds, false)));
 }
 
 struct Alternating {
     cache: CacheBench,
-    state: u64,
+    state: u32,
 }
 
 #[divan::bench]
@@ -67,10 +75,8 @@ fn one_small_change(bencher: divan::Bencher) {
         })
         .bench_refs(|ctx| {
             ctx.state ^= 1;
-            black_box(
-                ctx.cache
-                    .frame(WIDTH, HEIGHT, &[(Rect::new(300, 300, 40, 24), ctx.state)], false),
-            )
+            let cmds = layers(vec![rect(300, 300, 40, 24, ctx.state)]);
+            black_box(ctx.cache.frame(&cmds, false))
         });
 }
 
@@ -84,13 +90,14 @@ fn moving_control(bencher: divan::Bencher) {
         .bench_refs(|ctx| {
             ctx.state ^= 1;
             let x = if ctx.state == 0 { 300 } else { 700 };
-            black_box(ctx.cache.frame(WIDTH, HEIGHT, &[(Rect::new(x, 300, 40, 24), 1)], false))
+            let cmds = layers(vec![rect(x, 300, 40, 24, 1)]);
+            black_box(ctx.cache.frame(&cmds, false))
         });
 }
 
 struct Scrolling {
     cache: CacheBench,
-    states: [Vec<(Rect, u64)>; 2],
+    states: [[Vec<Command<'static>>; 16]; 2],
     state: usize,
 }
 
@@ -99,9 +106,11 @@ fn scrolling_list(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| {
             let make = |offset: i32| {
-                (0..100)
-                    .map(|row| (Rect::new(200, row * 28 + offset, 900, 26), row as u64))
-                    .collect()
+                layers(
+                    (0..100)
+                        .map(|row| rect(200, row * 28 + offset, 900, 26, row as u32))
+                        .collect(),
+                )
             };
             Scrolling {
                 cache: CacheBench::default(),
@@ -111,7 +120,7 @@ fn scrolling_list(bencher: divan::Bencher) {
         })
         .bench_refs(|ctx| {
             ctx.state ^= 1;
-            black_box(ctx.cache.frame(WIDTH, HEIGHT, &ctx.states[ctx.state], false))
+            black_box(ctx.cache.frame(&ctx.states[ctx.state], false))
         });
 }
 
@@ -124,9 +133,7 @@ fn full_screen_change(bencher: divan::Bencher) {
         })
         .bench_refs(|ctx| {
             ctx.state ^= 1;
-            black_box(
-                ctx.cache
-                    .frame(WIDTH, HEIGHT, &[(Rect::new(0, 0, WIDTH, HEIGHT), ctx.state)], false),
-            )
+            let cmds = layers(vec![rect(0, 0, WIDTH, HEIGHT, ctx.state)]);
+            black_box(ctx.cache.frame(&cmds, false))
         });
 }

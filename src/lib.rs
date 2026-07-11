@@ -108,13 +108,12 @@ pub struct ScrollState {
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
-pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
+pub fn ui(title: &str, width: usize, height: usize) -> Context {
     let window = miniwin::create_window(title, None, width as i32, height as i32, false, WindowStyle::Standard);
 
     Context {
         window,
         state: UiState {
-            commands: [const { Vec::new() }; 16],
             fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
@@ -137,13 +136,12 @@ pub fn ui<'a>(title: &str, width: usize, height: usize) -> Context<'a> {
     }
 }
 
-pub struct Context<'a> {
+pub struct Context {
     pub window: std::pin::Pin<Box<Window>>,
-    state: UiState<'a>,
+    state: UiState,
 }
 
-pub struct UiState<'a> {
-    pub commands: [Vec<Command<'a>>; 16],
+pub struct UiState {
     pub fonts: Vec<fontdue::Font>,
     pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
@@ -167,54 +165,59 @@ pub struct UiState<'a> {
     render_cache: RenderCache,
 }
 
-pub struct FrameContext<'frame, 'a> {
+pub struct FrameContext<'frame, 'text> {
     pub window: &'frame mut Window,
-    state: &'frame mut UiState<'a>,
+    state: &'frame mut UiState,
+    commands: [Vec<Command<'text>>; 16],
 }
 
-impl<'a> Deref for Context<'a> {
-    type Target = UiState<'a>;
+impl Deref for Context {
+    type Target = UiState;
 
     fn deref(&self) -> &Self::Target {
         &self.state
     }
 }
 
-impl<'a> DerefMut for Context<'a> {
+impl DerefMut for Context {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.state
     }
 }
 
-impl<'frame, 'a> Deref for FrameContext<'frame, 'a> {
-    type Target = UiState<'a>;
+impl Deref for FrameContext<'_, '_> {
+    type Target = UiState;
 
     fn deref(&self) -> &Self::Target {
         self.state
     }
 }
 
-impl<'frame, 'a> DerefMut for FrameContext<'frame, 'a> {
+impl DerefMut for FrameContext<'_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.state
     }
 }
 
-impl<'a> Context<'a> {
+impl Context {
     /// Force the next frame to rebuild the complete framebuffer.
     pub fn invalidate_render_cache(&mut self) {
         self.state.render_cache.invalidate();
     }
 
-    pub fn frame<F>(&mut self, mut ui: F)
+    pub fn frame<'text, F>(&mut self, mut ui: F)
     where
-        F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
+        F: for<'frame> FnMut(&mut FrameContext<'frame, 'text>),
     {
         profile!();
         let state = &mut self.state;
 
         self.window.draw(|window| {
-            let mut frame = FrameContext { window, state };
+            let mut frame = FrameContext {
+                window,
+                state,
+                commands: [const { Vec::new() }; 16],
+            };
             let now = std::time::Instant::now();
             frame.dt = (now - frame.last_frame_time).as_secs_f32();
             frame.last_frame_time = now;
@@ -268,7 +271,7 @@ impl<'a> Context<'a> {
     }
 }
 
-impl<'a> UiState<'a> {
+impl UiState {
     /// Add a font then return a font ID to use.
     pub fn add_font(&mut self, font: fontdue::Font) -> usize {
         let id = self.fonts.len();
@@ -277,7 +280,7 @@ impl<'a> UiState<'a> {
     }
 }
 
-impl<'frame, 'a> FrameContext<'frame, 'a> {
+impl<'frame, 'text> FrameContext<'frame, 'text> {
     /// Force the current frame to rebuild the complete framebuffer.
     pub fn invalidate_render_cache(&mut self) {
         self.state.render_cache.invalidate();
@@ -620,7 +623,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn paint_text(
         &mut self,
-        text: impl Into<Cow<'a, str>>,
+        text: impl Into<Cow<'text, str>>,
         paint_x: i32,
         paint_y: i32,
         width: i32,
@@ -671,11 +674,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         self.item("", false, style)
     }
 
-    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
+    pub fn text(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
         self.item(text, false, style)
     }
 
-    pub fn item(&mut self, text: impl Into<Cow<'a, str>>, selected: bool, style: Style) -> State {
+    pub fn item(&mut self, text: impl Into<Cow<'text, str>>, selected: bool, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let text_metrics = if text.is_empty() {
@@ -1055,7 +1058,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let (framebuffer_width, framebuffer_height) = window.framebuffer_size();
 
         let dirty = state.render_cache.update(
-            &state.commands,
+            &self.commands,
             display_scale,
             framebuffer_width,
             framebuffer_height,
@@ -1071,7 +1074,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 state.clear_color,
             );
             raster_damage(
-                &state.commands,
+                &self.commands,
                 state.render_cache.prepared(),
                 state.render_cache.damage(),
                 buffer,
@@ -1084,9 +1087,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             window.present();
         }
 
-        for layer in &mut state.commands {
-            layer.clear();
-        }
         state.render_cache.finish();
     }
 

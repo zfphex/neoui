@@ -275,7 +275,6 @@ impl<'a> UiState<'a> {
         self.fonts.push(font);
         id
     }
-
 }
 
 impl<'frame, 'a> FrameContext<'frame, 'a> {
@@ -1067,7 +1066,12 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         if dirty {
             let buffer = window.framebuffer();
-            clear_damage(buffer, framebuffer_width, state.render_cache.damage(), state.clear_color);
+            clear_damage(
+                buffer,
+                framebuffer_width,
+                state.render_cache.damage(),
+                state.clear_color,
+            );
             raster_damage(
                 &state.commands,
                 state.render_cache.prepared(),

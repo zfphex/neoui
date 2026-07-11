@@ -256,5 +256,4 @@ fn main() {
             ui.window.close();
         }
     }
-
 }

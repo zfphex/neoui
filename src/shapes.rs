@@ -51,8 +51,15 @@ pub const fn scale(value: usize, scale: f32) -> usize {
     (value as f32 * scale).round() as usize
 }
 
-pub const fn scale_f32(value: f32, scale: f32) -> i32 {
-    (value * scale).round() as i32
+pub const fn scale_i32(value: i32, scale: f32) -> i32 {
+    (value as f32 * scale).round() as i32
+}
+
+/// Returns `None` if fully clipped.
+#[inline]
+pub fn visible_rect(shape: Rect, clip: Rect, fb_w: i32, fb_h: i32) -> Option<Rect> {
+    let r = shape.intersection(clip).clamp_to_size(fb_w, fb_h);
+    if r.is_empty() { None } else { Some(r) }
 }
 
 pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
@@ -152,39 +159,27 @@ pub fn draw_rect(
     }
 }
 
-pub fn draw_rect_outline(
-    buffer: &mut [u32],
-    x: i32,
-    y: i32,
-    width: usize,
-    height: usize,
-    window_width: usize,
-    color: u32,
-    clip: Rect,
-    sides: u8,
-) {
+pub fn draw_rect_outline(buffer: &mut [u32], bounds: Rect, window_width: usize, color: u32, clip: Rect, sides: u8) {
     use border::*;
 
-    if width == 0 || height == 0 || window_width == 0 {
+    if bounds.is_empty() || window_width == 0 {
         return;
     }
 
-    let right = x + width.saturating_sub(1) as i32;
-    let bottom = y + height.saturating_sub(1) as i32;
-    let min_x = x.max(clip.x).max(0).min(window_width as i32) as usize;
-    let max_x = (right + 1)
-        .min(clip.right())
-        .min(window_width as i32)
-        .max(0) as usize;
-    let min_y = y.max(clip.y).max(0).min((buffer.len() / window_width) as i32) as usize;
-    let max_y = (bottom + 1)
-        .min(clip.bottom())
-        .min((buffer.len() / window_width) as i32)
-        .max(0) as usize;
-
-    if min_x >= max_x || min_y >= max_y {
+    let fb_h = (buffer.len() / window_width) as i32;
+    let Some(vis) = visible_rect(bounds, clip, window_width as i32, fb_h) else {
         return;
-    }
+    };
+
+    let min_x = vis.x as usize;
+    let max_x = vis.right() as usize;
+    let min_y = vis.y as usize;
+    let max_y = vis.bottom() as usize;
+
+    let x = bounds.x;
+    let y = bounds.y;
+    let right = bounds.right() - 1;
+    let bottom = bounds.bottom() - 1;
 
     if sides & TOP != 0 && y >= min_y as i32 && y < max_y as i32 {
         let start = y as usize * window_width + min_x;
@@ -215,36 +210,30 @@ pub fn draw_rect_outline(
 
 pub fn draw_rounded_rect(
     buffer: &mut [u32],
-    x: i32,
-    y: i32,
-    width: usize,
-    height: usize,
+    bounds: Rect,
     window_width: usize,
     window_height: usize,
     radius: usize,
     color: u32,
     clip: Rect,
 ) {
-    if width == 0 || height == 0 {
+    if bounds.is_empty() {
         return;
     }
 
+    let x = bounds.x;
+    let y = bounds.y;
+    let width = bounds.width as usize;
+    let height = bounds.height as usize;
     let radius = radius.min(width / 2).min(height / 2);
-    let min_y = y.max(clip.y).max(0).min(window_height as i32) as usize;
-    let max_y = (y + height as i32)
-        .min(clip.bottom())
-        .min(window_height as i32)
-        .max(0) as usize;
-    let min_x = x.max(clip.x).max(0).min(window_width as i32) as usize;
-    let max_x = (x + width as i32)
-        .min(clip.right())
-        .min(window_width as i32)
-        .max(0) as usize;
 
-    // Fully clipped
-    if min_x >= max_x || min_y >= max_y {
+    let Some(vis) = visible_rect(bounds, clip, window_width as i32, window_height as i32) else {
         return;
-    }
+    };
+    let min_x = vis.x as usize;
+    let max_x = vis.right() as usize;
+    let min_y = vis.y as usize;
+    let max_y = vis.bottom() as usize;
 
     if radius == 0 {
         for py in min_y..max_y {
@@ -368,10 +357,7 @@ pub fn draw_rounded_rect(
 
 pub fn draw_rounded_rect_outline(
     buffer: &mut [u32],
-    x: i32,
-    y: i32,
-    width: usize,
-    height: usize,
+    bounds: Rect,
     window_width: usize,
     window_height: usize,
     radius: usize,
@@ -379,25 +365,27 @@ pub fn draw_rounded_rect_outline(
     color: u32,
     clip: Rect,
 ) {
-    if width == 0 || height == 0 || thickness == 0 {
+    if bounds.is_empty() || thickness == 0 {
         return;
     }
 
     if radius == 0 {
-        draw_rect_outline(buffer, x, y, width, height, window_width, color, clip, border::ALL);
+        draw_rect_outline(buffer, bounds, window_width, color, clip, border::ALL);
     }
 
+    let x = bounds.x;
+    let y = bounds.y;
+    let width = bounds.width as usize;
+    let height = bounds.height as usize;
     let radius = radius.min(width / 2).min(height / 2);
-    let min_y = y.max(clip.y).max(0).min(window_height as i32) as usize;
-    let max_y = (y + height as i32)
-        .min(clip.bottom())
-        .min(window_height as i32)
-        .max(0) as usize;
-    let min_x = x.max(clip.x).max(0).min(window_width as i32) as usize;
-    let max_x = (x + width as i32)
-        .min(clip.right())
-        .min(window_width as i32)
-        .max(0) as usize;
+
+    let Some(vis) = visible_rect(bounds, clip, window_width as i32, window_height as i32) else {
+        return;
+    };
+    let min_x = vis.x as usize;
+    let max_x = vis.right() as usize;
+    let min_y = vis.y as usize;
+    let max_y = vis.bottom() as usize;
 
     let t_f32 = thickness as f32;
     let src_r = ((color >> 16 & 0xFF) as f32 / 255.0).powi(2);
@@ -607,11 +595,12 @@ pub fn draw_triangle_sdf(
 
     let pad_long = 1.5 + step_long.abs();
 
-    let min_y = y0.max(clip.y).max(0);
-    let max_y = y2
-        .min(clip.bottom().saturating_sub(1))
-        .min(window_height.saturating_sub(1) as i32);
-
+    let y_span = Rect::from_xyxy(0, y0, window_width as i32, y2 + 1);
+    let Some(vis_y) = visible_rect(y_span, clip, window_width as i32, window_height as i32) else {
+        return;
+    };
+    let min_y = vis_y.y;
+    let max_y = vis_y.bottom() - 1;
     if min_y > max_y {
         return;
     }
@@ -630,11 +619,12 @@ pub fn draw_triangle_sdf(
         let left_bound = (x_long - pad_long).min(x_short - pad_short);
         let right_bound = (x_long + pad_long).max(x_short + pad_short);
 
-        let min_x = (left_bound.max(0.0) as i32).max(clip.x).max(0).min(window_width as i32) as usize;
-        let max_x = (right_bound.max(0.0) as i32)
-            .min(clip.right())
-            .max(0)
-            .min(window_width as i32) as usize;
+        let x_span = Rect::from_xyxy(left_bound.max(0.0) as i32, y, right_bound.max(0.0) as i32, y + 1);
+        let Some(vis_x) = visible_rect(x_span, clip, window_width as i32, window_height as i32) else {
+            continue;
+        };
+        let min_x = vis_x.x as usize;
+        let max_x = vis_x.right() as usize;
 
         let mut solid_start = window_width;
         let mut solid_end = 0;
@@ -705,21 +695,20 @@ pub fn draw_text(
     font: &fontdue::Font,
     x: i32,
     y: i32,
-    font_size: usize,
-    display_scale: f32,
+    font_size: f32,
     window_width: usize,
     buffer: &mut [u32],
     color: u32,
     cache: &mut FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
     clip: Rect,
 ) -> Rect {
-    if text.is_empty() || font_size == 0 || window_width == 0 {
+    if text.is_empty() || font_size <= 0.0 || window_width == 0 {
         return Rect::default();
     }
 
-    let scaled_font_size = (font_size as f32 * display_scale).round();
-    let x_start = (x as f32 * display_scale).round();
-    let y_start = (y as f32 * display_scale).round();
+    let scaled_font_size = font_size.round();
+    let x_start = x as f32;
+    let y_start = y as f32;
 
     let line_metrics = font.horizontal_line_metrics(scaled_font_size).unwrap();
     let ascent = line_metrics.ascent;
@@ -760,7 +749,6 @@ pub fn draw_text(
                 max_y = max_y.max(current_max_y);
             }
 
-            // Exact Clip Intersection
             let draw_start_x = glyph_screen_x.max(clip_x).max(0);
             let draw_end_x = (glyph_screen_x + metrics.width as i32)
                 .min(clip_right)
@@ -778,26 +766,21 @@ pub fn draw_text(
                 for screen_y in draw_start_y..draw_end_y {
                     let bitmap_y = (screen_y - glyph_screen_y) as usize;
 
-                    // Exact memory slicing (Elides bounds checks)
                     let buffer_start = screen_y as usize * window_width + draw_start_x as usize;
-                    // Grab the pixels we will write to in the window buffer
                     let buffer_row = &mut buffer[buffer_start..buffer_start + draw_width];
 
                     let bitmap_start = (bitmap_y * metrics.width + bitmap_offset_x) * 3;
-                    // Grab the subpixel masks for this row
                     let bitmap_row = &bitmap[bitmap_start..bitmap_start + draw_width * 3];
 
-                    const INV_255: f32 = 1.0 / 255.0; // Mult is faster than div (on my machine)
+                    const INV_255: f32 = 1.0 / 255.0;
 
-                    // Zip iteration allows the compiler to auto-vectorize
                     for (i, bg) in buffer_row.iter_mut().enumerate() {
                         let mask_idx = i * 3;
                         let m_r = bitmap_row[mask_idx];
                         let m_g = bitmap_row[mask_idx + 1];
                         let m_b = bitmap_row[mask_idx + 2];
 
-                        // Skip empty pixels to save memory bandwidth (avoid dirtying cache lines)
-                        if m_r == 0 && m_g == 0 && m_b == 0 {
+                        if m_r | m_g | m_b == 0 {
                             continue;
                         }
 
@@ -807,15 +790,13 @@ pub fn draw_text(
 
                         let (bg_r, bg_g, bg_b) = split(*bg);
 
-                        // LUT lookups
                         let bg_r_lin = GAMMA_TO_LINEAR[bg_r as usize];
                         let bg_g_lin = GAMMA_TO_LINEAR[bg_g as usize];
                         let bg_b_lin = GAMMA_TO_LINEAR[bg_b as usize];
 
-                        // Fused Multiply-Add
-                        let out_r_lin = txt_r_lin.mul_add(mask_r, bg_r_lin * (1.0 - mask_r));
-                        let out_g_lin = txt_g_lin.mul_add(mask_g, bg_g_lin * (1.0 - mask_g));
-                        let out_b_lin = txt_b_lin.mul_add(mask_b, bg_b_lin * (1.0 - mask_b));
+                        let out_r_lin = txt_r_lin * mask_r + bg_r_lin * (1.0 - mask_r);
+                        let out_g_lin = txt_g_lin * mask_g + bg_g_lin * (1.0 - mask_g);
+                        let out_b_lin = txt_b_lin * mask_b + bg_b_lin * (1.0 - mask_b);
 
                         let out_r = LINEAR_TO_GAMMA[(out_r_lin * LINEAR_INDEX) as usize] as u32;
                         let out_g = LINEAR_TO_GAMMA[(out_g_lin * LINEAR_INDEX) as usize] as u32;
@@ -835,21 +816,13 @@ pub fn draw_text(
         y_pos += line_metrics.new_line_size;
     }
 
-    let x0 = x_start as i32;
-    let y0 = y_start as i32;
+    let x0 = x;
+    let y0 = y;
     Rect {
         x: x0,
         y: y0,
-        width: if max_x as i32 >= x0 {
-            max_x as i32 + 1 - x0
-        } else {
-            0
-        },
-        height: if max_y as i32 >= y0 {
-            max_y as i32 + 1 - y0
-        } else {
-            0
-        },
+        width: if max_x as i32 >= x0 { max_x as i32 + 1 - x0 } else { 0 },
+        height: if max_y as i32 >= y0 { max_y as i32 + 1 - y0 } else { 0 },
     }
 }
 
@@ -933,10 +906,7 @@ pub fn draw_command(
             bounds, color, radius, ..
         } => draw_rounded_rect(
             buffer,
-            scale_f32(bounds.x as f32, display_scale),
-            scale_f32(bounds.y as f32, display_scale),
-            scale(bounds.width.max(0) as usize, display_scale),
-            scale(bounds.height.max(0) as usize, display_scale),
+            bounds.scale(display_scale),
             framebuffer_width,
             framebuffer_height,
             scale(*radius, display_scale),
@@ -950,10 +920,7 @@ pub fn draw_command(
             ..
         } => draw_rect_outline(
             buffer,
-            scale_f32(bounds.x as f32, display_scale),
-            scale_f32(bounds.y as f32, display_scale),
-            scale(bounds.width.max(0) as usize, display_scale),
-            scale(bounds.height.max(0) as usize, display_scale),
+            bounds.scale(display_scale),
             framebuffer_width,
             *color,
             clip,
@@ -968,13 +935,13 @@ pub fn draw_command(
             ..
         } => {
             let bitmap = font_bitmaps.entry(*font_id).or_default();
+            let origin = bounds.scale(display_scale);
             draw_text(
                 text,
                 &fonts[*font_id],
-                bounds.x,
-                bounds.y,
-                *size,
-                display_scale,
+                origin.x,
+                origin.y,
+                scale(*size, display_scale) as f32,
                 framebuffer_width,
                 buffer,
                 *color,
@@ -986,12 +953,12 @@ pub fn draw_command(
             buffer,
             framebuffer_width,
             framebuffer_height,
-            scale_f32(a.0 as f32, display_scale),
-            scale_f32(a.1 as f32, display_scale),
-            scale_f32(b.0 as f32, display_scale),
-            scale_f32(b.1 as f32, display_scale),
-            scale_f32(c.0 as f32, display_scale),
-            scale_f32(c.1 as f32, display_scale),
+            scale_i32(a.0, display_scale),
+            scale_i32(a.1, display_scale),
+            scale_i32(b.0, display_scale),
+            scale_i32(b.1, display_scale),
+            scale_i32(c.0, display_scale),
+            scale_i32(c.1, display_scale),
             *color,
             clip,
         ),

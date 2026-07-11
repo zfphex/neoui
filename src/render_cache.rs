@@ -242,12 +242,12 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
     let bounds = match command {
         Command::Rect { bounds, .. } | Command::RectOutline { bounds, .. } => bounds.scale(scale_factor),
         Command::Triangle { a, b, c, .. } => {
-            let ax = scale_f32(a.0 as f32, scale_factor);
-            let ay = scale_f32(a.1 as f32, scale_factor);
-            let bx = scale_f32(b.0 as f32, scale_factor);
-            let by = scale_f32(b.1 as f32, scale_factor);
-            let cx = scale_f32(c.0 as f32, scale_factor);
-            let cy = scale_f32(c.1 as f32, scale_factor);
+            let ax = scale_i32(a.0, scale_factor);
+            let ay = scale_i32(a.1, scale_factor);
+            let bx = scale_i32(b.0, scale_factor);
+            let by = scale_i32(b.1, scale_factor);
+            let cx = scale_i32(c.0, scale_factor);
+            let cy = scale_i32(c.1, scale_factor);
             Rect::from_xyxy(
                 ax.min(bx).min(cx).saturating_sub(1),
                 ay.min(by).min(cy).saturating_sub(1),

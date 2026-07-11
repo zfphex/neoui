@@ -33,8 +33,7 @@ impl CacheBench {
         if force_full {
             self.cache.invalidate();
         }
-        self.cache
-            .update(commands, 1.0, WIDTH as usize, HEIGHT as usize, 0);
+        self.cache.update(commands, 1.0, WIDTH as usize, HEIGHT as usize, 0);
         let n = self.cache.damage().len();
         self.cache.finish();
         n

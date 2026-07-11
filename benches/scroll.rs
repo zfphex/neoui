@@ -50,11 +50,7 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
             continue;
         }
         let bounds = Rect::new(VIEW_X + 8, y, VIEW_W - 16, ROW_H);
-        let color = if row % 2 == 0 {
-            rgb(35, 35, 35)
-        } else {
-            rgb(28, 28, 28)
-        };
+        let color = if row % 2 == 0 { rgb(35, 35, 35) } else { rgb(28, 28, 28) };
         cmds.push(Command::Rect {
             bounds,
             clip,
@@ -63,9 +59,7 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
         });
         // Track title text (dominant cost when scrolling real UIs).
         cmds.push(Command::Text {
-            text: std::borrow::Cow::Owned(format!(
-                "{row:03}. Song title example row for scroll bench"
-            )),
+            text: std::borrow::Cow::Owned(format!("{row:03}. Song title example row for scroll bench")),
             font_id: 0,
             clip,
             bounds: Rect::new(bounds.x + 8, bounds.y, bounds.width - 16, bounds.height),

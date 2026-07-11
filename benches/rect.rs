@@ -19,10 +19,7 @@ fn bench_draw_rect_no_radius(bencher: divan::Bencher) {
     bencher.with_inputs(create_context).bench_refs(|ctx| {
         draw_rounded_rect(
             &mut ctx.buffer,
-            0,
-            0,
-            300,
-            300,
+            Rect::new(0, 0, 300, 300),
             1000,
             1000,
             0,
@@ -37,10 +34,7 @@ fn bench_draw_rect_pill_shape(bencher: divan::Bencher) {
     bencher.with_inputs(create_context).bench_refs(|ctx| {
         draw_rounded_rect(
             &mut ctx.buffer,
-            0,
-            0,
-            300,
-            100,
+            Rect::new(0, 0, 300, 100),
             1000,
             1000,
             150,
@@ -55,10 +49,7 @@ fn bench_draw_rect_fully_clipped(bencher: divan::Bencher) {
     bencher.with_inputs(create_context).bench_refs(|ctx| {
         draw_rounded_rect(
             &mut ctx.buffer,
-            0,
-            0,
-            300,
-            300,
+            Rect::new(0, 0, 300, 300),
             1000,
             1000,
             12,
@@ -73,10 +64,7 @@ fn bench_draw_rect_partially_clipped(bencher: divan::Bencher) {
     bencher.with_inputs(create_context).bench_refs(|ctx| {
         draw_rounded_rect(
             &mut ctx.buffer,
-            -50,
-            -50,
-            300,
-            300,
+            Rect::new(-50, -50, 300, 300),
             1000,
             1000,
             12,

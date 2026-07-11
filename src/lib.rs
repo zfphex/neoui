@@ -794,10 +794,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
 
         let depth = style.depth.unwrap_or(0);
-        let clicked = self.clicked(rect);
         let hovered = self.hovered_depth(rect, depth);
-        let pressed = self.pressed(rect);
-        let released = self.released(rect);
+        // Input follows the same depth ordering as hover.
+        let clicked = hovered && self.clicked(rect);
+        let pressed = hovered && self.pressed(rect);
+        let released = hovered && self.released(rect);
         let clip = self.layout_stack.last().expect("No active frame").clip;
 
         let bg = if selected && style.selected.is_some() {

@@ -48,7 +48,7 @@ pub struct AnimationStateF32 {
     pub elapsed: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub enum Command<'a> {
     Rect {
         bounds: Rect,

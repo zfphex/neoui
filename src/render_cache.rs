@@ -1,4 +1,5 @@
 use crate::*;
+use std::hash::{Hash, Hasher};
 
 pub const TILE_SIZE: usize = 64;
 const FULL_REDRAW_PERCENT: usize = 60;
@@ -11,10 +12,46 @@ const HASH_MIX: u64 = 0x9e37_79b9_7f4a_7c15;
 /// Seed tag so clear-color hashes don't collide with empty tiles.
 const CLEAR_HASH_TAG: u64 = 0xff;
 
-const CMD_RECT: u64 = 0;
-const CMD_RECT_OUTLINE: u64 = 1;
-const CMD_TRIANGLE: u64 = 2;
-const CMD_TEXT: u64 = 3;
+struct MixHasher(u64);
+
+impl MixHasher {
+    fn new() -> Self {
+        Self(HASH_SEED)
+    }
+}
+
+impl Hasher for MixHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = mix(self.0, b as u64);
+        }
+    }
+
+    fn write_u8(&mut self, i: u8) {
+        self.0 = mix(self.0, i as u64);
+    }
+
+    fn write_u32(&mut self, i: u32) {
+        self.0 = mix(self.0, i as u64);
+    }
+
+    fn write_u64(&mut self, i: u64) {
+        self.0 = mix(self.0, i);
+    }
+
+    fn write_usize(&mut self, i: usize) {
+        self.0 = mix(self.0, i as u64);
+    }
+
+    fn write_i32(&mut self, i: i32) {
+        // Match prior field hashing: reinterpret bits as unsigned, no sign-extend.
+        self.0 = mix(self.0, i as u32 as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparedCommand {
@@ -71,7 +108,10 @@ impl RenderCache {
                 if bounds.is_empty() || cols == 0 || rows == 0 {
                     continue;
                 }
-                let hash = command_hash(command, layer);
+                let mut hasher = MixHasher::new();
+                layer.hash(&mut hasher);
+                command.hash(&mut hasher);
+                let hash = hasher.finish();
                 let x0 = bounds.x.max(0) as usize / TILE_SIZE;
                 let y0 = bounds.y.max(0) as usize / TILE_SIZE;
                 let x1 = (bounds.right().max(1) as usize - 1) / TILE_SIZE;
@@ -171,8 +211,7 @@ impl RenderCache {
 
     fn full_damage(&mut self) {
         self.damage.clear();
-        self.damage
-            .push(Rect::new(0, 0, self.width as i32, self.height as i32));
+        self.damage.push(Rect::new(0, 0, self.width as i32, self.height as i32));
     }
 }
 
@@ -181,82 +220,7 @@ fn mix(h: u64, v: u64) -> u64 {
     h ^ v.wrapping_mul(HASH_MIX)
 }
 
-fn mix_bytes(mut h: u64, bytes: &[u8]) -> u64 {
-    for &b in bytes {
-        h = mix(h, b as u64);
-    }
-    h
-}
-
-fn hash_rect(mut h: u64, r: Rect) -> u64 {
-    h = mix(h, r.x as u32 as u64);
-    h = mix(h, r.y as u32 as u64);
-    h = mix(h, r.width as u32 as u64);
-    mix(h, r.height as u32 as u64)
-}
-
-fn command_hash(command: &Command<'_>, layer: usize) -> u64 {
-    let mut h = mix(HASH_SEED, layer as u64);
-    match command {
-        Command::Rect {
-            bounds,
-            clip,
-            color,
-            radius,
-        } => {
-            h = mix(h, CMD_RECT);
-            h = hash_rect(h, *bounds);
-            h = hash_rect(h, *clip);
-            h = mix(h, *color as u64);
-            mix(h, *radius as u64)
-        }
-        Command::RectOutline {
-            bounds,
-            clip,
-            color,
-            radius,
-            border_thickness,
-            border_sides,
-        } => {
-            h = mix(h, CMD_RECT_OUTLINE);
-            h = hash_rect(h, *bounds);
-            h = hash_rect(h, *clip);
-            h = mix(h, *color as u64);
-            h = mix(h, *radius as u64);
-            h = mix(h, *border_thickness as u64);
-            mix(h, *border_sides as u64)
-        }
-        Command::Triangle { a, b, c, clip, color } => {
-            h = mix(h, CMD_TRIANGLE);
-            h = mix(h, a.0 as u32 as u64);
-            h = mix(h, a.1 as u32 as u64);
-            h = mix(h, b.0 as u32 as u64);
-            h = mix(h, b.1 as u32 as u64);
-            h = mix(h, c.0 as u32 as u64);
-            h = mix(h, c.1 as u32 as u64);
-            h = hash_rect(h, *clip);
-            mix(h, *color as u64)
-        }
-        Command::Text {
-            text,
-            font_id,
-            clip,
-            bounds,
-            color,
-            size,
-        } => {
-            h = mix(h, CMD_TEXT);
-            h = mix_bytes(h, text.as_bytes());
-            h = mix(h, *font_id as u64);
-            h = hash_rect(h, *clip);
-            h = hash_rect(h, *bounds);
-            h = mix(h, *color as u64);
-            mix(h, *size as u64)
-        }
-    }
-}
-
-pub(crate) fn command_clip(command: &Command<'_>) -> Rect {
+pub fn command_clip(command: &Command<'_>) -> Rect {
     match command {
         Command::Rect { clip, .. }
         | Command::RectOutline { clip, .. }
@@ -265,12 +229,7 @@ pub(crate) fn command_clip(command: &Command<'_>) -> Rect {
     }
 }
 
-pub fn command_bounds(
-    command: &Command<'_>,
-    scale_factor: f32,
-    fb_w: usize,
-    fb_h: usize,
-) -> Rect {
+pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_h: usize) -> Rect {
     let bounds = match command {
         Command::Rect { bounds, .. } | Command::RectOutline { bounds, .. } => bounds.scale(scale_factor),
         Command::Triangle { a, b, c, .. } => {
@@ -302,4 +261,3 @@ pub fn command_bounds(
         .intersection(command_clip(command).scale(scale_factor))
         .clamp_to_size(fb_w as i32, fb_h as i32)
 }
-

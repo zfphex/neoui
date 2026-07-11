@@ -23,6 +23,47 @@ pub struct CacheFrameStats {
     pub full_redraw: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RenderCacheStats {
+    pub frames: u64,
+    pub zero_damage_frames: u64,
+    pub full_redraw_frames: u64,
+    pub total_dirty_tiles: u64,
+    pub total_damage_rects: u64,
+    pub total_damaged_pixels: u64,
+    pub total_framebuffer_pixels: u64,
+}
+
+impl RenderCacheStats {
+    pub fn mean_dirty_tiles(&self) -> f64 {
+        self.total_dirty_tiles as f64 / self.frames.max(1) as f64
+    }
+
+    pub fn mean_damage_rects(&self) -> f64 {
+        self.total_damage_rects as f64 / self.frames.max(1) as f64
+    }
+
+    pub fn mean_damaged_percent(&self) -> f64 {
+        self.total_damaged_pixels as f64 * 100.0 / self.total_framebuffer_pixels.max(1) as f64
+    }
+}
+
+impl std::fmt::Display for RenderCacheStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "render cache: {} frames, {} zero-damage, {} full redraws, mean {:.2} dirty tiles, \
+             mean {:.2} regions, mean {:.3}% damaged pixels",
+            self.frames,
+            self.zero_damage_frames,
+            self.full_redraw_frames,
+            self.mean_dirty_tiles(),
+            self.mean_damage_rects(),
+            self.mean_damaged_percent(),
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct RenderCache {
     pub current: Vec<u64>,
@@ -96,9 +137,7 @@ impl RenderCache {
     }
 
     pub fn add_command(&mut self, command: PreparedCommand) {
-        let bounds = command
-            .bounds
-            .clamp_to_size(self.width as i32, self.height as i32);
+        let bounds = command.bounds.clamp_to_size(self.width as i32, self.height as i32);
         if bounds.is_empty() || self.cols == 0 || self.rows == 0 {
             return;
         }
@@ -183,8 +222,7 @@ impl RenderCache {
 
     fn set_full_damage(&mut self) {
         self.damage.clear();
-        self.damage
-            .push(Rect::new(0, 0, self.width as i32, self.height as i32));
+        self.damage.push(Rect::new(0, 0, self.width as i32, self.height as i32));
         self.finish_stats(true);
     }
 
@@ -431,10 +469,7 @@ pub fn draw_command(
 
     match command {
         Command::Rect {
-            bounds,
-            color,
-            radius,
-            ..
+            bounds, color, radius, ..
         } => draw_rounded_rect(
             buffer,
             scale_f32(bounds.x as f32, display_scale),

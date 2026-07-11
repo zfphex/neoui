@@ -41,19 +41,6 @@ pub enum Ease {
     OutBack,
 }
 
-pub fn apply_ease(t: f32, ease: Ease) -> f32 {
-    match ease {
-        Ease::Linear => t,
-        Ease::OutCubic => 1.0 - (1.0 - t).powi(3),
-        Ease::InOutSine => -(std::f32::consts::PI * t).cos() / 2.0 + 0.5,
-        Ease::OutBack => {
-            let c1 = 1.70158;
-            let c3 = c1 + 1.0;
-            1.0 + c3 * (t - 1.0).powi(3) + c1 * (t - 1.0).powi(2)
-        }
-    }
-}
-
 pub struct AnimationStateF32 {
     pub current: f32,
     pub target: f32,
@@ -117,47 +104,6 @@ pub struct ScrollState {
     pub scrolled: bool,
     /// 1 up, -1 down.
     pub direction: i32,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RenderCacheStats {
-    pub frames: u64,
-    pub zero_damage_frames: u64,
-    pub full_redraw_frames: u64,
-    pub total_dirty_tiles: u64,
-    pub total_damage_rects: u64,
-    pub total_damaged_pixels: u64,
-    pub total_framebuffer_pixels: u64,
-}
-
-impl RenderCacheStats {
-    pub fn mean_dirty_tiles(&self) -> f64 {
-        self.total_dirty_tiles as f64 / self.frames.max(1) as f64
-    }
-
-    pub fn mean_damage_rects(&self) -> f64 {
-        self.total_damage_rects as f64 / self.frames.max(1) as f64
-    }
-
-    pub fn mean_damaged_percent(&self) -> f64 {
-        self.total_damaged_pixels as f64 * 100.0 / self.total_framebuffer_pixels.max(1) as f64
-    }
-}
-
-impl std::fmt::Display for RenderCacheStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "render cache: {} frames, {} zero-damage, {} full redraws, mean {:.2} dirty tiles, \
-             mean {:.2} regions, mean {:.3}% damaged pixels",
-            self.frames,
-            self.zero_damage_frames,
-            self.full_redraw_frames,
-            self.mean_dirty_tiles(),
-            self.mean_damage_rects(),
-            self.mean_damaged_percent(),
-        )
-    }
 }
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
@@ -617,7 +563,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         Some((y as f32 / rect.height as f32).clamp(0.0, 1.0))
     }
 
-
     /// Check if a rectangle is clicked off of
     pub fn lost_focus(&self, rect: Rect) -> bool {
         let Some(initial) = self.left_mouse_start else {
@@ -668,13 +613,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
         if let Some(color) = style.bg {
-            self.commands[depth].push(Command::Triangle {
-                a,
-                b,
-                c,
-                clip,
-                color,
-            });
+            self.commands[depth].push(Command::Triangle { a, b, c, clip, color });
         }
     }
 
@@ -1210,7 +1149,16 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 t = 1.0;
             }
 
-            let eased_t = apply_ease(t, ease);
+            let eased_t = match ease {
+                Ease::Linear => t,
+                Ease::OutCubic => 1.0 - (1.0 - t).powi(3),
+                Ease::InOutSine => -(std::f32::consts::PI * t).cos() / 2.0 + 0.5,
+                Ease::OutBack => {
+                    let c1 = 1.70158;
+                    let c3 = c1 + 1.0;
+                    1.0 + c3 * (t - 1.0).powi(3) + c1 * (t - 1.0).powi(2)
+                }
+            };
 
             state.current = state.initial + (state.target - state.initial) * eased_t;
             still_animating = true;

@@ -28,8 +28,8 @@ fn half_open_bounds_do_not_touch_the_next_tile() {
 }
 
 #[test]
-fn horizontal_runs_emit_one_rect_per_row() {
-    // Two rows of two dirty tiles each → two horizontal damage rects (no vertical merge).
+fn equal_horizontal_runs_merge_vertically() {
+    // Two rows of two dirty tiles each → one vertically merged damage rect.
     let mut cache = RenderCache::default();
     let empty = layers(Vec::new());
     assert!(cache.update(&empty, 1.0, 192, 192, 0));
@@ -38,10 +38,7 @@ fn horizontal_runs_emit_one_rect_per_row() {
     // Stamp tiles (0,0),(1,0),(0,1),(1,1) via a 128×128 rect.
     let filled = layers(vec![rect(0, 0, 128, 128, 1)]);
     assert!(cache.update(&filled, 1.0, 192, 192, 0));
-    assert_eq!(
-        cache.damage(),
-        &[Rect::new(0, 0, 128, 64), Rect::new(0, 64, 128, 64)]
-    );
+    assert_eq!(cache.damage(), &[Rect::new(0, 0, 128, 128)]);
 }
 
 #[test]

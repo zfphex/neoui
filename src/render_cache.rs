@@ -144,10 +144,26 @@ impl RenderCache {
                 let py = (y * TILE_SIZE) as i32;
                 let right = (x * TILE_SIZE).min(self.width) as i32;
                 let bottom = ((y + 1) * TILE_SIZE).min(self.height) as i32;
-                self.damage.push(Rect::new(px, py, right - px, bottom - py));
-                if self.damage.len() > MAX_DAMAGE_RECTS {
-                    self.full_damage();
-                    return;
+                let width = right - px;
+
+                // Grow a run upward when the same horizontal span sits on the row above.
+                let mut merged = false;
+                for rect in self.damage.iter_mut().rev() {
+                    if rect.bottom() < py {
+                        break;
+                    }
+                    if rect.x == px && rect.width == width && rect.bottom() == py {
+                        rect.height = bottom - rect.y;
+                        merged = true;
+                        break;
+                    }
+                }
+                if !merged {
+                    self.damage.push(Rect::new(px, py, width, bottom - py));
+                    if self.damage.len() > MAX_DAMAGE_RECTS {
+                        self.full_damage();
+                        return;
+                    }
                 }
             }
         }

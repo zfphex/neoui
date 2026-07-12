@@ -17,6 +17,8 @@ use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+pub use fontdue;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Flow {
     #[default]

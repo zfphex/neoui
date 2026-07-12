@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-fontdue = { version = "0.9.3", default-features = false }
+fontdue = { git = "https://github.com/zfphex/fontdue", default-features = false }
 mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = ["profile"] }
 rustc-hash = "2.1.2"
 divan = { version = "0.1.21", optional = true }

@@ -699,8 +699,8 @@ pub fn apply_lcd_filter(bitmap: &mut [u8], width: usize, height: usize) {
         for i in 0..stride {
             let idx = offset + i;
             let center = bitmap[idx] as u16;
-            let right = if i == stride - 1 { 0 } else { bitmap[idx + 1] as u16 };
-            bitmap[idx] = ((left + (center * 2) + right) / 4) as u8;
+            let right = if i + 1 < stride { bitmap[idx + 1] as u16 } else { 0 };
+            bitmap[idx] = ((left + center * 2 + right) / 4) as u8;
             left = center;
         }
     }

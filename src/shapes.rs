@@ -97,18 +97,34 @@ pub fn align_rect(
     let available_w = parent_w - pad_left - pad_right;
     let available_h = parent_h - pad_top - pad_bottom;
 
-    if child_w > available_w || child_h > available_h {
+    if available_w <= 0 || available_h <= 0 {
         return None;
     }
 
     let inner_x = parent_x + pad_left;
     let inner_y = parent_y + pad_top;
 
-    let mid_x = inner_x + (available_w / 2) - (child_w / 2);
-    let mid_y = inner_y + (available_h / 2) - (child_h / 2);
+    let mid_x = if child_w >= available_w {
+        inner_x
+    } else {
+        inner_x + (available_w / 2) - (child_w / 2)
+    };
+    let mid_y = if child_h >= available_h {
+        inner_y
+    } else {
+        inner_y + (available_h / 2) - (child_h / 2)
+    };
 
-    let right_edge = inner_x + available_w - child_w;
-    let bottom_edge = inner_y + available_h - child_h;
+    let right_edge = if child_w >= available_w {
+        inner_x
+    } else {
+        inner_x + available_w - child_w
+    };
+    let bottom_edge = if child_h >= available_h {
+        inner_y
+    } else {
+        inner_y + available_h - child_h
+    };
 
     Some(match alignment {
         Alignment::Left => (inner_x, mid_y),

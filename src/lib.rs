@@ -676,6 +676,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         depth: usize,
     ) {
         let text = text.into();
+        if text.is_empty() {
+            return;
+        }
         let text_metrics = self.measure_text(&text, font_id, font_size);
 
         let Some((x, y)) = align_rect(
@@ -691,7 +694,19 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             return;
         };
 
-        let clip = self.layout_stack.last().expect("No active frame").clip;
+        // Clip glyphs
+        let content = Rect::new(
+            paint_x + padding.left as i32,
+            paint_y + padding.top as i32,
+            (width - padding.left as i32 - padding.right as i32).max(0),
+            (height - padding.top as i32 - padding.bottom as i32).max(0),
+        );
+        let frame_clip = self.layout_stack.last().expect("No active frame").clip;
+        let clip = frame_clip.intersection(content);
+        if clip.is_empty() {
+            return;
+        }
+
         self.commands[depth].push(Command::Text {
             text,
             clip,

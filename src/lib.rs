@@ -856,19 +856,19 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let mut bounds = self.current_frame_bounds();
 
         if let Some(width) = style.width {
-            bounds.width = self.resolve_size(width, flow);
+            bounds.width = self.resolve_size(width, Flow::Right);
         }
 
         if let Some(height) = style.height {
-            bounds.height = self.resolve_size(height, flow);
+            bounds.height = self.resolve_size(height, Flow::Down);
         }
 
         if let Some(x) = style.x {
-            bounds.x = self.resolve_size(x, flow)
+            bounds.x = self.resolve_size(x, Flow::Right);
         }
 
         if let Some(y) = style.y {
-            bounds.y = self.resolve_size(y, flow)
+            bounds.y = self.resolve_size(y, Flow::Down);
         } else if parent_scroll != 0 {
             bounds.y -= parent_scroll as i32;
         }

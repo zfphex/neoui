@@ -275,6 +275,10 @@ impl Context {
             }
         });
 
+        if !self.window.open() {
+            return;
+        }
+
         if self.state.animating {
             self.window.wait_for_vsync();
         } else {

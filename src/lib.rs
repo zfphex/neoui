@@ -940,15 +940,25 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         r
     }
 
-    pub fn scroll_view<R>(
+    pub fn scroll<R>(
         &mut self,
         style: impl Into<Style>,
         scroll_y: &mut usize,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> ScrollState {
+        self.flow_scroll(style, scroll_y, ui, false)
+    }
+
+    pub fn flow_scroll<R>(
+        &mut self,
+        style: impl Into<Style>,
+        scroll_y: &mut usize,
+        ui: impl FnOnce(&mut Self) -> R,
+        advance: bool,
+    ) -> ScrollState {
         let flow = Flow::Down;
         let style = style.into();
-        let _ = self.flow(style, flow, false, *scroll_y, ui);
+        let _ = self.flow(style, flow, advance, *scroll_y, ui);
 
         let frame = self.layout_stack.pop().expect("Layout underflow");
         if let Some(parent) = self.layout_stack.last_mut() {
@@ -995,47 +1005,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         *scroll_y = (*scroll_y).clamp(0, max_scroll as usize);
 
         state
-    }
-
-    #[deprecated]
-    pub fn scroll<R>(&mut self, bounds: Option<Rect>, scroll_y: usize, ui: impl FnOnce(&mut Self) -> R) -> i32 {
-        let bounds = if let Some(bounds) = bounds {
-            bounds
-        } else {
-            self.current_frame_bounds()
-        };
-
-        let parent_clip = self.layout_stack.last().map(|p| p.clip).unwrap_or(bounds);
-        let new_frame = Frame {
-            bounds,
-            clip: parent_clip.intersection(bounds),
-            flow: Flow::Down,
-            cursor_x: bounds.x,
-            cursor_y: bounds.y,
-            scroll_y,
-            ..Default::default()
-        };
-        self.layout_stack.push(new_frame);
-
-        let _ = ui(self); //Probably fine.
-
-        let frame = self.layout_stack.pop().expect("Layout underflow");
-        if let Some(parent) = self.layout_stack.last_mut() {
-            match parent.flow {
-                Flow::Down => {
-                    parent.cursor_y += frame.bounds.height;
-                    parent.max_child_width = parent.max_child_width.max(frame.bounds.width);
-                    parent.max_child_height += frame.bounds.height;
-                }
-                Flow::Right => {
-                    parent.cursor_x += frame.bounds.width;
-                    parent.max_child_width += frame.bounds.width;
-                    parent.max_child_height = parent.max_child_height.max(frame.bounds.height);
-                }
-            }
-        }
-
-        frame.max_child_height
     }
 
     pub fn current_frame(&self) -> &Frame {

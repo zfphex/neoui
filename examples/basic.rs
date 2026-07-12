@@ -215,7 +215,7 @@ fn main() {
             //This is kinda cursed.
             let (track_rect, scrollbar) = ui.split_rect_h(track_rect, Size::FillMinus(20));
 
-            let state = ui.scroll_view(track_rect, &mut scroll_y, |ui| {
+            let state = ui.scroll(track_rect, &mut scroll_y, |ui| {
                 ui.text(
                     "beabadoobee - Fake It Flowers (2020)",
                     style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),

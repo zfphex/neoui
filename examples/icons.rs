@@ -25,10 +25,10 @@ fn main() {
         ui.frame(|ui| {
             ui.flow_down(style(), |ui| {
                 for (icon, label) in icons.iter() {
-                    ui.flow_right(style(), |ui| {
-                        ui.text(*icon, style().font(icon_id).font_size(32));
-                        ui.text(*label, style().font_size(32));
-                    });
+                    ui.line([
+                        text(*icon, style().font(icon_id).font_size(32).padr(12)),
+                        text(*label, style().font_size(32)),
+                    ]);
                 }
             });
 
@@ -76,10 +76,7 @@ fn main() {
                 ui.paint_rect(icon_rect, style().bg(rgb(24, 24, 24)).border(rgb(55, 55, 55)));
                 ui.paint_text(
                     *icon,
-                    icon_rect.x,
-                    icon_rect.y,
-                    icon_rect.width,
-                    icon_rect.height,
+                    icon_rect,
                     white(),
                     icon_id,
                     64,
@@ -87,7 +84,8 @@ fn main() {
                     Padding::default(),
                     0,
                 );
-                ui.flow_skip(bounds(label_rect), Flow::Down, |ui| {
+
+                ui.place_down(label_rect, |ui| {
                     ui.text(*label, style().fg(gray()).font_size(16));
                 });
             }

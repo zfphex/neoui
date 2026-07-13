@@ -1,4 +1,5 @@
 use crate::*;
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Size {
@@ -9,6 +10,14 @@ pub enum Size {
     Fill,
     /// Fill remaing space minus some value.
     FillMinus(i32),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CrossAlign {
+    #[default]
+    Start,
+    Center,
+    End,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -52,6 +61,9 @@ pub struct Style {
     pub border_side: Option<u8>,
     pub border_radius: Option<u32>,
 
+    //TODO: selected: bool
+    //Currently only some methods can select an item.
+    //Can be put into style.
     pub selected: Option<u32>,
     pub selected_border: Option<u32>,
 
@@ -70,6 +82,7 @@ pub struct Style {
     pub depth: Option<usize>,
 
     pub alignment: Option<Alignment>,
+    pub cross_align: Option<CrossAlign>,
     pub gap: Option<Size>,
 
     pub opacity: Option<u8>,
@@ -186,6 +199,11 @@ impl Style {
 
     pub fn align(mut self, alignment: Alignment) -> Self {
         self.alignment = Some(alignment);
+        self
+    }
+
+    pub fn cross_align(mut self, cross_align: CrossAlign) -> Self {
+        self.cross_align = Some(cross_align);
         self
     }
 
@@ -366,5 +384,45 @@ impl IntoSize for i32 {
 impl IntoSize for usize {
     fn into_size(self) -> Option<Size> {
         Some(Size::Pixel(self as i32))
+    }
+}
+
+pub fn text<'a>(content: impl Into<Cow<'a, str>>, style: Style) -> Line<'a> {
+    Line {
+        content: content.into(),
+        style,
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Line<'a> {
+    pub content: Cow<'a, str>,
+    pub style: Style,
+}
+
+impl<'a> From<&'a str> for Line<'a> {
+    fn from(content: &'a str) -> Self {
+        Line {
+            content: Cow::Borrowed(content),
+            style: Style::default(),
+        }
+    }
+}
+
+impl From<String> for Line<'static> {
+    fn from(content: String) -> Self {
+        Line {
+            content: Cow::Owned(content),
+            style: Style::default(),
+        }
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for Line<'a> {
+    fn from(content: Cow<'a, str>) -> Self {
+        Line {
+            content,
+            style: Style::default(),
+        }
     }
 }

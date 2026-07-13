@@ -178,7 +178,7 @@ fn main() {
                     .align(Alignment::Left)
                     .depth(1);
 
-                ui.flow_skip(style().x(rect.x).y(top_nav_rect.height), Flow::Down, |ui| {
+                ui.place_down(style().x(rect.x).y(top_nav_rect.height), |ui| {
                     for &item in dropdown_items(menu) {
                         if ui.item(item, false, item_style).clicked {
                             println!("{}", item);

@@ -31,6 +31,7 @@ pub struct Frame {
     pub bounds: Rect,
     pub clip: Rect,
     pub flow: Flow,
+    pub cross_align: CrossAlign,
     pub cursor_x: i32,
     pub cursor_y: i32,
     pub max_child_width: i32,
@@ -304,7 +305,25 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
     pub fn walk_layout(&mut self, width: i32, height: i32, gap: i32) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
-        let rect = Rect::new(frame.cursor_x, frame.cursor_y, width, height);
+        let (x, y) = match frame.flow {
+            Flow::Down => {
+                let x = match frame.cross_align {
+                    CrossAlign::Start => frame.cursor_x,
+                    CrossAlign::Center => frame.bounds.x + (frame.bounds.width.saturating_sub(width)) / 2,
+                    CrossAlign::End => frame.bounds.right().saturating_sub(width),
+                };
+                (x, frame.cursor_y)
+            }
+            Flow::Right => {
+                let y = match frame.cross_align {
+                    CrossAlign::Start => frame.cursor_y,
+                    CrossAlign::Center => frame.bounds.y + (frame.bounds.height.saturating_sub(height)) / 2,
+                    CrossAlign::End => frame.bounds.bottom().saturating_sub(height),
+                };
+                (frame.cursor_x, y)
+            }
+        };
+        let rect = Rect::new(x, y, width, height);
 
         match frame.flow {
             Flow::Down => {
@@ -665,10 +684,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     pub fn paint_text(
         &mut self,
         text: impl Into<Cow<'text, str>>,
-        paint_x: i32,
-        paint_y: i32,
-        width: i32,
-        height: i32,
+        rect: Rect,
         color: u32,
         font_id: usize,
         font_size: usize,
@@ -682,25 +698,16 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
         let text_metrics = self.measure_text(&text, font_id, font_size);
 
-        let Some((x, y)) = align_rect(
-            paint_x,
-            paint_y,
-            width,
-            height,
-            text_metrics.width,
-            text_metrics.height,
-            alignment,
-            padding,
-        ) else {
+        let Some((x, y)) = align_rect(rect, text_metrics.width, text_metrics.height, alignment, padding) else {
             return;
         };
 
         // Clip glyphs
         let content = Rect::new(
-            paint_x + padding.left as i32,
-            paint_y + padding.top as i32,
-            (width - padding.left as i32 - padding.right as i32).max(0),
-            (height - padding.top as i32 - padding.bottom as i32).max(0),
+            rect.x + padding.left as i32,
+            rect.y + padding.top as i32,
+            (rect.width - padding.left as i32 - padding.right as i32).max(0),
+            (rect.height - padding.top as i32 - padding.bottom as i32).max(0),
         );
         let frame_clip = self.layout_stack.last().expect("No active frame").clip;
         let clip = frame_clip.intersection(content);
@@ -741,6 +748,188 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.item(text, false, style)
     }
 
+    //TODO: Remove and add selected to style, just use rect instead.
+    pub fn region(&mut self, selected: bool, style: Style) -> State {
+        self.item("", selected, style)
+    }
+
+    pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>) -> State {
+        let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
+        self.draw_line(parts, false, style())
+    }
+
+    pub fn item_line(
+        &mut self,
+        parts: impl IntoIterator<Item = impl Into<Line<'text>>>,
+        selected: bool,
+        style: Style,
+    ) -> State {
+        let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
+        self.draw_line(parts, selected, style)
+    }
+
+    fn draw_line(&mut self, parts: Vec<Line<'text>>, selected: bool, style: Style) -> State {
+        let default_size = self.default_font_size;
+
+        let mut content_w = 0i32;
+        let mut content_h = 0i32;
+        let mut run_metrics: Vec<(i32, i32, Padding)> = Vec::with_capacity(parts.len());
+        for part in &parts {
+            let font_size = part.style.font_size.unwrap_or(default_size);
+            let metrics = if part.content.is_empty() {
+                Rect::default()
+            } else {
+                self.measure_text(&part.content, part.style.font, font_size)
+            };
+            let run_pad = part.style.padding.unwrap_or_default();
+            let w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
+            let h = metrics.height + run_pad.top as i32 + run_pad.bottom as i32;
+            content_w += w;
+            content_h = content_h.max(h);
+            run_metrics.push((metrics.width, metrics.height, run_pad));
+        }
+
+        let padding = style.padding.unwrap_or_default();
+        let width = style
+            .width
+            .map(|w| self.resolve_size(w, Flow::Right))
+            .unwrap_or(content_w + padding.left as i32 + padding.right as i32);
+        let height = style
+            .height
+            .map(|h| self.resolve_size(h, Flow::Down))
+            .unwrap_or(content_h + padding.top as i32 + padding.bottom as i32);
+
+        let frame = self.layout_stack.last().expect("No active frame");
+        let flow = frame.flow;
+        let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
+
+        let absolute = style.x.is_some() && style.y.is_some();
+        let (paint_x, paint_y, rect) = if absolute {
+            let x = self.resolve_size(style.x.unwrap(), Flow::Right);
+            let y = self.resolve_size(style.y.unwrap(), Flow::Down);
+            (x, y, Rect::new(x, y, width, height))
+        } else {
+            let layout = self.walk_layout(width, height, gap);
+            let paint_x = match style.x {
+                Some(x) => self.resolve_size(x, Flow::Right),
+                None => layout.paint_x,
+            };
+            let paint_y = match style.y {
+                Some(y) => self.resolve_size(y, Flow::Down),
+                None => layout.paint_y,
+            };
+            let rect = if style.x.is_some() || style.y.is_some() {
+                Rect::new(paint_x, paint_y, width, height)
+            } else {
+                layout.size
+            };
+            (paint_x, paint_y, rect)
+        };
+
+        if rect.is_empty() {
+            return State {
+                clicked: false,
+                double_clicked: false,
+                hovered: false,
+                pressed: false,
+                released: false,
+                rect,
+            };
+        }
+
+        let depth = style.depth.unwrap_or(0);
+        let hovered = self.hovered_depth(rect, depth);
+        let clicked = hovered && self.clicked(rect);
+        let double_clicked = hovered && self.double_clicked(rect);
+        let pressed = hovered && self.pressed(rect);
+        let released = hovered && self.released(rect);
+        let clip = self.layout_stack.last().expect("No active frame").clip;
+        let paint_bounds = Rect::new(paint_x, paint_y, width, height);
+
+        let bg = if selected && style.selected.is_some() {
+            style.selected
+        } else if hovered && style.hover.is_some() {
+            style.hover
+        } else {
+            style.bg
+        };
+
+        if let Some(color) = bg {
+            self.commands[depth].push(Command::Rect {
+                bounds: paint_bounds,
+                clip,
+                color,
+                radius: style.radius.unwrap_or(0),
+            });
+        }
+
+        let border = if selected && style.selected_border.is_some() {
+            style.selected_border
+        } else {
+            style.border
+        };
+
+        if let Some(border) = border {
+            self.commands[depth].push(Command::RectOutline {
+                bounds: paint_bounds,
+                clip,
+                color: border,
+                radius: style.radius.unwrap_or(0),
+                border_thickness: style.border_thickness.unwrap_or(1),
+                border_sides: style.border_side.unwrap_or(border::ALL),
+            });
+        }
+
+        let inner_x = paint_x + padding.left as i32;
+        let inner_y = paint_y + padding.top as i32;
+        let inner_w = (width - padding.left as i32 - padding.right as i32).max(0);
+        let inner_h = (height - padding.top as i32 - padding.bottom as i32).max(0);
+
+        let group_x = match style.alignment.unwrap_or(Alignment::Left) {
+            Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft => inner_x,
+            Alignment::Center | Alignment::TopCenter | Alignment::BottomCenter => {
+                inner_x + (inner_w.saturating_sub(content_w)) / 2
+            }
+            Alignment::Right | Alignment::TopRight | Alignment::BottomRight => {
+                inner_x + inner_w.saturating_sub(content_w)
+            }
+        };
+
+        let mut cursor_x = group_x;
+        for (part, (glyph_w, glyph_h, run_pad)) in parts.into_iter().zip(run_metrics) {
+            if part.content.is_empty() {
+                cursor_x += run_pad.left as i32 + run_pad.right as i32;
+                continue;
+            }
+            let font_size = part.style.font_size.unwrap_or(default_size);
+            let run_h = glyph_h + run_pad.top as i32 + run_pad.bottom as i32;
+            let run_y = inner_y + (inner_h.saturating_sub(run_h)) / 2 + run_pad.top as i32;
+            let run_x = cursor_x + run_pad.left as i32;
+
+            self.paint_text(
+                part.content,
+                Rect::new(run_x, run_y, glyph_w, glyph_h),
+                part.style.fg.unwrap_or(style.fg.unwrap_or(white())),
+                part.style.font,
+                font_size,
+                Alignment::Left,
+                Padding::default(),
+                part.style.depth.unwrap_or(depth),
+            );
+
+            cursor_x += glyph_w + run_pad.left as i32 + run_pad.right as i32;
+        }
+
+        State {
+            clicked,
+            double_clicked,
+            hovered,
+            rect,
+            pressed,
+            released,
+        }
+    }
+
     pub fn item(&mut self, text: impl Into<Cow<'text, str>>, selected: bool, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
@@ -760,10 +949,32 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             .map(|h| self.resolve_size(h, Flow::Down))
             .unwrap_or(text_metrics.height + padding.top as i32 + padding.bottom as i32);
 
-        let flow = self.layout_stack.last().expect("No active frame").flow;
+        let frame = self.layout_stack.last().expect("No active frame");
+        let flow = frame.flow;
         let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
-        let layout = self.walk_layout(width, height, gap);
-        let rect = layout.size;
+
+        let absolute = style.x.is_some() && style.y.is_some();
+        let (paint_x, paint_y, rect) = if absolute {
+            let x = self.resolve_size(style.x.unwrap(), Flow::Right);
+            let y = self.resolve_size(style.y.unwrap(), Flow::Down);
+            (x, y, Rect::new(x, y, width, height))
+        } else {
+            let layout = self.walk_layout(width, height, gap);
+            let paint_x = match style.x {
+                Some(x) => self.resolve_size(x, Flow::Right),
+                None => layout.paint_x,
+            };
+            let paint_y = match style.y {
+                Some(y) => self.resolve_size(y, Flow::Down),
+                None => layout.paint_y,
+            };
+            let rect = if style.x.is_some() || style.y.is_some() {
+                Rect::new(paint_x, paint_y, width, height)
+            } else {
+                layout.size
+            };
+            (paint_x, paint_y, rect)
+        };
 
         if rect.is_empty() {
             return State {
@@ -784,7 +995,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let pressed = hovered && self.pressed(rect);
         let released = hovered && self.released(rect);
         let clip = self.layout_stack.last().expect("No active frame").clip;
-        let paint_bounds = Rect::new(layout.paint_x, layout.paint_y, width, height);
+        let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
         let bg = if selected && style.selected.is_some() {
             style.selected
@@ -827,10 +1038,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         if !text.is_empty() {
             self.paint_text(
                 text,
-                layout.paint_x,
-                layout.paint_y,
-                width,
-                height,
+                Rect::new(paint_x, paint_y, width, height),
                 style.fg.unwrap_or(white()),
                 style.font,
                 font_size,
@@ -884,6 +1092,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let clip = self.layout_stack.last().expect("No active frame").clip;
         let depth = style.depth.unwrap_or(0);
         let padding = style.padding.unwrap_or_default();
+        let cross_align = style.cross_align.unwrap_or_default();
 
         bounds.x += padding.left as i32;
         bounds.width = bounds.width.saturating_sub((padding.left + padding.right) as i32);
@@ -904,6 +1113,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             bounds,
             clip: clip.intersection(bounds),
             flow,
+            cross_align,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
             // Nested flows are already placed in screen space; do not re-apply parent scroll
@@ -942,9 +1152,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.flow(style, Flow::Right, true, 0, ui)
     }
 
-    /// Layout widgets inside the container normally but don't add the area to the layout stack after.
-    pub fn flow_skip<R>(&mut self, style: impl Into<Style>, flow: Flow, ui: impl FnOnce(&mut Self) -> R) -> R {
-        let r = self.flow(style, flow, false, 0, ui);
+    pub fn place_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let r = self.flow(style, Flow::Down, false, 0, ui);
+        self.layout_stack.pop().expect("Layout underflow");
+        r
+    }
+
+    pub fn place_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let r = self.flow(style, Flow::Right, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
         r
     }
@@ -1018,6 +1233,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn current_frame(&self) -> &Frame {
         self.layout_stack.last().as_ref().unwrap()
+    }
+
+    //TODO: Cleanup the distinction between the two.
+    pub fn current_frame_area(&self) -> Rect {
+        let parent = self.layout_stack.last().expect("Layout stack empty");
+        parent.bounds
     }
 
     pub fn current_frame_bounds(&self) -> Rect {

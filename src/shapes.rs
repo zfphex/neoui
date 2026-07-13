@@ -80,10 +80,7 @@ pub enum Alignment {
 }
 
 pub fn align_rect(
-    parent_x: i32,
-    parent_y: i32,
-    parent_w: i32,
-    parent_h: i32,
+    parent: Rect,
     child_w: i32,
     child_h: i32,
     alignment: Alignment,
@@ -94,15 +91,15 @@ pub fn align_rect(
     let pad_top = padding.top as i32;
     let pad_bottom = padding.bottom as i32;
 
-    let available_w = parent_w - pad_left - pad_right;
-    let available_h = parent_h - pad_top - pad_bottom;
+    let available_w = parent.width - pad_left - pad_right;
+    let available_h = parent.height - pad_top - pad_bottom;
 
     if available_w <= 0 || available_h <= 0 {
         return None;
     }
 
-    let inner_x = parent_x + pad_left;
-    let inner_y = parent_y + pad_top;
+    let inner_x = parent.x + pad_left;
+    let inner_y = parent.y + pad_top;
 
     let mid_x = if child_w >= available_w {
         inner_x

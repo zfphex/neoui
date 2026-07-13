@@ -213,7 +213,7 @@ fn main() {
             });
 
             //This is kinda cursed.
-            let (track_rect, scrollbar) = ui.split_rect_h(track_rect, Size::FillMinus(20));
+            let (track_rect, scrollbar) = ui.split_rect_h(track_rect, -20);
 
             let state = ui.scroll(track_rect, &mut scroll_y, |ui| {
                 ui.text(

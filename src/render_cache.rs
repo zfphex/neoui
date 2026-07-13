@@ -93,7 +93,6 @@ impl RenderCache {
         height: usize,
         clear: u32,
     ) -> bool {
-        crate::profile!();
         let cols = width.div_ceil(TILE_SIZE);
         let rows = height.div_ceil(TILE_SIZE);
         if self.width != width || self.height != height {
@@ -153,7 +152,6 @@ impl RenderCache {
     }
 
     fn build_damage(&mut self, cols: usize, rows: usize) {
-        crate::profile!();
         if self.current.is_empty() || self.width == 0 || self.height == 0 {
             return;
         }

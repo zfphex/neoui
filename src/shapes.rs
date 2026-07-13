@@ -883,7 +883,6 @@ pub fn measure_text(
 }
 
 pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {
-    crate::profile!();
     for rect in damage {
         if rect.is_empty() {
             continue;
@@ -1011,7 +1010,6 @@ pub fn raster_damage(
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
-    crate::profile!();
     for prepared in prepared {
         let command = &commands[prepared.layer][prepared.index];
         for region in damage {

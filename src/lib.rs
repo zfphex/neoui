@@ -227,7 +227,6 @@ impl Context {
     where
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'text>),
     {
-        profile!();
         let state = &mut self.state;
 
         self.window.draw(|window| {
@@ -653,13 +652,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         });
     }
 
-    pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
-        let state = &mut *self.state;
-        let font = &state.fonts[font_id];
-        let metrics = state.font_metrics.entry(font_id).or_default();
-        measure_text(text, font, font_size, metrics)
-    }
-
     pub fn paint_text(
         &mut self,
         text: impl Into<Cow<'text, str>>,
@@ -714,6 +706,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             font_id,
             size: font_size,
         });
+    }
+
+    pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
+        let state = &mut *self.state;
+        let font = &state.fonts[font_id];
+        let metrics = state.font_metrics.entry(font_id).or_default();
+        measure_text(text, font, font_size, metrics)
     }
 
     pub fn gap(&mut self, gap: impl IntoSize) {
@@ -1059,31 +1058,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
     }
 
-    /// End layout without walking the max_child_width/height
-    pub fn end_layout_absolute(&mut self) {
-        self.layout_stack.pop().expect("Layout underflow");
-    }
-
-    pub fn begin_grid_cell(
-        &mut self,
-        col: i32,
-        row: i32,
-        col_width: i32,
-        row_height: i32,
-        grid_bounds: Rect,
-        flow: Flow,
-    ) {
-        let cell_x = grid_bounds.x + col * col_width;
-        let cell_y = grid_bounds.y + row * row_height;
-
-        let cell_w = col_width.min(grid_bounds.width.saturating_sub(col * col_width));
-        let cell_h = row_height.min(grid_bounds.height.saturating_sub(row * row_height));
-
-        self.begin_layout(flow, Some(Rect::new(cell_x, cell_y, cell_w, cell_h)));
-    }
-
     fn draw_frame(&mut self) {
-        profile!();
         let window = &mut *self.window;
         let state = &mut *self.state;
         let display_scale = window.scale_factor() as f32;

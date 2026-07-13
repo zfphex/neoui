@@ -272,7 +272,6 @@ pub fn draw_image(
     scale_factor: f32,
     cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
-    mini::profile!();
     if bounds.is_empty() || clip.is_empty() || opacity == 0 || framebuffer_width == 0 || framebuffer_height == 0 {
         return;
     }
@@ -311,7 +310,6 @@ fn rasterize_image(
     opacity: u8,
     radius: usize,
 ) -> ImageEntry {
-    mini::profile!();
     let mut pixels = vec![0u32; width * height].into_boxed_slice();
     let local = Rect::new(0, 0, width as i32, height as i32);
     let radius = radius.min(width.min(height) / 2) as f32;

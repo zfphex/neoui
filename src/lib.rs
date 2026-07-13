@@ -531,7 +531,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     #[cfg(target_os = "windows")]
     pub fn clicked(&self, rect: Rect) -> bool {
-        self.window.mouse_clicked(Mouse::Left, rect);
+        self.window.mouse_clicked(Mouse::Left, rect)
     }
 
     //Trackpads are really awful if you use standard click behaviour.

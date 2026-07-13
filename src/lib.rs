@@ -278,10 +278,11 @@ impl Context {
             return;
         }
 
-        self.window.wait_for_vsync();
         if !self.state.animating {
             self.state.last_frame_time = std::time::Instant::now();
         }
+
+        self.window.wait_for_vsync();
     }
 }
 
@@ -509,8 +510,17 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
     }
 
+    #[cfg(target_os = "windows")]
     pub fn clicked(&self, rect: Rect) -> bool {
-        self.window.mouse_clicked(Mouse::Left, rect)
+        self.window.mouse_clicked(Mouse::Left, rect);
+    }
+
+    //Trackpads are really awful if you use standard click behaviour.
+    //The user could plug in a mouse so this is not great.
+    //TODO: Programatically change based on user input device.
+    #[cfg(target_os = "macos")]
+    pub fn clicked(&self, rect: Rect) -> bool {
+        self.pressed(rect)
     }
 
     pub fn double_clicked(&self, rect: Rect) -> bool {

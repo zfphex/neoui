@@ -278,11 +278,11 @@ impl Context {
             return;
         }
 
+        self.window.wait_for_vsync();
+
         if !self.state.animating {
             self.state.last_frame_time = std::time::Instant::now();
         }
-
-        self.window.wait_for_vsync();
     }
 }
 

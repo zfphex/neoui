@@ -61,9 +61,7 @@ pub struct Style {
     pub border_side: Option<u8>,
     pub border_radius: Option<u32>,
 
-    //TODO: selected: bool
-    //Currently only some methods can select an item.
-    //Can be put into style.
+    pub is_selected: bool,
     pub selected: Option<u32>,
     pub selected_border: Option<u32>,
 
@@ -144,6 +142,11 @@ impl Style {
 
     pub fn font_size(mut self, font_size: usize) -> Self {
         self.font_size = Some(font_size);
+        self
+    }
+
+    pub fn is_selected(mut self, is_selected: bool) -> Self {
+        self.is_selected = is_selected;
         self
     }
 

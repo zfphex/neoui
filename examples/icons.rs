@@ -25,10 +25,13 @@ fn main() {
         ui.frame(|ui| {
             ui.flow_down(style(), |ui| {
                 for (icon, label) in icons.iter() {
-                    ui.line([
-                        text(*icon, style().font(icon_id).font_size(32).padr(12)),
-                        text(*label, style().font_size(32)),
-                    ]);
+                    ui.line(
+                        [
+                            text(*icon, style().font(icon_id).font_size(32).padr(12)),
+                            text(*label, style().font_size(32)),
+                        ],
+                        style(),
+                    );
                 }
             });
 

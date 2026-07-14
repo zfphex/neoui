@@ -180,7 +180,7 @@ fn main() {
 
                 ui.place_down(style().x(rect.x).y(top_nav_rect.height), |ui| {
                     for &item in dropdown_items(menu) {
-                        if ui.item(item, false, item_style).clicked {
+                        if ui.item(item, item_style).clicked {
                             println!("{}", item);
                             current_menu = None;
                         }
@@ -206,7 +206,7 @@ fn main() {
                 ui.text("All Music", style().fg(text_dim).pad(6));
 
                 for artist in artists {
-                    ui.item(artist, false, row_style);
+                    ui.item(artist, row_style);
                 }
 
                 ui.paint_rect(sidebar_rect, style().border(border_color).border_side(RIGHT));
@@ -224,7 +224,10 @@ fn main() {
                 let row_style = row_style.align(Alignment::Left).padl(12);
 
                 for (idx, track) in tracklist.iter().enumerate() {
-                    if ui.item(Cow::from(track), idx == selected_song, row_style).clicked {
+                    if ui
+                        .item(Cow::from(track), row_style.is_selected(idx == selected_song))
+                        .clicked
+                    {
                         selected_song = idx;
                         println!("Clicked item {idx}");
                     }

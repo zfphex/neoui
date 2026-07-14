@@ -32,6 +32,7 @@ pub struct Frame {
     pub clip: Rect,
     pub flow: Flow,
     pub cross_align: CrossAlign,
+    pub depth: usize,
     pub cursor_x: i32,
     pub cursor_y: i32,
     pub max_child_width: i32,
@@ -629,8 +630,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
-        let clip = self.layout_stack.last().expect("No active frame").clip;
-        let depth = style.depth.unwrap_or(0);
+        let frame = self.current_frame();
+        let clip = frame.clip;
+        let depth = style.depth.unwrap_or(frame.depth);
 
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Rect {
@@ -654,8 +656,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn paint_triangle(&mut self, a: (i32, i32), b: (i32, i32), c: (i32, i32), style: Style) {
-        let clip = self.layout_stack.last().expect("No active frame").clip;
-        let depth = style.depth.unwrap_or(0);
+        let frame = self.current_frame();
+        let clip = frame.clip;
+        let depth = style.depth.unwrap_or(frame.depth);
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Triangle { a, b, c, clip, color });
         }
@@ -666,11 +669,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         if bounds.is_empty() {
             return;
         }
-        let depth = style.depth.unwrap_or(0);
+        let frame = self.current_frame();
+        let depth = style.depth.unwrap_or(frame.depth);
+        let clip = frame.clip;
         let opacity = style.opacity.unwrap_or(255);
         let fit = style.fit.unwrap_or_default();
         let radius = style.radius.unwrap_or(0);
-        let clip = self.layout_stack.last().expect("No active frame").clip;
         self.commands[depth].push(Command::Image {
             image,
             bounds,
@@ -741,35 +745,21 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn rect(&mut self, style: Style) -> State {
-        self.item("", false, style)
+        self.item("", style)
     }
 
     pub fn text(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
-        self.item(text, false, style)
+        self.item(text, style)
     }
 
-    //TODO: Remove and add selected to style, just use rect instead.
-    pub fn region(&mut self, selected: bool, style: Style) -> State {
-        self.item("", selected, style)
-    }
-
-    pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>) -> State {
+    pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>, style: Style) -> State {
         let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
-        self.draw_line(parts, false, style())
+        self.draw_line(parts, style)
     }
 
-    pub fn item_line(
-        &mut self,
-        parts: impl IntoIterator<Item = impl Into<Line<'text>>>,
-        selected: bool,
-        style: Style,
-    ) -> State {
-        let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
-        self.draw_line(parts, selected, style)
-    }
-
-    fn draw_line(&mut self, parts: Vec<Line<'text>>, selected: bool, style: Style) -> State {
+    fn draw_line(&mut self, parts: Vec<Line<'text>>, style: Style) -> State {
         let default_size = self.default_font_size;
+        let selected = style.is_selected;
 
         let mut content_w = 0i32;
         let mut content_h = 0i32;
@@ -837,13 +827,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             };
         }
 
-        let depth = style.depth.unwrap_or(0);
+        let frame = self.current_frame();
+        let depth = style.depth.unwrap_or(frame.depth);
+        let clip = frame.clip;
         let hovered = self.hovered_depth(rect, depth);
         let clicked = hovered && self.clicked(rect);
         let double_clicked = hovered && self.double_clicked(rect);
         let pressed = hovered && self.pressed(rect);
         let released = hovered && self.released(rect);
-        let clip = self.layout_stack.last().expect("No active frame").clip;
         let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
         let bg = if selected && style.selected.is_some() {
@@ -930,8 +921,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
     }
 
-    pub fn item(&mut self, text: impl Into<Cow<'text, str>>, selected: bool, style: Style) -> State {
+    pub fn item(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
         let text = text.into();
+        let selected = style.is_selected;
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let text_metrics = if text.is_empty() {
             Rect::default()
@@ -987,14 +979,15 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             };
         }
 
-        let depth = style.depth.unwrap_or(0);
+        let frame = self.current_frame();
+        let depth = style.depth.unwrap_or(frame.depth);
+        let clip = frame.clip;
         let hovered = self.hovered_depth(rect, depth);
         // Input follows the same depth ordering as hover.
         let clicked = hovered && self.clicked(rect);
         let double_clicked = hovered && self.double_clicked(rect);
         let pressed = hovered && self.pressed(rect);
         let released = hovered && self.released(rect);
-        let clip = self.layout_stack.last().expect("No active frame").clip;
         let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
         let bg = if selected && style.selected.is_some() {
@@ -1089,8 +1082,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             bounds.y -= parent_scroll as i32;
         }
 
-        let clip = self.layout_stack.last().expect("No active frame").clip;
-        let depth = style.depth.unwrap_or(0);
+        let frame = self.current_frame();
+        let depth = style.depth.unwrap_or(frame.depth);
+        let clip = frame.clip;
         let padding = style.padding.unwrap_or_default();
         let cross_align = style.cross_align.unwrap_or_default();
 
@@ -1114,6 +1108,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             clip: clip.intersection(bounds),
             flow,
             cross_align,
+            depth,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
             // Nested flows are already placed in screen space; do not re-apply parent scroll
@@ -1263,6 +1258,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             bounds,
             clip: parent.clip.intersection(bounds),
             flow,
+            depth: parent.depth,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
             ..Default::default()

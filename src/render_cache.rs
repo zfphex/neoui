@@ -230,7 +230,7 @@ fn mix(h: u64, v: u64) -> u64 {
 pub fn command_clip(command: &Command<'_>) -> Rect {
     match command {
         Command::Rect { clip, .. }
-        | Command::RectOutline { clip, .. }
+        | Command::RectStroke { clip, .. }
         | Command::Triangle { clip, .. }
         | Command::Text { clip, .. }
         | Command::Image { clip, .. } => *clip,
@@ -239,7 +239,7 @@ pub fn command_clip(command: &Command<'_>) -> Rect {
 
 pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_h: usize) -> Rect {
     let bounds = match command {
-        Command::Rect { bounds, .. } | Command::RectOutline { bounds, .. } => bounds.scale(scale_factor),
+        Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } => bounds.scale(scale_factor),
         Command::Triangle { a, b, c, .. } => {
             let ax = scale_i32(a.0, scale_factor);
             let ay = scale_i32(a.1, scale_factor);

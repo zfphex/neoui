@@ -136,7 +136,7 @@ fn cached_outlines_and_triangles_match_full_redraw() {
 
     for offset in [0, 70] {
         let commands = layers(vec![
-            Command::RectOutline {
+            Command::RectStroke {
                 bounds: Rect::new(20 + offset, 20, 80, 60),
                 clip: Rect::new(0, 0, width as i32, height as i32),
                 color: rgb(100, 180, 220),

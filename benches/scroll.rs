@@ -68,7 +68,7 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
         });
         // Outline like selected/hover chrome.
         if row % 7 == 0 {
-            cmds.push(Command::RectOutline {
+            cmds.push(Command::RectStroke {
                 bounds,
                 clip,
                 color: rgb(90, 90, 90),

@@ -136,92 +136,136 @@ pub fn align_rect(
     })
 }
 
-pub fn draw_rect(
-    buffer: &mut [u32],
-    x: i32,
-    y: i32,
-    width: usize,
-    height: usize,
-    window_width: usize,
-    window_height: usize,
-    color: u32,
-) {
-    let (mut width, mut height) = (width as i32, height as i32);
-    let (window_width, window_height) = (window_width as i32, window_height as i32);
-
-    if x > window_width || y > window_height {
+#[inline]
+fn solid_fill_span(buffer: &mut [u32], window_width: usize, x0: i32, x1: i32, y0: i32, y1: i32, color: u32) {
+    if x1 <= x0 || y1 <= y0 {
         return;
     }
-
-    if x + width > window_width {
-        width = window_width.saturating_sub(x);
-    }
-
-    if y + height > window_height {
-        height = window_height.saturating_sub(y);
-    }
-
-    for i in y..y + height {
-        let pos = x + window_width * i;
-        if pos > 0 {
-            let pos = pos as usize;
-            if let Some(buffer) = buffer.get_mut(pos..pos + width as usize) {
-                buffer.fill(color);
-            }
+    let x0 = x0 as usize;
+    let x1 = x1 as usize;
+    let len = x1 - x0;
+    for py in y0 as usize..y1 as usize {
+        let start = py * window_width + x0;
+        if let Some(slice) = buffer.get_mut(start..start + len) {
+            slice.fill(color);
         }
     }
 }
 
-pub fn draw_rect_outline(buffer: &mut [u32], bounds: Rect, window_width: usize, color: u32, clip: Rect, sides: u8) {
+#[inline]
+fn solid_fill_rect(buffer: &mut [u32], window_width: usize, area: Rect, color: u32) {
+    solid_fill_span(buffer, window_width, area.x, area.right(), area.y, area.bottom(), color);
+}
+
+#[inline]
+fn color_linear(color: u32) -> (f32, f32, f32) {
+    (
+        GAMMA_TO_LINEAR[((color >> 16) & 0xFF) as usize],
+        GAMMA_TO_LINEAR[((color >> 8) & 0xFF) as usize],
+        GAMMA_TO_LINEAR[(color & 0xFF) as usize],
+    )
+}
+
+#[inline]
+fn blend_srgb(bg: &mut u32, src: (f32, f32, f32), alpha: f32) {
+    let a = alpha.clamp(0.0, 1.0);
+    let bg_val = *bg;
+    let inv = 1.0 - a;
+
+    let out_r = src.0 * a + GAMMA_TO_LINEAR[((bg_val >> 16) & 0xFF) as usize] * inv;
+    let out_g = src.1 * a + GAMMA_TO_LINEAR[((bg_val >> 8) & 0xFF) as usize] * inv;
+    let out_b = src.2 * a + GAMMA_TO_LINEAR[(bg_val & 0xFF) as usize] * inv;
+
+    let r = LINEAR_TO_GAMMA[(out_r * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
+    let g = LINEAR_TO_GAMMA[(out_g * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
+    let b = LINEAR_TO_GAMMA[(out_b * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
+    *bg = (r << 16) | (g << 8) | b;
+}
+
+#[inline]
+fn apply_coverage(bg: &mut u32, color: u32, src: (f32, f32, f32), alpha: f32) {
+    if alpha >= 0.999 {
+        *bg = color;
+    } else if alpha > 0.0 {
+        blend_srgb(bg, src, alpha);
+    }
+}
+
+#[inline]
+fn rounded_rect_sdf(dx: f32, dy: f32, r: f32) -> f32 {
+    let dx_max = dx.max(0.0);
+    let dy_max = dy.max(0.0);
+    let dist_outer = (dx_max * dx_max + dy_max * dy_max).sqrt();
+    let dist_inner = dx.max(dy).min(0.0);
+    dist_outer + dist_inner - r
+}
+
+#[inline]
+fn stroke_sdf(dist: f32, thickness: f32) -> f32 {
+    dist.max(-(dist + thickness))
+}
+
+fn draw_axis_aligned_stroke(
+    buffer: &mut [u32],
+    bounds: Rect,
+    window_width: usize,
+    window_height: usize,
+    thickness: usize,
+    color: u32,
+    clip: Rect,
+    sides: u8,
+) {
     use border::*;
 
-    if bounds.is_empty() || window_width == 0 {
+    if bounds.is_empty() || thickness == 0 || window_width == 0 || sides == NONE {
         return;
     }
 
-    let fb_h = (buffer.len() / window_width) as i32;
-    let Some(vis) = visible_rect(bounds, clip, window_width as i32, fb_h) else {
+    let Some(vis) = visible_rect(bounds, clip, window_width as i32, window_height as i32) else {
         return;
     };
 
-    let min_x = vis.x as usize;
-    let max_x = vis.right() as usize;
-    let min_y = vis.y as usize;
-    let max_y = vis.bottom() as usize;
+    let t = thickness as i32;
+    let x0 = bounds.x;
+    let y0 = bounds.y;
+    let x1 = bounds.right();
+    let y1 = bounds.bottom();
 
-    let x = bounds.x;
-    let y = bounds.y;
-    let right = bounds.right() - 1;
-    let bottom = bounds.bottom() - 1;
-
-    if sides & TOP != 0 && y >= min_y as i32 && y < max_y as i32 {
-        let start = y as usize * window_width + min_x;
-        if let Some(slice) = buffer.get_mut(start..start + max_x - min_x) {
-            slice.fill(color);
-        }
+    if sides & TOP != 0 {
+        solid_fill_rect(
+            buffer,
+            window_width,
+            Rect::from_xyxy(x0, y0, x1, y0 + t).intersection(vis),
+            color,
+        );
     }
-
-    if sides & BOTTOM != 0 && bottom >= min_y as i32 && bottom < max_y as i32 {
-        let start = bottom as usize * window_width + min_x;
-        if let Some(slice) = buffer.get_mut(start..start + max_x - min_x) {
-            slice.fill(color);
-        }
+    if sides & BOTTOM != 0 {
+        solid_fill_rect(
+            buffer,
+            window_width,
+            Rect::from_xyxy(x0, y1 - t, x1, y1).intersection(vis),
+            color,
+        );
     }
-
-    for (side, px) in [(LEFT, x), (RIGHT, right)] {
-        if sides & side == 0 || px < min_x as i32 || px >= max_x as i32 {
-            continue;
-        }
-
-        for py in min_y..max_y {
-            if let Some(b) = buffer.get_mut(py * window_width + px as usize) {
-                *b = color;
-            }
-        }
+    if sides & LEFT != 0 {
+        solid_fill_rect(
+            buffer,
+            window_width,
+            Rect::from_xyxy(x0, y0, x0 + t, y1).intersection(vis),
+            color,
+        );
+    }
+    if sides & RIGHT != 0 {
+        solid_fill_rect(
+            buffer,
+            window_width,
+            Rect::from_xyxy(x1 - t, y0, x1, y1).intersection(vis),
+            color,
+        );
     }
 }
 
-pub fn draw_rounded_rect(
+pub fn draw_rect_fill(
     buffer: &mut [u32],
     bounds: Rect,
     window_width: usize,
@@ -230,43 +274,30 @@ pub fn draw_rounded_rect(
     color: u32,
     clip: Rect,
 ) {
-    if bounds.is_empty() {
+    if bounds.is_empty() || window_width == 0 {
         return;
     }
 
-    let x = bounds.x;
-    let y = bounds.y;
-    let width = bounds.width as usize;
-    let height = bounds.height as usize;
-    let radius = radius.min(width / 2).min(height / 2);
-
+    let radius = radius.min(bounds.width as usize / 2).min(bounds.height as usize / 2);
     let Some(vis) = visible_rect(bounds, clip, window_width as i32, window_height as i32) else {
         return;
     };
+
     let min_x = vis.x as usize;
     let max_x = vis.right() as usize;
     let min_y = vis.y as usize;
     let max_y = vis.bottom() as usize;
 
     if radius == 0 {
-        for py in min_y..max_y {
-            let start = py * window_width + min_x;
-            let end = py * window_width + max_x;
-            if let Some(slice) = buffer.get_mut(start..end) {
-                slice.fill(color);
-            }
-        }
+        solid_fill_span(buffer, window_width, vis.x, vis.right(), vis.y, vis.bottom(), color);
         return;
     }
 
-    let src_r = ((color >> 16) & 0xFF) as usize;
-    let src_g = ((color >> 8) & 0xFF) as usize;
-    let src_b = (color & 0xFF) as usize;
-
-    let src_r_lin = GAMMA_TO_LINEAR[src_r];
-    let src_g_lin = GAMMA_TO_LINEAR[src_g];
-    let src_b_lin = GAMMA_TO_LINEAR[src_b];
-
+    let src = color_linear(color);
+    let x = bounds.x;
+    let y = bounds.y;
+    let width = bounds.width as usize;
+    let height = bounds.height as usize;
     let cx = x as f32 + width as f32 / 2.0;
     let cy = y as f32 + height as f32 / 2.0;
     let half_w = width as f32 / 2.0;
@@ -281,30 +312,6 @@ pub fn draw_rounded_rect(
     let left_limit = x_left_safe.max(min_x).min(max_x);
     let right_limit = x_right_safe.max(min_x).min(max_x);
 
-    macro_rules! blend_edge {
-        ($bg:expr, $alpha:expr) => {
-            let a = $alpha.clamp(0.0, 1.0);
-            let bg_val = *$bg;
-            let bg_r = (bg_val >> 16) & 0xFF;
-            let bg_g = (bg_val >> 8) & 0xFF;
-            let bg_b = bg_val & 0xFF;
-
-            let bg_r_lin = GAMMA_TO_LINEAR[bg_r as usize];
-            let bg_g_lin = GAMMA_TO_LINEAR[bg_g as usize];
-            let bg_b_lin = GAMMA_TO_LINEAR[bg_b as usize];
-
-            let out_r_lin = (src_r_lin * a) + (bg_r_lin * (1.0 - a));
-            let out_g_lin = (src_g_lin * a) + (bg_g_lin * (1.0 - a));
-            let out_b_lin = (src_b_lin * a) + (bg_b_lin * (1.0 - a));
-
-            let out_r = LINEAR_TO_GAMMA[(out_r_lin * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
-            let out_g = LINEAR_TO_GAMMA[(out_g_lin * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
-            let out_b = LINEAR_TO_GAMMA[(out_b_lin * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
-
-            *$bg = (out_r << 16) | (out_g << 8) | out_b;
-        };
-    }
-
     for py in min_y..max_y {
         let row_start = py * window_width;
 
@@ -316,59 +323,32 @@ pub fn draw_rounded_rect(
         }
 
         let dy = (py as f32 + 0.5 - cy).abs() - half_h + r_f32;
-        let dy_max = dy.max(0.0);
-        let dy_sq = dy_max * dy_max;
 
         if let Some(row_slice) = buffer.get_mut(row_start + min_x..row_start + max_x) {
             let left_len = left_limit - min_x;
             let mid_len = right_limit - left_limit;
-
             let (left_slice, rest) = row_slice.split_at_mut(left_len);
             let (mid_slice, right_slice) = rest.split_at_mut(mid_len);
 
-            // Left Corner
             for (i, bg) in left_slice.iter_mut().enumerate() {
                 let px = min_x + i;
                 let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
-                let dx_max = dx.max(0.0);
-
-                let dist_outer = (dx_max * dx_max + dy_sq).sqrt();
-                let dist_inner = dx.max(dy).min(0.0);
-                let dist = dist_outer + dist_inner - r_f32;
-                let alpha = 0.5 - dist;
-
-                if alpha >= 0.999 {
-                    *bg = color;
-                } else if alpha > 0.0 {
-                    blend_edge!(bg, alpha);
-                }
+                apply_coverage(bg, color, src, 0.5 - rounded_rect_sdf(dx, dy, r_f32));
             }
 
-            // Middle Solid Segment
             mid_slice.fill(color);
 
-            // Right Corner
             for (i, bg) in right_slice.iter_mut().enumerate() {
                 let px = right_limit + i;
                 let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
-                let dx_max = dx.max(0.0);
-
-                let dist_outer = (dx_max * dx_max + dy_sq).sqrt();
-                let dist_inner = dx.max(dy).min(0.0);
-                let dist = dist_outer + dist_inner - r_f32;
-                let alpha = 0.5 - dist;
-
-                if alpha >= 0.999 {
-                    *bg = color;
-                } else if alpha > 0.0 {
-                    blend_edge!(bg, alpha);
-                }
+                apply_coverage(bg, color, src, 0.5 - rounded_rect_sdf(dx, dy, r_f32));
             }
         }
     }
 }
 
-pub fn draw_rounded_rect_outline(
+#[allow(clippy::too_many_arguments)]
+pub fn draw_rect_stroke(
     buffer: &mut [u32],
     bounds: Rect,
     window_width: usize,
@@ -377,80 +357,137 @@ pub fn draw_rounded_rect_outline(
     thickness: usize,
     color: u32,
     clip: Rect,
+    sides: u8,
 ) {
-    if bounds.is_empty() || thickness == 0 {
+    if bounds.is_empty() || thickness == 0 || window_width == 0 {
         return;
     }
 
+    let radius = radius.min(bounds.width as usize / 2).min(bounds.height as usize / 2);
     if radius == 0 {
-        draw_rect_outline(buffer, bounds, window_width, color, clip, border::ALL);
+        draw_axis_aligned_stroke(
+            buffer,
+            bounds,
+            window_width,
+            window_height,
+            thickness,
+            color,
+            clip,
+            sides,
+        );
+        return;
     }
-
-    let x = bounds.x;
-    let y = bounds.y;
-    let width = bounds.width as usize;
-    let height = bounds.height as usize;
-    let radius = radius.min(width / 2).min(height / 2);
 
     let Some(vis) = visible_rect(bounds, clip, window_width as i32, window_height as i32) else {
         return;
     };
+
+    let x = bounds.x;
+    let y = bounds.y;
+    let w = bounds.width;
+    let h = bounds.height;
+    let r = radius as i32;
+    let t = thickness as i32;
+    let t_f32 = thickness as f32;
+    let r_f32 = radius as f32;
+
+    let cx = x as f32 + w as f32 / 2.0;
+    let cy = y as f32 + h as f32 / 2.0;
+    let half_w = w as f32 / 2.0;
+    let half_h = h as f32 / 2.0;
+    let src = color_linear(color);
+
     let min_x = vis.x as usize;
     let max_x = vis.right() as usize;
     let min_y = vis.y as usize;
     let max_y = vis.bottom() as usize;
 
-    let t_f32 = thickness as f32;
-    let src_r = ((color >> 16 & 0xFF) as f32 / 255.0).powi(2);
-    let src_g = ((color >> 8 & 0xFF) as f32 / 255.0).powi(2);
-    let src_b = ((color & 0xFF) as f32 / 255.0).powi(2);
+    let y_top_safe = (y + r).max(0) as usize;
+    let y_bottom_safe = (y + h - r).max(0) as usize;
+    let x_left_safe = (x + r).max(0) as usize;
+    let x_right_safe = (x + w - r).max(0) as usize;
+    let left_limit = x_left_safe.max(min_x).min(max_x);
+    let right_limit = x_right_safe.max(min_x).min(max_x);
 
-    let cx = x as f32 + width as f32 / 2.0;
-    let cy = y as f32 + height as f32 / 2.0;
-    let half_w = width as f32 / 2.0;
-    let half_h = height as f32 / 2.0;
-    let r_f32 = radius as f32;
+    let edge_w = (t + 1).min(w);
+    let x_left_edge = (x + edge_w).max(0) as usize;
+    let x_right_edge = (x + w - edge_w).max(0) as usize;
+    let left_edge_limit = x_left_edge.max(min_x).min(max_x);
+    let right_edge_limit = x_right_edge.max(min_x).min(max_x);
+
+    let y_top_edge = (y + (t + 1).min(h)).max(0) as usize;
+    let y_bottom_edge = (y + h - (t + 1).min(h)).max(0) as usize;
 
     for py in min_y..max_y {
         let dy = (py as f32 + 0.5 - cy).abs() - half_h + r_f32;
-        let dy_max = dy.max(0.0);
-        let dy_sq = dy_max * dy_max;
+        let row = py * window_width;
 
-        for px in min_x..max_x {
+        let in_mid_y = py >= y_top_safe && py < y_bottom_safe;
+        let in_top_edge = py < y_top_edge;
+        let in_bottom_edge = py >= y_bottom_edge;
+
+        if in_mid_y && !in_top_edge && !in_bottom_edge {
+            if left_edge_limit >= right_edge_limit {
+                for px in min_x..max_x {
+                    let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                    let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+                    if let Some(bg) = buffer.get_mut(row + px) {
+                        apply_coverage(bg, color, src, alpha);
+                    }
+                }
+            } else {
+                for px in min_x..left_edge_limit {
+                    let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                    let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+                    if let Some(bg) = buffer.get_mut(row + px) {
+                        apply_coverage(bg, color, src, alpha);
+                    }
+                }
+                for px in right_edge_limit..max_x {
+                    let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                    let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+                    if let Some(bg) = buffer.get_mut(row + px) {
+                        apply_coverage(bg, color, src, alpha);
+                    }
+                }
+            }
+            continue;
+        }
+
+        if in_mid_y && (in_top_edge || in_bottom_edge) {
+            for px in min_x..max_x {
+                let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+                if let Some(bg) = buffer.get_mut(row + px) {
+                    apply_coverage(bg, color, src, alpha);
+                }
+            }
+            continue;
+        }
+
+        for px in min_x..left_limit {
             let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+            let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+            if let Some(bg) = buffer.get_mut(row + px) {
+                apply_coverage(bg, color, src, alpha);
+            }
+        }
 
-            let dx_max = dx.max(0.0);
-            let dist_outer = (dx_max * dx_max + dy_sq).sqrt();
-            let dist_inner = dx.max(dy).min(0.0);
-
-            let dist = dist_outer + dist_inner - r_f32;
-
-            let final_dist = dist.max(-(dist + t_f32));
-
-            let alpha = 0.5 - final_dist;
-
-            if alpha >= 0.999 {
-                let idx = py * window_width + px;
-                if let Some(bg) = buffer.get_mut(idx) {
-                    *bg = color;
+        if in_top_edge || in_bottom_edge {
+            for px in left_limit..right_limit {
+                let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+                if let Some(bg) = buffer.get_mut(row + px) {
+                    apply_coverage(bg, color, src, alpha);
                 }
-            } else if alpha > 0.0 {
-                let idx = py * window_width + px;
-                if let Some(bg) = buffer.get_mut(idx) {
-                    let a = alpha.clamp(0.0, 1.0);
+            }
+        }
 
-                    let bg_r = (((*bg >> 16) & 0xFF) as f32 / 255.0).powi(2);
-                    let bg_g = (((*bg >> 8) & 0xFF) as f32 / 255.0).powi(2);
-                    let bg_b = ((*bg & 0xFF) as f32 / 255.0).powi(2);
-
-                    let out_r = (src_r * a) + (bg_r * (1.0 - a));
-                    let out_g = (src_g * a) + (bg_g * (1.0 - a));
-                    let out_b = (src_b * a) + (bg_b * (1.0 - a));
-
-                    *bg = ((out_r.sqrt() * 255.0) as u32) << 16
-                        | ((out_g.sqrt() * 255.0) as u32) << 8
-                        | ((out_b.sqrt() * 255.0) as u32);
-                }
+        for px in right_limit..max_x {
+            let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+            let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+            if let Some(bg) = buffer.get_mut(row + px) {
+                apply_coverage(bg, color, src, alpha);
             }
         }
     }
@@ -914,7 +951,7 @@ pub fn draw_command(
     match command {
         Command::Rect {
             bounds, color, radius, ..
-        } => draw_rounded_rect(
+        } => draw_rect_fill(
             buffer,
             bounds.scale(display_scale),
             framebuffer_width,
@@ -923,15 +960,20 @@ pub fn draw_command(
             *color,
             clip,
         ),
-        Command::RectOutline {
+        Command::RectStroke {
             bounds,
             color,
             border_sides,
+            border_thickness,
+            radius,
             ..
-        } => draw_rect_outline(
+        } => draw_rect_stroke(
             buffer,
             bounds.scale(display_scale),
             framebuffer_width,
+            framebuffer_height,
+            scale(*radius, display_scale),
+            scale(*border_thickness, display_scale).max(1),
             *color,
             clip,
             *border_sides,

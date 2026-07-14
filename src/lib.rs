@@ -63,7 +63,7 @@ pub enum Command<'a> {
         color: u32,
         radius: usize,
     },
-    RectOutline {
+    RectStroke {
         bounds: Rect,
         clip: Rect,
         color: u32,
@@ -644,7 +644,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
 
         if let Some(color) = style.border {
-            self.commands[depth].push(Command::RectOutline {
+            self.commands[depth].push(Command::RectStroke {
                 bounds: rect,
                 clip,
                 color,
@@ -861,7 +861,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         };
 
         if let Some(border) = border {
-            self.commands[depth].push(Command::RectOutline {
+            self.commands[depth].push(Command::RectStroke {
                 bounds: paint_bounds,
                 clip,
                 color: border,
@@ -1018,7 +1018,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         // TODO: Borders render inside of the bounding box
         // for text which means they can overlap...
         if let Some(border) = border {
-            self.commands[depth].push(Command::RectOutline {
+            self.commands[depth].push(Command::RectStroke {
                 bounds: paint_bounds,
                 clip,
                 color: border,
@@ -1122,7 +1122,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         // Draw the border over the content, idk.
         if let Some(color) = style.border {
-            self.commands[depth].push(Command::RectOutline {
+            self.commands[depth].push(Command::RectStroke {
                 bounds,
                 clip,
                 color,

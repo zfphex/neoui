@@ -118,12 +118,10 @@ impl Style {
         self
     }
 
-    // TODO: Doesn't do anything.
-
-    // pub fn border_thickness(mut self, border_thickness: usize) -> Self {
-    //     self.border_thickness = Some(border_thickness);
-    //     self
-    // }
+    pub fn border_thickness(mut self, border_thickness: usize) -> Self {
+        self.border_thickness = Some(border_thickness);
+        self
+    }
 
     // pub fn border_radius(mut self, border_radius: u32) -> Self {
     //     self.border_radius = Some(border_radius);

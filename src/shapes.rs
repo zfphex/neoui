@@ -205,6 +205,25 @@ fn stroke_sdf(dist: f32, thickness: f32) -> f32 {
     dist.max(-(dist + thickness))
 }
 
+#[inline]
+fn rounded_stroke_has_side(px: i32, py: i32, bounds: Rect, radius: i32, thickness: i32, sides: u8) -> bool {
+    use border::*;
+
+    let x = bounds.x;
+    let y = bounds.y;
+    let right = bounds.right();
+    let bottom = bounds.bottom();
+    // Include one extra pixel for the antialiased inner edge.
+    let edge = thickness + 1;
+    let in_corner_x = px < x + radius || px >= right - radius;
+    let in_corner_y = py < y + radius || py >= bottom - radius;
+
+    (sides & TOP != 0 && (py < y + edge || (py < y + radius && in_corner_x)))
+        || (sides & BOTTOM != 0 && (py >= bottom - edge || (py >= bottom - radius && in_corner_x)))
+        || (sides & LEFT != 0 && (px < x + edge || (px < x + radius && in_corner_y)))
+        || (sides & RIGHT != 0 && (px >= right - edge || (px >= right - radius && in_corner_y)))
+}
+
 fn draw_axis_aligned_stroke(
     buffer: &mut [u32],
     bounds: Rect,
@@ -359,7 +378,7 @@ pub fn draw_rect_stroke(
     clip: Rect,
     sides: u8,
 ) {
-    if bounds.is_empty() || thickness == 0 || window_width == 0 {
+    if bounds.is_empty() || thickness == 0 || window_width == 0 || sides == border::NONE {
         return;
     }
 
@@ -401,6 +420,24 @@ pub fn draw_rect_stroke(
     let max_x = vis.right() as usize;
     let min_y = vis.y as usize;
     let max_y = vis.bottom() as usize;
+
+    if sides != border::ALL {
+        for py in min_y..max_y {
+            let dy = (py as f32 + 0.5 - cy).abs() - half_h + r_f32;
+            let row = py * window_width;
+            for px in min_x..max_x {
+                if !rounded_stroke_has_side(px as i32, py as i32, bounds, r, t, sides) {
+                    continue;
+                }
+                let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                let alpha = 0.5 - stroke_sdf(rounded_rect_sdf(dx, dy, r_f32), t_f32);
+                if let Some(bg) = buffer.get_mut(row + px) {
+                    apply_coverage(bg, color, src, alpha);
+                }
+            }
+        }
+        return;
+    }
 
     let y_top_safe = (y + r).max(0) as usize;
     let y_bottom_safe = (y + h - r).max(0) as usize;
@@ -950,7 +987,10 @@ pub fn draw_command(
 
     match command {
         Command::Rect {
-            bounds, color, radius, ..
+            bounds,
+            color,
+            radius,
+            clip: _,
         } => draw_rect_fill(
             buffer,
             bounds.scale(display_scale),
@@ -966,7 +1006,7 @@ pub fn draw_command(
             border_sides,
             border_thickness,
             radius,
-            ..
+            clip: _,
         } => draw_rect_stroke(
             buffer,
             bounds.scale(display_scale),
@@ -984,7 +1024,7 @@ pub fn draw_command(
             color,
             size,
             font_id,
-            ..
+            clip: _,
         } => {
             let bitmap = font_bitmaps.entry(*font_id).or_default();
             let origin = bounds.scale(display_scale);
@@ -1001,7 +1041,13 @@ pub fn draw_command(
                 clip,
             );
         }
-        Command::Triangle { a, b, c, color, .. } => draw_triangle_sdf(
+        Command::Triangle {
+            a,
+            b,
+            c,
+            color,
+            clip: _,
+        } => draw_triangle_sdf(
             buffer,
             framebuffer_width,
             framebuffer_height,
@@ -1020,7 +1066,7 @@ pub fn draw_command(
             fit,
             opacity,
             radius,
-            ..
+            clip: _,
         } => draw_image(
             buffer,
             framebuffer_width,

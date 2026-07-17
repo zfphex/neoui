@@ -15,7 +15,8 @@ fn main() {
                     .height(200)
                     .radius(20)
                     .border(white())
-                    .border_thickness(1),
+                    .border_side(TOP| LEFT | RIGHT)
+                    .border_thickness(2),
             );
         });
     }

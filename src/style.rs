@@ -55,11 +55,9 @@ pub struct Style {
     pub bg: Option<u32>,
     pub radius: Option<usize>,
 
-    //TODO: Everything about this is a bit too confusing.
     pub border: Option<u32>,
     pub border_thickness: Option<usize>,
     pub border_side: Option<u8>,
-    pub border_radius: Option<u32>,
 
     pub is_selected: bool,
     pub selected: Option<u32>,
@@ -122,11 +120,6 @@ impl Style {
         self.border_thickness = Some(border_thickness);
         self
     }
-
-    // pub fn border_radius(mut self, border_radius: u32) -> Self {
-    //     self.border_radius = Some(border_radius);
-    //     self
-    // }
 
     pub fn border_side(mut self, border_side: u8) -> Self {
         self.border_side = Some(border_side);

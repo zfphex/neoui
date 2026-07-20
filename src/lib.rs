@@ -15,6 +15,7 @@ pub use miniwin::*;
 
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
+use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 
 pub use fontdue;
@@ -38,6 +39,8 @@ pub struct Frame {
     pub max_child_width: i32,
     pub max_child_height: i32,
     pub scroll_y: usize,
+    scope: usize,
+    anim_slot: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -143,10 +146,10 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             left_mouse_start: None,
             left_mouse_release: None,
             dt: 0.0,
-            anim_f32_cursor: 0,
-            anim_color_cursor: 0,
-            anim_state_f32: Vec::new(),
-            anim_state_color: Vec::new(),
+            next_scope: 0,
+            id_stack: Vec::new(),
+            anim_state_f32: FxHashMap::default(),
+            anim_state_color: FxHashMap::default(),
             last_frame_time: std::time::Instant::now(),
             animating: false,
             hovered_depth: None,
@@ -169,12 +172,11 @@ pub struct UiState {
     pub clear_color: u32,
     pub scroll_y: i32,
 
-    // Animation state is addressed by call order within each animation type.
     pub dt: f32,
-    pub anim_f32_cursor: usize,
-    pub anim_color_cursor: usize,
-    pub anim_state_f32: Vec<AnimationStateF32>,
-    pub anim_state_color: Vec<(f32, f32, f32)>,
+    next_scope: usize,
+    id_stack: Vec<(usize, usize)>,
+    pub anim_state_f32: FxHashMap<(usize, usize), AnimationStateF32>,
+    pub anim_state_color: FxHashMap<(usize, usize), (f32, f32, f32)>,
     pub last_frame_time: std::time::Instant,
     pub animating: bool,
 
@@ -240,8 +242,8 @@ impl Context {
             let now = std::time::Instant::now();
             frame.dt = (now - frame.last_frame_time).as_secs_f32();
             frame.last_frame_time = now;
-            frame.anim_f32_cursor = 0;
-            frame.anim_color_cursor = 0;
+            frame.next_scope = 0;
+            frame.id_stack.clear();
             frame.animating = false;
             frame.scroll_y = frame.window.scroll_delta().1.round() as i32;
             frame.hovered_depth = None;
@@ -259,10 +261,13 @@ impl Context {
             let bounds = Rect::new(0, 0, width as i32, height as i32);
 
             frame.layout_stack.clear();
+            let scope = frame.next_scope;
+            frame.next_scope += 1;
             frame.layout_stack.push(Frame {
                 bounds,
                 clip: bounds,
                 flow: Flow::Down,
+                scope,
                 ..Default::default()
             });
 
@@ -1114,6 +1119,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             // Nested flows are already placed in screen space; do not re-apply parent scroll
             // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
+            scope: {
+                let s = self.next_scope;
+                self.next_scope += 1;
+                s
+            },
             ..Default::default()
         };
 
@@ -1261,6 +1271,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             depth: parent.depth,
             cursor_x: bounds.x,
             cursor_y: bounds.y,
+            scope: {
+                let s = self.next_scope;
+                self.next_scope += 1;
+                s
+            },
             ..Default::default()
         };
 
@@ -1325,20 +1340,43 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         state.render_cache.finish();
     }
 
-    pub fn animate_f32(&mut self, target: f32, duration: f32, ease: Ease) -> f32 {
-        let index = self.anim_f32_cursor;
-        self.anim_f32_cursor += 1;
-        let dt = self.dt;
+    pub fn with_id<R>(&mut self, id: impl Hash, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let parent = self
+            .id_stack
+            .last()
+            .map(|(s, _)| *s)
+            .unwrap_or(self.layout_stack.last().unwrap().scope);
+        let mut h = rustc_hash::FxHasher::default();
+        parent.hash(&mut h);
+        id.hash(&mut h);
+        self.id_stack.push((h.finish() as usize, 0));
+        let r = ui(self);
+        self.id_stack.pop();
+        r
+    }
 
-        if index == self.anim_state_f32.len() {
-            self.anim_state_f32.push(AnimationStateF32 {
-                current: target,
-                target,
-                initial: target,
-                elapsed: duration,
-            });
+    fn anim_id(&mut self) -> (usize, usize) {
+        if let Some((s, n)) = self.id_stack.last_mut() {
+            let id = (*s, *n);
+            *n += 1;
+            id
+        } else {
+            let f = self.layout_stack.last_mut().unwrap();
+            let id = (f.scope, f.anim_slot);
+            f.anim_slot += 1;
+            id
         }
-        let state = &mut self.anim_state_f32[index];
+    }
+
+    pub fn animate_f32(&mut self, target: f32, duration: f32, ease: Ease) -> f32 {
+        let id = self.anim_id();
+        let dt = self.dt;
+        let state = self.anim_state_f32.entry(id).or_insert(AnimationStateF32 {
+            current: target,
+            target,
+            initial: target,
+            elapsed: duration,
+        });
 
         if state.target != target {
             state.initial = state.current;
@@ -1381,15 +1419,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn animate_color(&mut self, target: u32, speed: f32) -> u32 {
-        let index = self.anim_color_cursor;
-        self.anim_color_cursor += 1;
+        let id = self.anim_id();
         let dt = self.dt;
-
         let (tr, tg, tb) = split_f32(target);
-        if index == self.anim_state_color.len() {
-            self.anim_state_color.push((tr, tg, tb));
-        }
-        let (r, g, b) = &mut self.anim_state_color[index];
+        let (r, g, b) = self.anim_state_color.entry(id).or_insert((tr, tg, tb));
         let blend = 1.0 - (-speed * dt).exp();
 
         *r += (tr - *r) * blend;

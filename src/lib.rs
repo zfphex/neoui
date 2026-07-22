@@ -111,8 +111,6 @@ pub struct State {
     pub pressed: bool,
     pub released: bool,
     pub clicked: bool,
-    /// Platform double-click (miniwin / OS double-click timing & distance).
-    /// When true, `clicked` is also true for the completing click.
     pub double_clicked: bool,
     pub hovered: bool,
     pub rect: Rect,
@@ -163,36 +161,6 @@ pub struct Context {
     state: UiState,
 }
 
-pub struct UiState {
-    pub fonts: Vec<fontdue::Font>,
-    pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
-    pub image_cache: FxHashMap<ImageKey, ImageEntry>,
-    pub default_font_size: usize,
-    pub clear_color: u32,
-    pub scroll_y: i32,
-
-    pub dt: f32,
-    next_scope: usize,
-    id_stack: Vec<(usize, usize)>,
-    pub anim_state_f32: FxHashMap<(usize, usize), AnimationStateF32>,
-    pub anim_state_color: FxHashMap<(usize, usize), (f32, f32, f32)>,
-    pub last_frame_time: std::time::Instant,
-    pub animating: bool,
-
-    left_mouse_start: Option<Rect>,
-    left_mouse_release: Option<Rect>,
-    hovered_depth: Option<usize>,
-    layout_stack: Vec<Frame>,
-    render_cache: RenderCache,
-}
-
-pub struct FrameContext<'frame, 'text> {
-    pub window: &'frame mut Window,
-    state: &'frame mut UiState,
-    commands: [Vec<Command<'text>>; 16],
-}
-
 impl Deref for Context {
     type Target = UiState;
 
@@ -205,6 +173,45 @@ impl DerefMut for Context {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.state
     }
+}
+
+pub struct UiState {
+    pub fonts: Vec<fontdue::Font>,
+    pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
+    pub image_cache: FxHashMap<ImageKey, ImageEntry>,
+    pub default_font_size: usize,
+    pub clear_color: u32,
+    pub scroll_y: i32,
+
+    pub dt: f32,
+    pub next_scope: usize,
+    pub id_stack: Vec<(usize, usize)>,
+    pub anim_state_f32: FxHashMap<(usize, usize), AnimationStateF32>,
+    pub anim_state_color: FxHashMap<(usize, usize), (f32, f32, f32)>,
+    pub last_frame_time: std::time::Instant,
+    pub animating: bool,
+
+    pub left_mouse_start: Option<Rect>,
+    pub left_mouse_release: Option<Rect>,
+    pub hovered_depth: Option<usize>,
+    pub layout_stack: Vec<Frame>,
+    pub render_cache: RenderCache,
+}
+
+impl UiState {
+    /// Add a font then return a font ID to use.
+    pub fn add_font(&mut self, font: fontdue::Font) -> usize {
+        let id = self.fonts.len();
+        self.fonts.push(font);
+        id
+    }
+}
+
+pub struct FrameContext<'frame, 'text> {
+    pub window: &'frame mut Window,
+    pub commands: [Vec<Command<'text>>; 16],
+    state: &'frame mut UiState,
 }
 
 impl Deref for FrameContext<'_, '_> {
@@ -222,11 +229,6 @@ impl DerefMut for FrameContext<'_, '_> {
 }
 
 impl Context {
-    /// Force the next frame to rebuild the complete framebuffer.
-    pub fn invalidate_render_cache(&mut self) {
-        self.state.render_cache.invalidate();
-    }
-
     pub fn frame<'text, F>(&mut self, mut ui: F)
     where
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'text>),
@@ -290,15 +292,6 @@ impl Context {
         if !self.state.animating {
             self.state.last_frame_time = std::time::Instant::now();
         }
-    }
-}
-
-impl UiState {
-    /// Add a font then return a font ID to use.
-    pub fn add_font(&mut self, font: fontdue::Font) -> usize {
-        let id = self.fonts.len();
-        self.fonts.push(font);
-        id
     }
 }
 
@@ -762,7 +755,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.draw_line(parts, style)
     }
 
-    fn draw_line(&mut self, parts: Vec<Line<'text>>, style: Style) -> State {
+    pub fn draw_line(&mut self, parts: Vec<Line<'text>>, style: Style) -> State {
         let default_size = self.default_font_size;
         let selected = style.is_selected;
 

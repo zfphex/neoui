@@ -1,4 +1,4 @@
-use crate::Rect;
+use minwin::Rect;
 use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -111,7 +111,7 @@ impl Image {
     fn new(width: usize, height: usize, pixels: Box<[u32]>) -> Self {
         Self {
             id: NEXT_IMAGE_ID
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
                 .unwrap(),
             width,
             height,

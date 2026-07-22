@@ -11,7 +11,7 @@ pub mod image;
 pub use image::*;
 
 pub use mini::*;
-pub use miniwin::*;
+pub use minwin::*;
 
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
@@ -130,7 +130,7 @@ pub struct ScrollState {
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub fn ui(title: &str, width: usize, height: usize) -> Context {
-    let window = miniwin::create_window(title, None, width as i32, height as i32, false, WindowStyle::Standard);
+    let window = create_window(title, None, width as i32, height as i32, false, WindowStyle::Standard);
 
     Context {
         window,

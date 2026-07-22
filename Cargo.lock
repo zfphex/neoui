@@ -128,7 +128,7 @@ version = "0.1.0"
 source = "git+https://github.com/zfphex/mini#5f2a3b76f5ecc3d09a9c821496f1e99357953e48"
 
 [[package]]
-name = "miniwin"
+name = "minwin"
 version = "0.1.0"
 
 [[package]]
@@ -138,7 +138,7 @@ dependencies = [
  "divan",
  "fontdue",
  "mini",
- "miniwin",
+ "minwin",
  "rustc-hash",
  "zune-jpeg",
  "zune-png",

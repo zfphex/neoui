@@ -98,21 +98,22 @@ pub fn align_rect(
     let inner_x = parent.x + pad_left;
     let inner_y = parent.y + pad_top;
 
-    let align_x = || if child_w >= available_w { inner_x } else { inner_x + (available_w - child_w) / 2 };
-    let align_y = || if child_h >= available_h { inner_y } else { inner_y + (available_h - child_h) / 2 };
-    let right_x = || if child_w >= available_w { inner_x } else { inner_x + available_w - child_w };
-    let bottom_y = || if child_h >= available_h { inner_y } else { inner_y + available_h - child_h };
+    #[rustfmt::skip] 
+    let align_x = if child_w >= available_w { inner_x } else { inner_x + (available_w - child_w) / 2 };
+    let align_y = if child_h >= available_h { inner_y } else { inner_y + (available_h - child_h) / 2 };
+    let right_x = if child_w >= available_w { inner_x } else { inner_x + available_w - child_w };
+    let bottom_y = if child_h >= available_h { inner_y } else { inner_y + available_h - child_h };
 
     Some(match alignment {
-        Alignment::Left => (inner_x, align_y()),
-        Alignment::Center => (align_x(), align_y()),
-        Alignment::Right => (right_x(), align_y()),
+        Alignment::Left => (inner_x, align_y),
+        Alignment::Center => (align_x, align_y),
+        Alignment::Right => (right_x, align_y),
         Alignment::TopLeft => (inner_x, inner_y),
-        Alignment::TopCenter => (align_x(), inner_y),
-        Alignment::TopRight => (right_x(), inner_y),
-        Alignment::BottomLeft => (inner_x, bottom_y()),
-        Alignment::BottomCenter => (align_x(), bottom_y()),
-        Alignment::BottomRight => (right_x(), bottom_y()),
+        Alignment::TopCenter => (align_x, inner_y),
+        Alignment::TopRight => (right_x, inner_y),
+        Alignment::BottomLeft => (inner_x, bottom_y),
+        Alignment::BottomCenter => (align_x, bottom_y),
+        Alignment::BottomRight => (right_x, bottom_y),
     })
 }
 

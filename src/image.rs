@@ -56,25 +56,6 @@ pub enum ImageFit {
     Fixed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ImageStyle {
-    pub fit: ImageFit,
-    pub opacity: u8,
-    pub radius: usize,
-    pub depth: usize,
-}
-
-impl Default for ImageStyle {
-    fn default() -> Self {
-        Self {
-            fit: ImageFit::Stretch,
-            opacity: 255,
-            radius: 0,
-            depth: 0,
-        }
-    }
-}
-
 impl Image {
     pub fn from_rgba8(width: usize, height: usize, pixels: impl Into<Box<[u8]>>) -> Result<Self, String> {
         let pixels = pixels.into();
@@ -151,14 +132,6 @@ fn checked_pixels(width: usize, height: usize) -> Result<usize, String> {
         .ok_or_else(|| "image dimensions overflow addressable memory".to_string())
 }
 
-#[cfg(any(feature = "jpeg", feature = "png"))]
-fn validate_decode_size(width: usize, height: usize) -> Result<(), String> {
-    let count = checked_pixels(width, height)?;
-    count
-        .checked_mul(4)
-        .ok_or_else(|| "image dimensions overflow addressable memory".to_string())?;
-    Ok(())
-}
 
 #[cfg(feature = "jpeg")]
 fn decode_jpeg(bytes: &[u8]) -> Result<Image, String> {
@@ -172,7 +145,6 @@ fn decode_jpeg(bytes: &[u8]) -> Result<Image, String> {
         .info()
         .ok_or_else(|| "failed to decode Jpeg: missing JPEG dimensions".to_string())?;
     let (width, height) = (info.width as usize, info.height as usize);
-    validate_decode_size(width, height)?;
     let pixels = decoder.decode().map_err(|e| decode_error(ImageFormat::Jpeg, e))?;
     Image::from_rgba8(width, height, pixels)
 }
@@ -193,7 +165,6 @@ fn decode_png(bytes: &[u8]) -> Result<Image, String> {
     let (width, height) = decoder
         .dimensions()
         .ok_or_else(|| "failed to decode Png: missing PNG dimensions".to_string())?;
-    validate_decode_size(width, height)?;
     let color = decoder
         .colorspace()
         .ok_or_else(|| "unsupported decoded image color space".to_string())?;

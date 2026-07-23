@@ -227,16 +227,6 @@ fn mix(h: u64, v: u64) -> u64 {
     h.wrapping_mul(HASH_MIX).wrapping_add(v).rotate_left(27)
 }
 
-pub fn command_clip(command: &Command<'_>) -> Rect {
-    match command {
-        Command::Rect { clip, .. }
-        | Command::RectStroke { clip, .. }
-        | Command::Triangle { clip, .. }
-        | Command::Text { clip, .. }
-        | Command::Image { clip, .. } => *clip,
-    }
-}
-
 pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_h: usize) -> Rect {
     let bounds = match command {
         Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } => bounds.scale(scale_factor),
@@ -288,6 +278,6 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
         }
     };
     bounds
-        .intersection(command_clip(command).scale(scale_factor))
+        .intersection(command.clip().scale(scale_factor))
         .clamp_to_size(fb_w as i32, fb_h as i32)
 }

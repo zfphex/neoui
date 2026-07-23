@@ -99,6 +99,18 @@ pub enum Command<'a> {
     },
 }
 
+impl<'a> Command<'a> {
+    pub fn clip(&self) -> Rect {
+        match self {
+            Command::Rect { clip, .. }
+            | Command::RectStroke { clip, .. }
+            | Command::Triangle { clip, .. }
+            | Command::Text { clip, .. }
+            | Command::Image { clip, .. } => *clip,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Layout {
     pub size: Rect,
@@ -416,13 +428,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
     }
 
-    /// Add a font then return a font ID to use.
-    pub fn add_font(&mut self, font: fontdue::Font) -> usize {
-        let id = self.fonts.len();
-        self.fonts.push(font);
-        id
-    }
-
     pub fn resolve_rect(&self, rect: Rect, flow: Flow, size: Size) -> i32 {
         match size {
             Size::Pixel(px) => px,
@@ -608,15 +613,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     /// Check if a rectangle is clicked off of
     pub fn lost_focus(&self, rect: Rect) -> bool {
-        let Some(initial) = self.left_mouse_start else {
+        let (Some(initial), Some(release)) = (self.left_mouse_start, self.left_mouse_release) else {
             return false;
         };
 
-        let Some(release) = self.left_mouse_release else {
-            return false;
-        };
-
-        self.window.mouse_released(Mouse::Left) && !initial.intersects(rect) && !release.intersects(rect)
+        !initial.intersects(rect) && !release.intersects(rect)
     }
 
     pub fn mouse_position(&self) -> Rect {
@@ -787,32 +788,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             .map(|h| self.resolve_size(h, Flow::Down))
             .unwrap_or(content_h + padding.top as i32 + padding.bottom as i32);
 
-        let frame = self.layout_stack.last().expect("No active frame");
-        let flow = frame.flow;
-        let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
-
-        let absolute = style.x.is_some() && style.y.is_some();
-        let (paint_x, paint_y, rect) = if absolute {
-            let x = self.resolve_size(style.x.unwrap(), Flow::Right);
-            let y = self.resolve_size(style.y.unwrap(), Flow::Down);
-            (x, y, Rect::new(x, y, width, height))
-        } else {
-            let layout = self.walk_layout(width, height, gap);
-            let paint_x = match style.x {
-                Some(x) => self.resolve_size(x, Flow::Right),
-                None => layout.paint_x,
-            };
-            let paint_y = match style.y {
-                Some(y) => self.resolve_size(y, Flow::Down),
-                None => layout.paint_y,
-            };
-            let rect = if style.x.is_some() || style.y.is_some() {
-                Rect::new(paint_x, paint_y, width, height)
-            } else {
-                layout.size
-            };
-            (paint_x, paint_y, rect)
-        };
+        let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
 
         if rect.is_empty() {
             return State {
@@ -939,32 +915,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             .map(|h| self.resolve_size(h, Flow::Down))
             .unwrap_or(text_metrics.height + padding.top as i32 + padding.bottom as i32);
 
-        let frame = self.layout_stack.last().expect("No active frame");
-        let flow = frame.flow;
-        let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
-
-        let absolute = style.x.is_some() && style.y.is_some();
-        let (paint_x, paint_y, rect) = if absolute {
-            let x = self.resolve_size(style.x.unwrap(), Flow::Right);
-            let y = self.resolve_size(style.y.unwrap(), Flow::Down);
-            (x, y, Rect::new(x, y, width, height))
-        } else {
-            let layout = self.walk_layout(width, height, gap);
-            let paint_x = match style.x {
-                Some(x) => self.resolve_size(x, Flow::Right),
-                None => layout.paint_x,
-            };
-            let paint_y = match style.y {
-                Some(y) => self.resolve_size(y, Flow::Down),
-                None => layout.paint_y,
-            };
-            let rect = if style.x.is_some() || style.y.is_some() {
-                Rect::new(paint_x, paint_y, width, height)
-            } else {
-                layout.size
-            };
-            (paint_x, paint_y, rect)
-        };
+        let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
 
         if rect.is_empty() {
             return State {
@@ -1007,10 +958,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let border = if selected && style.selected_border.is_some() {
             style.selected_border
-        } else if style.border.is_some() {
-            style.border
         } else {
-            None
+            style.border
         };
 
         // TODO: Borders render inside of the bounding box
@@ -1233,10 +1182,18 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.layout_stack.last().as_ref().unwrap()
     }
 
-    //TODO: Cleanup the distinction between the two.
-    pub fn current_frame_area(&self) -> Rect {
-        let parent = self.layout_stack.last().expect("Layout stack empty");
-        parent.bounds
+    fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Style) -> (i32, i32, Rect) {
+        let flow = self.layout_stack.last().expect("No active frame").flow;
+        let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
+        let layout = self.walk_layout(width, height, gap);
+        let paint_x = style.x.map_or(layout.paint_x, |x| self.resolve_size(x, Flow::Right));
+        let paint_y = style.y.map_or(layout.paint_y, |y| self.resolve_size(y, Flow::Down));
+        let rect = if style.x.is_some() || style.y.is_some() {
+            Rect::new(paint_x, paint_y, width, height)
+        } else {
+            layout.size
+        };
+        (paint_x, paint_y, rect)
     }
 
     pub fn current_frame_bounds(&self) -> Rect {

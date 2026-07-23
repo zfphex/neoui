@@ -62,9 +62,6 @@ pub fn visible_rect(shape: Rect, clip: Rect, fb_w: i32, fb_h: i32) -> Option<Rec
     if r.is_empty() { None } else { Some(r) }
 }
 
-pub const fn blend(color: u8, alpha: u8, bg_color: u8, bg_alpha: u8) -> u8 {
-    ((color as f32 * alpha as f32 + bg_color as f32 * bg_alpha as f32) / 255.0).round() as u8
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Alignment {
@@ -101,38 +98,21 @@ pub fn align_rect(
     let inner_x = parent.x + pad_left;
     let inner_y = parent.y + pad_top;
 
-    let mid_x = if child_w >= available_w {
-        inner_x
-    } else {
-        inner_x + (available_w / 2) - (child_w / 2)
-    };
-    let mid_y = if child_h >= available_h {
-        inner_y
-    } else {
-        inner_y + (available_h / 2) - (child_h / 2)
-    };
-
-    let right_edge = if child_w >= available_w {
-        inner_x
-    } else {
-        inner_x + available_w - child_w
-    };
-    let bottom_edge = if child_h >= available_h {
-        inner_y
-    } else {
-        inner_y + available_h - child_h
-    };
+    let align_x = || if child_w >= available_w { inner_x } else { inner_x + (available_w - child_w) / 2 };
+    let align_y = || if child_h >= available_h { inner_y } else { inner_y + (available_h - child_h) / 2 };
+    let right_x = || if child_w >= available_w { inner_x } else { inner_x + available_w - child_w };
+    let bottom_y = || if child_h >= available_h { inner_y } else { inner_y + available_h - child_h };
 
     Some(match alignment {
-        Alignment::Left => (inner_x, mid_y),
-        Alignment::Center => (mid_x, mid_y),
-        Alignment::Right => (right_edge, mid_y),
+        Alignment::Left => (inner_x, align_y()),
+        Alignment::Center => (align_x(), align_y()),
+        Alignment::Right => (right_x(), align_y()),
         Alignment::TopLeft => (inner_x, inner_y),
-        Alignment::TopCenter => (mid_x, inner_y),
-        Alignment::TopRight => (right_edge, inner_y),
-        Alignment::BottomLeft => (inner_x, bottom_edge),
-        Alignment::BottomCenter => (mid_x, bottom_edge),
-        Alignment::BottomRight => (right_edge, bottom_edge),
+        Alignment::TopCenter => (align_x(), inner_y),
+        Alignment::TopRight => (right_x(), inner_y),
+        Alignment::BottomLeft => (inner_x, bottom_y()),
+        Alignment::BottomCenter => (align_x(), bottom_y()),
+        Alignment::BottomRight => (right_x(), bottom_y()),
     })
 }
 
@@ -530,77 +510,6 @@ pub fn draw_rect_stroke(
     }
 }
 
-pub fn draw_triangle_scanline(
-    buffer: &mut [u32],
-    window_width: usize,
-    window_height: usize,
-    mut x0: usize,
-    mut y0: usize,
-    mut x1: usize,
-    mut y1: usize,
-    mut x2: usize,
-    mut y2: usize,
-    color: u32,
-) {
-    if y0 > y1 {
-        std::mem::swap(&mut y0, &mut y1);
-        std::mem::swap(&mut x0, &mut x1);
-    }
-    if y0 > y2 {
-        std::mem::swap(&mut y0, &mut y2);
-        std::mem::swap(&mut x0, &mut x2);
-    }
-    if y1 > y2 {
-        std::mem::swap(&mut y1, &mut y2);
-        std::mem::swap(&mut x1, &mut x2);
-    }
-
-    if y0 >= window_height || y2 == 0 {
-        return;
-    }
-
-    let total_height = y2 - y0;
-    if total_height == 0 {
-        return;
-    }
-
-    for y in y0..=y2 {
-        if y >= window_height {
-            break;
-        }
-
-        let second_half = y > y1 || y1 == y0;
-        let segment_height = if second_half { y2 - y1 } else { y1 - y0 };
-        let alpha = (y - y0) as f32 / total_height as f32;
-        let beta = if segment_height == 0 {
-            1.0
-        } else {
-            (y - if second_half { y1 } else { y0 }) as f32 / segment_height as f32
-        };
-
-        let mut ax = x0 as f32 + (x2 as f32 - x0 as f32) * alpha;
-        let mut bx = if second_half {
-            x1 as f32 + (x2 as f32 - x1 as f32) * beta
-        } else {
-            x0 as f32 + (x1 as f32 - x0 as f32) * beta
-        };
-
-        if ax > bx {
-            std::mem::swap(&mut ax, &mut bx);
-        }
-
-        let left = (ax as usize).min(window_width);
-        let right = (bx as usize).min(window_width);
-
-        if left < right && left < window_width {
-            let row_start = y * window_width + left;
-            let row_end = y * window_width + right;
-            if let Some(slice) = buffer.get_mut(row_start..row_end) {
-                slice.fill(color);
-            }
-        }
-    }
-}
 
 pub fn draw_triangle_sdf(
     buffer: &mut [u32],
@@ -660,9 +569,7 @@ pub fn draw_triangle_sdf(
         return;
     }
 
-    let src_r = ((color >> 16 & 0xFF) as f32 / 255.0).powi(2);
-    let src_g = ((color >> 8 & 0xFF) as f32 / 255.0).powi(2);
-    let src_b = ((color & 0xFF) as f32 / 255.0).powi(2);
+    let src = color_linear(color);
 
     let total_height = y2 - y0;
     let step_long = (x2 as f32 - x0 as f32) / total_height as f32;
@@ -737,17 +644,7 @@ pub fn draw_triangle_sdf(
             } else if alpha > 0.0 {
                 let idx = y as usize * window_width + x;
                 if let Some(bg) = buffer.get_mut(idx) {
-                    let bg_r = (((*bg >> 16) & 0xFF) as f32 / 255.0).powi(2);
-                    let bg_g = (((*bg >> 8) & 0xFF) as f32 / 255.0).powi(2);
-                    let bg_b = ((*bg & 0xFF) as f32 / 255.0).powi(2);
-
-                    let out_r = (src_r * alpha) + (bg_r * (1.0 - alpha));
-                    let out_g = (src_g * alpha) + (bg_g * (1.0 - alpha));
-                    let out_b = (src_b * alpha) + (bg_b * (1.0 - alpha));
-
-                    *bg = ((out_r.sqrt() * 255.0) as u32) << 16
-                        | ((out_g.sqrt() * 255.0) as u32) << 8
-                        | ((out_b.sqrt() * 255.0) as u32);
+                    blend_srgb(bg, src, alpha);
                 }
             }
         }
@@ -980,7 +877,7 @@ pub fn draw_command(
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
-    let clip = command_clip(command).scale(display_scale).intersection(damage);
+    let clip = command.clip().scale(display_scale).intersection(damage);
     if clip.is_empty() {
         return;
     }
@@ -1114,3 +1011,5 @@ pub fn raster_damage(
         }
     }
 }
+
+

@@ -62,7 +62,6 @@ pub fn visible_rect(shape: Rect, clip: Rect, fb_w: i32, fb_h: i32) -> Option<Rec
     if r.is_empty() { None } else { Some(r) }
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Alignment {
     Left,
@@ -76,6 +75,7 @@ pub enum Alignment {
     BottomRight,
 }
 
+#[rustfmt::skip]
 pub fn align_rect(
     parent: Rect,
     child_w: i32,
@@ -98,7 +98,6 @@ pub fn align_rect(
     let inner_x = parent.x + pad_left;
     let inner_y = parent.y + pad_top;
 
-    #[rustfmt::skip] 
     let align_x = if child_w >= available_w { inner_x } else { inner_x + (available_w - child_w) / 2 };
     let align_y = if child_h >= available_h { inner_y } else { inner_y + (available_h - child_h) / 2 };
     let right_x = if child_w >= available_w { inner_x } else { inner_x + available_w - child_w };
@@ -510,7 +509,6 @@ pub fn draw_rect_stroke(
         }
     }
 }
-
 
 pub fn draw_triangle_sdf(
     buffer: &mut [u32],
@@ -1012,5 +1010,3 @@ pub fn raster_damage(
         }
     }
 }
-
-

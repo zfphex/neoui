@@ -4,6 +4,7 @@ fn fade(ui: &mut FrameContext, target: u32) -> u32 {
     ui.animate_color(target, 8.0)
 }
 
+#[rustfmt::skip]
 fn main() {
     defer_results!();
     let mut ui = ui("Anim", 700, 520);
@@ -59,7 +60,6 @@ fn main() {
                     });
                 }
 
-                #[rustfmt::skip] 
                 // Stable keys: insert/reorder keeps each item's animation state.
                 ui.text("OK — with_id (stable keys)", fg(hex("#4ade80")));
                 ui.flow_right(style().gap(8), |ui| {

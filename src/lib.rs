@@ -753,10 +753,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>, style: Style) -> State {
         let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
-        self.draw_line(parts, style)
-    }
-
-    pub fn draw_line(&mut self, parts: Vec<Line<'text>>, style: Style) -> State {
         let default_size = self.default_font_size;
         let selected = style.is_selected;
 

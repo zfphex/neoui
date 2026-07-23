@@ -132,7 +132,6 @@ fn checked_pixels(width: usize, height: usize) -> Result<usize, String> {
         .ok_or_else(|| "image dimensions overflow addressable memory".to_string())
 }
 
-
 #[cfg(feature = "jpeg")]
 fn decode_jpeg(bytes: &[u8]) -> Result<Image, String> {
     use zune_jpeg::zune_core::{bytestream::ZCursor, colorspace::ColorSpace, options::DecoderOptions};

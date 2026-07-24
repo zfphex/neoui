@@ -121,6 +121,33 @@ impl Image {
 
         Err("unsupported image format".to_string())
     }
+
+    /// Center-crop and scale to a square `size`×`size` image.
+    pub fn thumbnail(&self, size: usize) -> Self {
+        let size = size.max(1);
+        if self.width == size && self.height == size {
+            return self.clone();
+        }
+
+        // Cover-scale: fill the square, crop overflow.
+        let scale = (self.width as f32 / size as f32).min(self.height as f32 / size as f32);
+        let crop_w = size as f32 * scale;
+        let crop_h = size as f32 * scale;
+        let x0 = (self.width as f32 - crop_w) * 0.5;
+        let y0 = (self.height as f32 - crop_h) * 0.5;
+
+        let mut pixels = vec![0u32; size * size].into_boxed_slice();
+        for ty in 0..size {
+            let sy0 = y0 + ty as f32 * scale;
+            let sy1 = y0 + (ty + 1) as f32 * scale;
+            for tx in 0..size {
+                let sx0 = x0 + tx as f32 * scale;
+                let sx1 = x0 + (tx + 1) as f32 * scale;
+                pixels[ty * size + tx] = average_rect(self, sx0, sy0, sx1, sy1);
+            }
+        }
+        Self::new(size, size, pixels)
+    }
 }
 
 fn checked_pixels(width: usize, height: usize) -> Result<usize, String> {
@@ -280,9 +307,45 @@ fn rasterize_image(
     opacity: u8,
     radius: usize,
 ) -> ImageEntry {
+    let radius = radius.min(width.min(height) / 2);
+    // 1:1 copy path — common for pre-sized thumbnails.
+    if image.width == width && image.height == height && !matches!(fit, ImageFit::Fixed) {
+        if opacity == 255 && radius == 0 {
+            return ImageEntry {
+                width,
+                height,
+                pixels: image.pixels.clone(),
+            };
+        }
+        let mut pixels = image.pixels.clone();
+        let local = Rect::new(0, 0, width as i32, height as i32);
+        let r = radius as f32;
+        for y in 0..height as i32 {
+            for x in 0..width as i32 {
+                let i = y as usize * width + x as usize;
+                let coverage = rounded_coverage(x, y, local, r);
+                if coverage >= 1.0 && opacity == 255 {
+                    continue;
+                }
+                if coverage <= 0.0 {
+                    pixels[i] = 0;
+                    continue;
+                }
+                let pixel = pixels[i];
+                let alpha_scale = opacity as f32 / 255.0 * coverage;
+                let a = (((pixel >> 24) & 255) as f32 * alpha_scale).round() as u32;
+                let r8 = (((pixel >> 16) & 255) as f32 * alpha_scale).round() as u32;
+                let g8 = (((pixel >> 8) & 255) as f32 * alpha_scale).round() as u32;
+                let b8 = ((pixel & 255) as f32 * alpha_scale).round() as u32;
+                pixels[i] = a << 24 | r8 << 16 | g8 << 8 | b8;
+            }
+        }
+        return ImageEntry { width, height, pixels };
+    }
+
     let mut pixels = vec![0u32; width * height].into_boxed_slice();
     let local = Rect::new(0, 0, width as i32, height as i32);
-    let radius = radius.min(width.min(height) / 2) as f32;
+    let radius = radius as f32;
     let (scale_x, scale_y) = match fit {
         ImageFit::Stretch | ImageFit::Contain | ImageFit::Fixed => {
             (image.width as f32 / width as f32, image.height as f32 / height as f32)
@@ -319,6 +382,49 @@ fn rasterize_image(
     }
 
     ImageEntry { width, height, pixels }
+}
+
+/// Box-filter average of the source rect (coordinates in pixel space).
+fn average_rect(image: &Image, x0: f32, y0: f32, x1: f32, y1: f32) -> u32 {
+    let x0 = x0.clamp(0.0, image.width as f32);
+    let y0 = y0.clamp(0.0, image.height as f32);
+    let x1 = x1.clamp(0.0, image.width as f32).max(x0 + 1e-6);
+    let y1 = y1.clamp(0.0, image.height as f32).max(y0 + 1e-6);
+
+    // Single-pixel sample when the region is tiny (upscale / near 1:1).
+    if x1 - x0 <= 1.0 && y1 - y0 <= 1.0 {
+        return sample_bilinear(image, (x0 + x1) * 0.5 - 0.5, (y0 + y1) * 0.5 - 0.5);
+    }
+
+    let ix0 = (x0.floor() as usize).min(image.width - 1);
+    let iy0 = (y0.floor() as usize).min(image.height - 1);
+    let ix1 = ((x1.ceil() as usize).saturating_sub(1)).min(image.width - 1);
+    let iy1 = ((y1.ceil() as usize).saturating_sub(1)).min(image.height - 1);
+
+    let mut sa = 0u64;
+    let mut sr = 0u64;
+    let mut sg = 0u64;
+    let mut sb = 0u64;
+    let mut count = 0u64;
+    for y in iy0..=iy1 {
+        let row = y * image.width;
+        for x in ix0..=ix1 {
+            let p = image.pixels[row + x];
+            sa += ((p >> 24) & 255) as u64;
+            sr += ((p >> 16) & 255) as u64;
+            sg += ((p >> 8) & 255) as u64;
+            sb += (p & 255) as u64;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return 0;
+    }
+    let a = (sa / count) as u32;
+    let r = (sr / count) as u32;
+    let g = (sg / count) as u32;
+    let b = (sb / count) as u32;
+    a << 24 | r << 16 | g << 8 | b
 }
 
 fn blit_image(buffer: &mut [u32], framebuffer_width: usize, entry: &ImageEntry, dest_x: i32, dest_y: i32, draw: Rect) {

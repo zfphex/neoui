@@ -184,7 +184,7 @@ fn blend_srgb(bg: &mut u32, src: (f32, f32, f32, f32), a: f32) {
 
 #[inline]
 fn apply_coverage(bg: &mut u32, color: u32, src: (f32, f32, f32, f32), coverage: f32) {
-    let a = coverage * src.3;
+    let a = coverage.clamp(0.0, 1.0) * src.3;
     if a >= 0.999 {
         *bg = color & 0x00FF_FFFF;
     } else if a > 0.0 {

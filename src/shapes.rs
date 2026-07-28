@@ -269,6 +269,193 @@ fn draw_axis_aligned_stroke(
     }
 }
 
+#[allow(unused)]
+#[inline(never)]
+pub fn draw_rect_fill_wip(
+    buffer: &mut [u32],
+    bounds: Rect,
+    window_width: usize,
+    window_height: usize,
+    radius: usize,
+    color: u32,
+    clip: Rect,
+) {
+    mini::profile!();
+    use std::simd::{StdFloat, num::SimdFloat, u32x4, u32x8, u32x16};
+    // let (x, y, w, h) = (bounds.x as f32, bounds.y as f32, bounds.width as f32, bounds.height as f32);
+    let half_w = bounds.width as f32 * 0.5;
+    let half_h = bounds.height as f32 * 0.5;
+    let r = (radius as f32).min(half_w).min(half_h);
+    let aa_width = 1.0f32;
+    let s = aa_width.max(0.001);
+    let (bx, by) = (half_w - r, half_h - r);
+    let (cx, cy) = (bounds.x as f32 + half_w, bounds.y as f32 + half_h);
+
+    let min_x = (cx - half_w - s).floor() as i32;
+    let max_x = (cx + half_w + s).ceil() as i32;
+    let min_y = (cy - half_h - s).floor() as i32;
+    let max_y = (cy + half_h + s).ceil() as i32;
+
+    let min_x = min_x.clamp(clip.x.max(0), clip.right()) as usize;
+    let max_x = max_x.clamp(clip.x.max(0), clip.right()) as usize;
+    let min_y = min_y.clamp(clip.y.max(0), clip.bottom()) as usize;
+    let max_y = max_y.clamp(clip.y.max(0), clip.bottom()) as usize;
+
+    type Vec8 = std::simd::f32x16;
+    const LANES: usize = 16;
+    type VecU8 = u32x16;
+
+    // let lane_offsets = Vec8::from_array([0.5, 1.5, 2.5, 3.5]);
+    // let lane_offsets = Vec8::from_array([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5]);
+    let lane_offsets = Vec8::from_array([
+        0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5,
+    ]);
+
+    let cx_vec = Vec8::splat(cx);
+    let inner_bx_vec = Vec8::splat(bx);
+    let r_vec = Vec8::splat(r);
+    let s_vec = Vec8::splat(s);
+    let inv_s = 1.0 / s;
+    let inv_s_vec = Vec8::splat(inv_s);
+    let zero = Vec8::splat(0.0);
+    let half = Vec8::splat(0.5);
+    let one = Vec8::splat(1.0);
+    let color_vec = Vec8::splat(color as f32);
+    let len_x = max_x - min_x;
+    let simd_chunks = len_x / LANES;
+    let x_simd_end = min_x + simd_chunks * LANES;
+
+    let ca_vec = Vec8::splat(((color >> 24) & 0xFF) as f32);
+    let cr_vec = Vec8::splat(((color >> 16) & 0xFF) as f32);
+    let cg_vec = Vec8::splat(((color >> 8) & 0xFF) as f32);
+    let cb_vec = Vec8::splat((color & 0xFF) as f32);
+
+    let shift_24 = VecU8::splat(24);
+    let shift_16 = VecU8::splat(16);
+    let shift_8 = VecU8::splat(8);
+
+    for y in min_y..max_y {
+        let row_start = y * window_width;
+        let py = y as f32 + 0.5;
+        let dy = (py - cy).abs() - by;
+
+        let dy_vec = Vec8::splat(dy);
+        let exty_vec = dy_vec.simd_max(zero);
+
+        let exty_sq = exty_vec * exty_vec;
+
+        let row = &mut buffer[row_start..row_start + window_width];
+        let row_span = &mut row[min_x..max_x];
+        let mut chunks = row_span.chunks_exact_mut(LANES);
+
+        for (chunk, out) in (&mut chunks).enumerate() {
+            let base_x = (min_x + chunk * LANES) as f32;
+            let px_vec = Vec8::splat(base_x) + lane_offsets;
+            let dx_vec = (px_vec - cx_vec).abs() - inner_bx_vec;
+
+            let extx_vec = dx_vec.simd_max(zero);
+            let exterior_dist = (extx_vec * extx_vec + exty_sq).sqrt();
+            let interior_dist = dx_vec.simd_max(dy_vec).simd_min(zero);
+
+            let sdf = exterior_dist + interior_dist - r_vec;
+            let alpha = (half - sdf / s_vec).simd_clamp(zero, one);
+            let alpha = (half - sdf * inv_s_vec).simd_max(zero).simd_min(one);
+
+            let a_u32 = (ca_vec * alpha).cast::<u32>();
+            let r_u32 = (cr_vec * alpha).cast::<u32>();
+            let g_u32 = (cg_vec * alpha).cast::<u32>();
+            let b_u32 = (cb_vec * alpha).cast::<u32>();
+
+            let pixel_u32s = (a_u32 << shift_24) | (r_u32 << shift_16) | (g_u32 << shift_8) | b_u32;
+            let dst_offset = row_start + min_x + chunk * LANES;
+            let local_offset = min_x + chunk * LANES;
+            pixel_u32s.copy_to_slice(out);
+        }
+
+        // for x in x_simd_end..max_x {
+        //     let px = x as f32 + 0.5;
+        //     let dx = (px - cx).abs() - bx;
+
+        //     let extx = dx.max(0.0);
+        //     let exty = dy.max(0.0);
+        //     let exterior_dist = (extx * extx + exty * exty).sqrt();
+        //     let interior_dist = dx.max(dy).min(0.0);
+
+        //     let sdf = exterior_dist + interior_dist - r;
+        //     let alpha = (0.5 - sdf / s).clamp(0.0, 1.0);
+
+        //     let dst_offset = row_start + x;
+
+        //     let a = (((color >> 24) & 0xFF) as f32 * alpha) as u32;
+        //     let r = (((color >> 16) & 0xFF) as f32 * alpha) as u32;
+        //     let g = (((color >> 8) & 0xFF) as f32 * alpha) as u32;
+        //     let b = ((color & 0xFF) as f32 * alpha) as u32;
+
+        //     buffer[dst_offset as usize] = (a << 24) | (r << 16) | (g << 8) | b;
+        // }
+    }
+}
+
+#[allow(unused)]
+#[rustfmt::skip]
+pub fn draw_rect_fill_scalar(
+    buffer: &mut [u32],
+    bounds: Rect,
+    window_width: usize,
+    window_height: usize,
+    radius: usize,
+    color: u32,
+    clip: Rect,
+) {
+    mini::profile!();
+    let (x, y, w, h) = (bounds.x as f32, bounds.y as f32, bounds.width as f32, bounds.height as f32);
+    let half_w = bounds.width as f32 * 0.5;
+    let half_h = bounds.height as f32 * 0.5;
+    let r = (radius as f32).min(half_w).min(half_h);
+    let aa_width = 1.0f32;
+    let s = aa_width.max(0.001);
+    let (bx, by) = (half_w - r, half_h - r);
+    let (cx, cy) = (x + half_w, y + half_h);
+
+    let min_x = (cx - half_w - s).floor() as i32;
+    let max_x = (cx + half_w + s).ceil() as i32;
+    let min_y = (cy - half_h - s).floor() as i32;
+    let max_y = (cy + half_h + s).ceil() as i32;
+
+    let min_x = min_x.clamp(clip.x.max(0), clip.right()) as usize;
+    let max_x = max_x.clamp(clip.x.max(0), clip.right()) as usize;
+    let min_y = min_y.clamp(clip.y.max(0), clip.bottom()) as usize;
+    let max_y = max_y.clamp(clip.y.max(0), clip.bottom()) as usize;
+
+    for y in min_y..max_y {
+        let row_start = y * window_width;
+        let py = y as f32 + 0.5;
+        let dy = (py - cy).abs() - by;
+
+        for x in min_x..max_x {
+            let px = x as f32 + 0.5;
+            let dx = (px - cx).abs() - bx;
+
+            let extx = dx.max(0.0);
+            let exty = dy.max(0.0);
+            let exterior_dist = (extx * extx + exty * exty).sqrt();
+            let interior_dist = dx.max(dy).min(0.0);
+
+            let sdf = exterior_dist + interior_dist - r;
+            let alpha = (0.5 - sdf / s).clamp(0.0, 1.0);
+
+            let dst_offset = row_start + x;
+
+            let a = (((color >> 24) & 0xFF) as f32 * alpha) as u32;
+            let r = (((color >> 16) & 0xFF) as f32 * alpha) as u32;
+            let g = (((color >> 8) & 0xFF) as f32 * alpha) as u32;
+            let b = ((color & 0xFF) as f32 * alpha) as u32;
+
+            buffer[dst_offset as usize] = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
 pub fn draw_rect_fill(
     buffer: &mut [u32],
     bounds: Rect,

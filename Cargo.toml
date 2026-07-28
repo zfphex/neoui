@@ -24,6 +24,9 @@ image = ["jpeg", "png"]
 name = "image"
 required-features = ["image"]
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
 [[bench]]
 name = "font"
 harness = false
@@ -58,3 +61,8 @@ required-features = ["bench"]
 name = "pool"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "draw_rect_fill"
+harness = false
+

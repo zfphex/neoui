@@ -1,5 +1,10 @@
 use crate::*;
 
+/// Damage below this many pixels is not worth waking the raster pool for.
+const PARALLEL_MIN_PIXELS: usize = 8 * 1024;
+const BANDS_PER_THREAD: usize = 3;
+const MIN_BAND_ROWS: usize = 32;
+
 pub const GAMMA_TO_LINEAR: [f32; 256] = const {
     let mut table = [0.0; 256];
     let mut i = 0;
@@ -673,6 +678,29 @@ pub fn apply_lcd_filter(bitmap: &mut [u8], width: usize, height: usize) {
     }
 }
 
+pub fn prepare_glyphs(
+    text: &str,
+    font: &fontdue::Font,
+    font_size: usize,
+    cache: &mut FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+) {
+    if font_size == 0 {
+        return;
+    }
+    let size = font_size as f32;
+    for ch in text.chars() {
+        if ch == '\n' || ch == '\r' {
+            continue;
+        }
+        cache.entry((ch, font_size)).or_insert_with(|| {
+            let (metrics, mut bitmap) = font.rasterize_subpixel(ch, size);
+            apply_lcd_filter(&mut bitmap, metrics.width, metrics.height);
+            (metrics, bitmap)
+        });
+    }
+}
+
+/// Every glyph must already be in `cache`; see [`prepare_glyphs`].
 pub fn draw_text(
     text: &str,
     font: &fontdue::Font,
@@ -682,7 +710,7 @@ pub fn draw_text(
     window_width: usize,
     buffer: &mut [u32],
     color: u32,
-    cache: &mut FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+    cache: &FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
     clip: Rect,
 ) -> Rect {
     if text.is_empty() || font_size == 0 || window_width == 0 {
@@ -716,11 +744,9 @@ pub fn draw_text(
         let baseline_y = y_pos + ascent;
 
         for ch in line.chars() {
-            let (metrics, bitmap) = cache.entry((ch, font_size)).or_insert_with(|| {
-                let (metrics, mut bitmap) = font.rasterize_subpixel(ch, size);
-                apply_lcd_filter(&mut bitmap, metrics.width, metrics.height);
-                (metrics, bitmap)
-            });
+            let Some((metrics, bitmap)) = cache.get(&(ch, font_size)) else {
+                break;
+            };
 
             let glyph_screen_y = (baseline_y - metrics.height as f32 - metrics.ymin as f32).round() as i32;
             let glyph_screen_x = (glyph_x + metrics.xmin as f32).round() as i32;
@@ -865,21 +891,25 @@ pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect
     }
 }
 
+/// `damage` is in framebuffer coordinates; `buffer` covers the `band_height` rows
+/// starting at `origin_y`, so every shape is shifted up by `origin_y` before painting.
 pub fn draw_command(
     command: &Command<'_>,
     damage: Rect,
     buffer: &mut [u32],
     framebuffer_width: usize,
-    framebuffer_height: usize,
+    band_height: usize,
+    origin_y: i32,
     display_scale: f32,
     fonts: &[fontdue::Font],
-    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
+    font_bitmaps: &FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: &FxHashMap<ImageKey, ImageEntry>,
 ) {
     let clip = command.clip().scale(display_scale).intersection(damage);
     if clip.is_empty() {
         return;
     }
+    let clip = clip.y(clip.y - origin_y);
 
     match command {
         Command::Rect {
@@ -887,15 +917,18 @@ pub fn draw_command(
             color,
             radius,
             clip: _,
-        } => draw_rect_fill(
-            buffer,
-            bounds.scale(display_scale),
-            framebuffer_width,
-            framebuffer_height,
-            scale(*radius, display_scale),
-            *color,
-            clip,
-        ),
+        } => {
+            let b = bounds.scale(display_scale);
+            draw_rect_fill(
+                buffer,
+                b.y(b.y - origin_y),
+                framebuffer_width,
+                band_height,
+                scale(*radius, display_scale),
+                *color,
+                clip,
+            )
+        }
         Command::RectStroke {
             bounds,
             color,
@@ -903,17 +936,20 @@ pub fn draw_command(
             border_thickness,
             radius,
             clip: _,
-        } => draw_rect_stroke(
-            buffer,
-            bounds.scale(display_scale),
-            framebuffer_width,
-            framebuffer_height,
-            scale(*radius, display_scale),
-            scale(*border_thickness, display_scale).max(1),
-            *color,
-            clip,
-            *border_sides,
-        ),
+        } => {
+            let b = bounds.scale(display_scale);
+            draw_rect_stroke(
+                buffer,
+                b.y(b.y - origin_y),
+                framebuffer_width,
+                band_height,
+                scale(*radius, display_scale),
+                scale(*border_thickness, display_scale).max(1),
+                *color,
+                clip,
+                *border_sides,
+            )
+        }
         Command::Text {
             text,
             bounds,
@@ -922,13 +958,15 @@ pub fn draw_command(
             font_id,
             clip: _,
         } => {
-            let bitmap = font_bitmaps.entry(*font_id).or_default();
+            let Some(bitmap) = font_bitmaps.get(font_id) else {
+                return;
+            };
             let origin = bounds.scale(display_scale);
             draw_text(
                 text,
                 &fonts[*font_id],
                 origin.x,
-                origin.y,
+                origin.y - origin_y,
                 scale(*size, display_scale),
                 framebuffer_width,
                 buffer,
@@ -946,13 +984,13 @@ pub fn draw_command(
         } => draw_triangle_sdf(
             buffer,
             framebuffer_width,
-            framebuffer_height,
+            band_height,
             scale_i32(a.0, display_scale),
-            scale_i32(a.1, display_scale),
+            scale_i32(a.1, display_scale) - origin_y,
             scale_i32(b.0, display_scale),
-            scale_i32(b.1, display_scale),
+            scale_i32(b.1, display_scale) - origin_y,
             scale_i32(c.0, display_scale),
-            scale_i32(c.1, display_scale),
+            scale_i32(c.1, display_scale) - origin_y,
             *color,
             clip,
         ),
@@ -966,7 +1004,8 @@ pub fn draw_command(
         } => draw_image(
             buffer,
             framebuffer_width,
-            framebuffer_height,
+            band_height,
+            origin_y,
             image,
             *bounds,
             clip,
@@ -979,6 +1018,39 @@ pub fn draw_command(
     }
 }
 
+/// Rasterize every glyph and resized image the frame needs, so the band workers
+/// only read from the caches.
+pub fn prepare_caches(
+    commands: &[Vec<Command<'_>>; 16],
+    cache: &RenderCache,
+    display_scale: f32,
+    fonts: &[fontdue::Font],
+    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
+) {
+    for prepared in cache.dynamic() {
+        match &commands[prepared.layer][prepared.index] {
+            Command::Text {
+                text, font_id, size, ..
+            } => prepare_glyphs(
+                text,
+                &fonts[*font_id],
+                scale(*size, display_scale),
+                font_bitmaps.entry(*font_id).or_default(),
+            ),
+            Command::Image {
+                image,
+                bounds,
+                fit,
+                opacity,
+                radius,
+                ..
+            } => cache_image(image_cache, image, *bounds, *fit, *opacity, *radius, display_scale),
+            _ => {}
+        }
+    }
+}
+
 pub fn raster_damage(
     commands: &[Vec<Command<'_>>; 16],
     cache: &RenderCache,
@@ -986,23 +1058,114 @@ pub fn raster_damage(
     framebuffer_width: usize,
     framebuffer_height: usize,
     display_scale: f32,
+    clear: u32,
     fonts: &[fontdue::Font],
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
-    let damage = cache.damage();
+    prepare_caches(commands, cache, display_scale, fonts, font_bitmaps, image_cache);
+    let font_bitmaps = &*font_bitmaps;
+    let image_cache = &*image_cache;
 
-    if damage.len() <= TILE_LOOKUP_MIN {
+    let mut area = 0usize;
+    for region in cache.damage() {
+        area += region.width.max(0) as usize * region.height.max(0) as usize;
+    }
+
+    let pool = pool::pool();
+    let threads = pool.workers();
+
+    if threads < 2 || area < PARALLEL_MIN_PIXELS || framebuffer_width == 0 {
+        raster_band(
+            commands,
+            cache,
+            buffer,
+            framebuffer_width,
+            framebuffer_height,
+            0,
+            display_scale,
+            clear,
+            fonts,
+            font_bitmaps,
+            image_cache,
+        );
+        return;
+    }
+
+    // More bands than threads so a heavy band doesn't stall the frame.
+    let band_rows = framebuffer_height
+        .div_ceil(threads * BANDS_PER_THREAD)
+        .max(MIN_BAND_ROWS);
+    let bands = std::sync::Mutex::new(buffer.chunks_mut(band_rows * framebuffer_width).enumerate());
+
+    pool.run(&|| {
+        loop {
+            let Some((index, band)) = bands.lock().unwrap().next() else {
+                break;
+            };
+            let rows = band.len() / framebuffer_width;
+            raster_band(
+                commands,
+                cache,
+                band,
+                framebuffer_width,
+                rows,
+                (index * band_rows) as i32,
+                display_scale,
+                clear,
+                fonts,
+                font_bitmaps,
+                image_cache,
+            );
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn raster_band(
+    commands: &[Vec<Command<'_>>; 16],
+    cache: &RenderCache,
+    buffer: &mut [u32],
+    framebuffer_width: usize,
+    band_height: usize,
+    origin_y: i32,
+    display_scale: f32,
+    clear: u32,
+    fonts: &[fontdue::Font],
+    font_bitmaps: &FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    image_cache: &FxHashMap<ImageKey, ImageEntry>,
+) {
+    let band = Rect::new(0, origin_y, framebuffer_width as i32, band_height as i32);
+    let damage = cache.damage();
+    let count = damage.len().min(MAX_DAMAGE_RECTS);
+
+    // Clipping every damage rect to the band once keeps it out of the inner loops.
+    let mut clipped = [Rect::default(); MAX_DAMAGE_RECTS];
+    for (region, slot) in damage[..count].iter().zip(clipped.iter_mut()) {
+        *slot = region.intersection(band);
+        if slot.is_empty() {
+            continue;
+        }
+        clear_damage(buffer, framebuffer_width, &[slot.y(slot.y - origin_y)], clear);
+    }
+    let clipped = &clipped[..count];
+    let band_bottom = origin_y + band_height as i32;
+
+    if count <= TILE_LOOKUP_MIN {
         for prepared in cache.prepared() {
+            if prepared.bounds.y >= band_bottom || prepared.bounds.bottom() <= origin_y {
+                continue;
+            }
             let command = &commands[prepared.layer][prepared.index];
-            for region in damage {
-                if prepared.bounds.intersects(*region) {
+            for &region in clipped {
+                if !region.is_empty() && prepared.bounds.intersects(region) {
                     draw_command(
                         command,
-                        *region,
+                        region,
                         buffer,
                         framebuffer_width,
-                        framebuffer_height,
+                        band_height,
+                        origin_y,
                         display_scale,
                         fonts,
                         font_bitmaps,
@@ -1016,16 +1179,24 @@ pub fn raster_damage(
 
     let mut indices = [0u16; MAX_TILE_LOOKUP];
     for prepared in cache.prepared() {
+        if prepared.bounds.y >= band_bottom || prepared.bounds.bottom() <= origin_y {
+            continue;
+        }
         let command = &commands[prepared.layer][prepared.index];
         match cache.damage_indices(prepared.bounds, &mut indices) {
             Some(len) => {
                 for &d in &indices[..len] {
+                    let region = clipped[d as usize];
+                    if region.is_empty() {
+                        continue;
+                    }
                     draw_command(
                         command,
-                        damage[d as usize],
+                        region,
                         buffer,
                         framebuffer_width,
-                        framebuffer_height,
+                        band_height,
+                        origin_y,
                         display_scale,
                         fonts,
                         font_bitmaps,
@@ -1034,14 +1205,15 @@ pub fn raster_damage(
                 }
             }
             None => {
-                for region in damage {
-                    if prepared.bounds.intersects(*region) {
+                for &region in clipped {
+                    if !region.is_empty() && prepared.bounds.intersects(region) {
                         draw_command(
                             command,
-                            *region,
+                            region,
                             buffer,
                             framebuffer_width,
-                            framebuffer_height,
+                            band_height,
+                            origin_y,
                             display_scale,
                             fonts,
                             font_bitmaps,

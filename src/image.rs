@@ -256,10 +256,65 @@ pub fn fitted_bounds(bounds: Rect, image: &Image, fit: ImageFit) -> Rect {
     }
 }
 
+/// Cache key plus the scaled destination rect, in framebuffer coordinates.
+pub fn image_target(
+    image: &Image,
+    bounds: Rect,
+    fit: ImageFit,
+    opacity: u8,
+    radius: usize,
+    scale_factor: f32,
+) -> Option<(ImageKey, Rect)> {
+    if bounds.is_empty() || opacity == 0 {
+        return None;
+    }
+    let target = fitted_bounds(bounds, image, fit).scale(scale_factor);
+    if target.width <= 0 || target.height <= 0 {
+        return None;
+    }
+    let tw = target.width as usize;
+    let th = target.height as usize;
+    let key = ImageKey {
+        image_id: image.id,
+        width: tw as u32,
+        height: th as u32,
+        fit,
+        opacity,
+        radius: crate::scale(radius, scale_factor).min(tw.min(th) / 2) as u32,
+    };
+    Some((key, target))
+}
+
+pub fn cache_image(
+    cache: &mut FxHashMap<ImageKey, ImageEntry>,
+    image: &Image,
+    bounds: Rect,
+    fit: ImageFit,
+    opacity: u8,
+    radius: usize,
+    scale_factor: f32,
+) {
+    let Some((key, target)) = image_target(image, bounds, fit, opacity, radius, scale_factor) else {
+        return;
+    };
+    cache.entry(key).or_insert_with(|| {
+        rasterize_image(
+            image,
+            target.width as usize,
+            target.height as usize,
+            fit,
+            opacity,
+            key.radius as usize,
+        )
+    });
+}
+
+/// `clip` is band-local; `bounds` is global and shifted by `origin_y` after scaling.
 pub fn draw_image(
     buffer: &mut [u32],
     framebuffer_width: usize,
-    framebuffer_height: usize,
+    band_height: usize,
+    origin_y: i32,
     image: &Image,
     bounds: Rect,
     clip: Rect,
@@ -267,35 +322,28 @@ pub fn draw_image(
     opacity: u8,
     radius: usize,
     scale_factor: f32,
-    cache: &mut FxHashMap<ImageKey, ImageEntry>,
+    cache: &FxHashMap<ImageKey, ImageEntry>,
 ) {
-    if bounds.is_empty() || clip.is_empty() || opacity == 0 || framebuffer_width == 0 || framebuffer_height == 0 {
+    if clip.is_empty() || framebuffer_width == 0 || band_height == 0 {
         return;
     }
+    let Some((key, target)) = image_target(image, bounds, fit, opacity, radius, scale_factor) else {
+        return;
+    };
     let scaled_bounds = bounds.scale(scale_factor);
-    let target = fitted_bounds(bounds, image, fit).scale(scale_factor);
+    let scaled_bounds = scaled_bounds.y(scaled_bounds.y - origin_y);
+    let target = target.y(target.y - origin_y);
     // Fixed images may extend past the paint rect; always clip to it.
     let draw = target
         .intersection(scaled_bounds)
         .intersection(clip)
-        .clamp_to_size(framebuffer_width as i32, framebuffer_height as i32);
-    if draw.is_empty() || target.width <= 0 || target.height <= 0 {
+        .clamp_to_size(framebuffer_width as i32, band_height as i32);
+    if draw.is_empty() {
         return;
     }
-    let tw = target.width as usize;
-    let th = target.height as usize;
-    let radius = crate::scale(radius, scale_factor).min(tw.min(th) / 2);
-    let key = ImageKey {
-        image_id: image.id,
-        width: tw as u32,
-        height: th as u32,
-        fit,
-        opacity,
-        radius: radius as u32,
+    let Some(entry) = cache.get(&key) else {
+        return;
     };
-    let entry = cache
-        .entry(key)
-        .or_insert_with(|| rasterize_image(image, tw, th, fit, opacity, radius));
     blit_image(buffer, framebuffer_width, entry, target.x, target.y, draw);
 }
 
@@ -523,10 +571,20 @@ mod tests {
         let image = Image::from_rgba8(1, 1, [255, 0, 0, 128]).unwrap();
         let mut buffer = vec![0x0000ff; 4];
         let mut cache = FxHashMap::default();
+        cache_image(
+            &mut cache,
+            &image,
+            Rect::new(0, 0, 2, 2),
+            ImageFit::Stretch,
+            255,
+            0,
+            1.0,
+        );
         draw_image(
             &mut buffer,
             2,
             2,
+            0,
             &image,
             Rect::new(0, 0, 2, 2),
             Rect::new(0, 0, 2, 2),
@@ -534,7 +592,7 @@ mod tests {
             255,
             0,
             1.0,
-            &mut cache,
+            &cache,
         );
         assert_eq!(buffer, vec![0x80007f; 4]);
         assert_eq!(cache.len(), 1);
@@ -545,6 +603,7 @@ mod tests {
             &mut buffer2,
             2,
             2,
+            0,
             &image,
             Rect::new(0, 0, 2, 2),
             Rect::new(0, 0, 2, 2),
@@ -552,7 +611,7 @@ mod tests {
             255,
             0,
             1.0,
-            &mut cache,
+            &cache,
         );
         assert_eq!(buffer2, buffer);
         assert_eq!(cache.len(), 1);
@@ -574,10 +633,20 @@ mod tests {
             Image::from_rgba8(2, 2, [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]).unwrap();
         let mut cache = FxHashMap::default();
         let mut buffer = vec![0u32; 64];
+        cache_image(
+            &mut cache,
+            &image,
+            Rect::new(0, 0, 4, 4),
+            ImageFit::Stretch,
+            255,
+            0,
+            1.0,
+        );
         draw_image(
             &mut buffer,
             8,
             8,
+            0,
             &image,
             Rect::new(0, 0, 4, 4),
             Rect::new(0, 0, 8, 8),
@@ -585,12 +654,22 @@ mod tests {
             255,
             0,
             1.0,
+            &cache,
+        );
+        cache_image(
             &mut cache,
+            &image,
+            Rect::new(0, 0, 4, 4),
+            ImageFit::Stretch,
+            128,
+            0,
+            1.0,
         );
         draw_image(
             &mut buffer,
             8,
             8,
+            0,
             &image,
             Rect::new(0, 0, 4, 4),
             Rect::new(0, 0, 8, 8),
@@ -598,12 +677,22 @@ mod tests {
             128,
             0,
             1.0,
+            &cache,
+        );
+        cache_image(
             &mut cache,
+            &image,
+            Rect::new(0, 0, 6, 6),
+            ImageFit::Stretch,
+            255,
+            0,
+            1.0,
         );
         draw_image(
             &mut buffer,
             8,
             8,
+            0,
             &image,
             Rect::new(0, 0, 6, 6),
             Rect::new(0, 0, 8, 8),
@@ -611,7 +700,7 @@ mod tests {
             255,
             0,
             1.0,
-            &mut cache,
+            &cache,
         );
         assert_eq!(cache.len(), 3);
     }
@@ -634,10 +723,12 @@ mod tests {
 
         let mut cache = FxHashMap::default();
         let mut buffer = vec![0u32; 16];
+        cache_image(&mut cache, &big, Rect::new(0, 0, 4, 4), ImageFit::Fixed, 255, 0, 1.0);
         draw_image(
             &mut buffer,
             4,
             4,
+            0,
             &big,
             Rect::new(0, 0, 4, 4),
             Rect::new(0, 0, 4, 4),
@@ -645,7 +736,7 @@ mod tests {
             255,
             0,
             1.0,
-            &mut cache,
+            &cache,
         );
         // All framebuffer pixels covered (clipped center of the 6x6 image).
         assert!(buffer.iter().all(|&p| p != 0));

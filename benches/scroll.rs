@@ -131,7 +131,6 @@ impl ScrollBench {
         self.last_damaged_pixels = damaged_pixels;
 
         if dirty {
-            clear_damage(&mut self.buffer, FB_W, damage, black());
             raster_damage(
                 commands,
                 &self.cache,
@@ -139,6 +138,7 @@ impl ScrollBench {
                 FB_W,
                 FB_H,
                 1.0,
+                black(),
                 &self.fonts,
                 &mut self.bitmaps,
                 &mut self.image_cache,
@@ -201,8 +201,18 @@ fn scroll_path_six_steps_full(bencher: divan::Bencher) {
             *idx = (*idx + 1) % sequence.len();
             let commands = &sequence[*idx];
             if cache.update(commands, 1.0, FB_W, FB_H, black()) {
-                clear_damage(buffer, FB_W, cache.damage(), black());
-                raster_damage(commands, cache, buffer, FB_W, FB_H, 1.0, fonts, bitmaps, image_cache);
+                raster_damage(
+                    commands,
+                    cache,
+                    buffer,
+                    FB_W,
+                    FB_H,
+                    1.0,
+                    black(),
+                    fonts,
+                    bitmaps,
+                    image_cache,
+                );
             }
             cache.finish();
             black_box(*idx);

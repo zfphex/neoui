@@ -15,11 +15,17 @@ struct BenchContext {
 #[divan::bench(sample_count = 500)]
 fn bench_draw_text(bencher: divan::Bencher) {
     bencher
-        .with_inputs(|| BenchContext {
-            font: fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap(),
-            buffer: vec![0u32; 1000usize * 1000 * 4],
-            glyph: FxHashMap::default(),
-            text: "abcdefghijklmnopqrstuvwxyz1234567890-=!@#$%^&*()_+".repeat(200),
+        .with_inputs(|| {
+            let font = fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap();
+            let text = "abcdefghijklmnopqrstuvwxyz1234567890-=!@#$%^&*()_+".repeat(200);
+            let mut glyph = FxHashMap::default();
+            prepare_glyphs(&text, &font, 32, &mut glyph);
+            BenchContext {
+                font,
+                buffer: vec![0u32; 1000usize * 1000 * 4],
+                glyph,
+                text,
+            }
         })
         .bench_refs(|ctx| {
             draw_text(
@@ -31,7 +37,7 @@ fn bench_draw_text(bencher: divan::Bencher) {
                 10000,
                 &mut ctx.buffer,
                 white(),
-                &mut ctx.glyph,
+                &ctx.glyph,
                 Rect::new(0, 0, 2000, 2000),
             );
         });

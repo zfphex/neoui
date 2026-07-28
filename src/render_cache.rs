@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 pub const TILE_SIZE: usize = 64;
 const FULL_REDRAW_PERCENT: usize = 60;
-const MAX_DAMAGE_RECTS: usize = 128;
+pub const MAX_DAMAGE_RECTS: usize = 128;
 const NO_DAMAGE: u16 = u16::MAX;
 pub const MAX_TILE_LOOKUP: usize = 8;
 pub const TILE_LOOKUP_MIN: usize = 12;
@@ -76,6 +76,7 @@ pub struct RenderCache {
     current: Vec<u64>,
     previous: Vec<u64>,
     prepared: Vec<PreparedCommand>,
+    dynamic: Vec<PreparedCommand>,
     damage: Vec<Rect>,
     tile_damage: Vec<u16>,
     cols: usize,
@@ -116,6 +117,7 @@ impl RenderCache {
         let bg = mix(CLEAR_HASH_TAG, clear as u64);
         self.current.fill(bg);
         self.prepared.clear();
+        self.dynamic.clear();
         self.damage.clear();
 
         for (layer, cmds) in commands.iter().enumerate() {
@@ -138,7 +140,11 @@ impl RenderCache {
                         *cell = mix(*cell, hash);
                     }
                 }
-                self.prepared.push(PreparedCommand { layer, index, bounds });
+                let prepared = PreparedCommand { layer, index, bounds };
+                if matches!(command, Command::Text { .. } | Command::Image { .. }) {
+                    self.dynamic.push(prepared);
+                }
+                self.prepared.push(prepared);
             }
         }
 
@@ -150,6 +156,11 @@ impl RenderCache {
         &self.prepared
     }
 
+    /// Commands whose glyphs or resized pixels must be cached before rasterizing.
+    pub fn dynamic(&self) -> &[PreparedCommand] {
+        &self.dynamic
+    }
+
     pub fn damage(&self) -> &[Rect] {
         &self.damage
     }
@@ -158,6 +169,7 @@ impl RenderCache {
         std::mem::swap(&mut self.current, &mut self.previous);
         self.force_full = false;
         self.prepared.clear();
+        self.dynamic.clear();
     }
 
     pub fn damage_indices(&self, bounds: Rect, out: &mut [u16; MAX_TILE_LOOKUP]) -> Option<usize> {

@@ -53,3 +53,8 @@ required-features = ["bench"]
 name = "hash"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "pool"
+harness = false
+required-features = ["bench"]

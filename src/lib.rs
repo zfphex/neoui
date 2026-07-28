@@ -10,6 +10,8 @@ pub use render_cache::*;
 pub mod image;
 pub use image::*;
 
+pub mod pool;
+
 pub use mini::*;
 pub use minwin::*;
 
@@ -1282,20 +1284,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         );
 
         if dirty {
-            let buffer = window.framebuffer();
-            clear_damage(
-                buffer,
-                framebuffer_width,
-                state.render_cache.damage(),
-                state.clear_color,
-            );
             raster_damage(
                 &self.commands,
                 &state.render_cache,
-                buffer,
+                window.framebuffer(),
                 framebuffer_width,
                 framebuffer_height,
                 display_scale,
+                state.clear_color,
                 &state.fonts,
                 &mut state.font_bitmaps,
                 &mut state.image_cache,

@@ -45,6 +45,11 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
+name = "raster"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
 name = "hash"
 harness = false
 required-features = ["bench"]

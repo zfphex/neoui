@@ -684,9 +684,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         });
     }
 
-    pub fn paint_text(
+    pub fn paint_text_measured(
         &mut self,
         text: impl Into<Cow<'text, str>>,
+        metrics: Rect,
         rect: Rect,
         color: u32,
         font_id: usize,
@@ -699,9 +700,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         if text.is_empty() {
             return;
         }
-        let text_metrics = self.measure_text(&text, font_id, font_size);
 
-        let Some((x, y)) = align_rect(rect, text_metrics.width, text_metrics.height, alignment, padding) else {
+        let Some((x, y)) = align_rect(rect, metrics.width, metrics.height, alignment, padding) else {
             return;
         };
 
@@ -721,11 +721,32 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.commands[depth].push(Command::Text {
             text,
             clip,
-            bounds: Rect::new(x, y, text_metrics.width, text_metrics.height),
+            bounds: Rect::new(x, y, metrics.width, metrics.height),
             color,
             font_id,
             size: font_size,
         });
+    }
+
+    pub fn paint_text(
+        &mut self,
+        text: impl Into<Cow<'text, str>>,
+        rect: Rect,
+        color: u32,
+        font_id: usize,
+        font_size: usize,
+        alignment: Alignment,
+        padding: Padding,
+        depth: usize,
+    ) {
+        let text = text.into();
+        if text.is_empty() {
+            return;
+        }
+        let metrics = self.measure_text(&text, font_id, font_size);
+        self.paint_text_measured(
+            text, metrics, rect, color, font_id, font_size, alignment, padding, depth,
+        );
     }
 
     pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
@@ -758,7 +779,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let mut content_w = 0i32;
         let mut content_h = 0i32;
-        let mut run_metrics: Vec<(i32, i32, Padding)> = Vec::with_capacity(parts.len());
+        let mut run_metrics: Vec<(Rect, Padding)> = Vec::with_capacity(parts.len());
         for part in &parts {
             let font_size = part.style.font_size.unwrap_or(default_size);
             let metrics = if part.content.is_empty() {
@@ -771,7 +792,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             let h = metrics.height + run_pad.top as i32 + run_pad.bottom as i32;
             content_w += w;
             content_h = content_h.max(h);
-            run_metrics.push((metrics.width, metrics.height, run_pad));
+            run_metrics.push((metrics, run_pad));
         }
 
         let padding = style.padding.unwrap_or_default();
@@ -857,28 +878,27 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         };
 
         let mut cursor_x = group_x;
-        for (part, (glyph_w, glyph_h, run_pad)) in parts.into_iter().zip(run_metrics) {
+        for (part, (metrics, run_pad)) in parts.into_iter().zip(run_metrics) {
             if part.content.is_empty() {
                 cursor_x += run_pad.left as i32 + run_pad.right as i32;
                 continue;
             }
             let font_size = part.style.font_size.unwrap_or(default_size);
-            let run_h = glyph_h + run_pad.top as i32 + run_pad.bottom as i32;
-            let run_y = inner_y + (inner_h.saturating_sub(run_h)) / 2 + run_pad.top as i32;
-            let run_x = cursor_x + run_pad.left as i32;
+            let run_w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
 
-            self.paint_text(
+            self.paint_text_measured(
                 part.content,
-                Rect::new(run_x, run_y, glyph_w, glyph_h),
+                metrics,
+                Rect::new(cursor_x, inner_y, run_w, inner_h),
                 part.style.fg.unwrap_or(style.fg.unwrap_or(white())),
                 part.style.font,
                 font_size,
                 Alignment::Left,
-                Padding::default(),
+                run_pad,
                 part.style.depth.unwrap_or(depth),
             );
 
-            cursor_x += glyph_w + run_pad.left as i32 + run_pad.right as i32;
+            cursor_x += run_w;
         }
 
         State {
@@ -895,7 +915,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let text = text.into();
         let selected = style.is_selected;
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let text_metrics = if text.is_empty() {
+        let metrics = if text.is_empty() {
             Rect::default()
         } else {
             self.measure_text(&text, style.font, font_size)
@@ -905,11 +925,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let width = style
             .width
             .map(|w| self.resolve_size(w, Flow::Right))
-            .unwrap_or(text_metrics.width + padding.left as i32 + padding.right as i32);
+            .unwrap_or(metrics.width + padding.left as i32 + padding.right as i32);
         let height = style
             .height
             .map(|h| self.resolve_size(h, Flow::Down))
-            .unwrap_or(text_metrics.height + padding.top as i32 + padding.bottom as i32);
+            .unwrap_or(metrics.height + padding.top as i32 + padding.bottom as i32);
 
         let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
 
@@ -972,8 +992,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
 
         if !text.is_empty() {
-            self.paint_text(
+            self.paint_text_measured(
                 text,
+                metrics,
                 Rect::new(paint_x, paint_y, width, height),
                 style.fg.unwrap_or(white()),
                 style.font,
@@ -1270,8 +1291,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             );
             raster_damage(
                 &self.commands,
-                state.render_cache.prepared(),
-                state.render_cache.damage(),
+                &state.render_cache,
                 buffer,
                 framebuffer_width,
                 framebuffer_height,

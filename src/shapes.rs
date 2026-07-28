@@ -981,8 +981,7 @@ pub fn draw_command(
 
 pub fn raster_damage(
     commands: &[Vec<Command<'_>>; 16],
-    prepared: &[PreparedCommand],
-    damage: &[Rect],
+    cache: &RenderCache,
     buffer: &mut [u32],
     framebuffer_width: usize,
     framebuffer_height: usize,
@@ -991,21 +990,65 @@ pub fn raster_damage(
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
 ) {
-    for prepared in prepared {
+    let damage = cache.damage();
+
+    if damage.len() <= TILE_LOOKUP_MIN {
+        for prepared in cache.prepared() {
+            let command = &commands[prepared.layer][prepared.index];
+            for region in damage {
+                if prepared.bounds.intersects(*region) {
+                    draw_command(
+                        command,
+                        *region,
+                        buffer,
+                        framebuffer_width,
+                        framebuffer_height,
+                        display_scale,
+                        fonts,
+                        font_bitmaps,
+                        image_cache,
+                    );
+                }
+            }
+        }
+        return;
+    }
+
+    let mut indices = [0u16; MAX_TILE_LOOKUP];
+    for prepared in cache.prepared() {
         let command = &commands[prepared.layer][prepared.index];
-        for region in damage {
-            if prepared.bounds.intersects(*region) {
-                draw_command(
-                    command,
-                    *region,
-                    buffer,
-                    framebuffer_width,
-                    framebuffer_height,
-                    display_scale,
-                    fonts,
-                    font_bitmaps,
-                    image_cache,
-                );
+        match cache.damage_indices(prepared.bounds, &mut indices) {
+            Some(len) => {
+                for &d in &indices[..len] {
+                    draw_command(
+                        command,
+                        damage[d as usize],
+                        buffer,
+                        framebuffer_width,
+                        framebuffer_height,
+                        display_scale,
+                        fonts,
+                        font_bitmaps,
+                        image_cache,
+                    );
+                }
+            }
+            None => {
+                for region in damage {
+                    if prepared.bounds.intersects(*region) {
+                        draw_command(
+                            command,
+                            *region,
+                            buffer,
+                            framebuffer_width,
+                            framebuffer_height,
+                            display_scale,
+                            fonts,
+                            font_bitmaps,
+                            image_cache,
+                        );
+                    }
+                }
             }
         }
     }

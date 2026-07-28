@@ -4,6 +4,9 @@ use std::hash::{Hash, Hasher};
 pub const TILE_SIZE: usize = 64;
 const FULL_REDRAW_PERCENT: usize = 60;
 const MAX_DAMAGE_RECTS: usize = 128;
+const NO_DAMAGE: u16 = u16::MAX;
+pub const MAX_TILE_LOOKUP: usize = 8;
+pub const TILE_LOOKUP_MIN: usize = 12;
 
 /// Hash seed (FNV-1a 64-bit offset basis).
 const HASH_SEED: u64 = 0xcbf2_9ce4_8422_2325;
@@ -74,6 +77,9 @@ pub struct RenderCache {
     previous: Vec<u64>,
     prepared: Vec<PreparedCommand>,
     damage: Vec<Rect>,
+    tile_damage: Vec<u16>,
+    cols: usize,
+    rows: usize,
     width: usize,
     height: usize,
     force_full: bool,
@@ -98,9 +104,12 @@ impl RenderCache {
         if self.width != width || self.height != height {
             self.width = width;
             self.height = height;
+            self.cols = cols;
+            self.rows = rows;
             let len = cols.saturating_mul(rows);
             self.current.resize(len, 0);
             self.previous.resize(len, 0);
+            self.tile_damage.resize(len, NO_DAMAGE);
             self.force_full = true;
         }
 
@@ -151,7 +160,38 @@ impl RenderCache {
         self.prepared.clear();
     }
 
+    pub fn damage_indices(&self, bounds: Rect, out: &mut [u16; MAX_TILE_LOOKUP]) -> Option<usize> {
+        if self.cols == 0 || self.rows == 0 || self.tile_damage.is_empty() || bounds.is_empty() {
+            return Some(0);
+        }
+        let x0 = bounds.x.max(0) as usize / TILE_SIZE;
+        let y0 = bounds.y.max(0) as usize / TILE_SIZE;
+        let x1 = ((bounds.right().max(1) as usize - 1) / TILE_SIZE).min(self.cols - 1);
+        let y1 = ((bounds.bottom().max(1) as usize - 1) / TILE_SIZE).min(self.rows - 1);
+        if x0 > x1 || y0 > y1 {
+            return Some(0);
+        }
+
+        let mut len = 0;
+        for y in y0..=y1 {
+            let row = y * self.cols;
+            for x in x0..=x1 {
+                let d = self.tile_damage[x + row];
+                if d == NO_DAMAGE || out[..len].contains(&d) {
+                    continue;
+                }
+                if len == MAX_TILE_LOOKUP {
+                    return None;
+                }
+                out[len] = d;
+                len += 1;
+            }
+        }
+        Some(len)
+    }
+
     fn build_damage(&mut self, cols: usize, rows: usize) {
+        self.tile_damage.fill(NO_DAMAGE);
         if self.current.is_empty() || self.width == 0 || self.height == 0 {
             return;
         }
@@ -193,23 +233,30 @@ impl RenderCache {
                 let width = right - px;
 
                 // Grow a run upward when the same horizontal span sits on the row above.
-                let mut merged = false;
-                for rect in self.damage.iter_mut().rev() {
+                let mut merged = None;
+                for (d, rect) in self.damage.iter_mut().enumerate().rev() {
                     if rect.bottom() < py {
                         break;
                     }
                     if rect.x == px && rect.width == width && rect.bottom() == py {
                         rect.height = bottom - rect.y;
-                        merged = true;
+                        merged = Some(d);
                         break;
                     }
                 }
-                if !merged {
-                    self.damage.push(Rect::new(px, py, width, bottom - py));
-                    if self.damage.len() > MAX_DAMAGE_RECTS {
-                        self.full_damage();
-                        return;
+                let d = match merged {
+                    Some(d) => d,
+                    None => {
+                        self.damage.push(Rect::new(px, py, width, bottom - py));
+                        if self.damage.len() > MAX_DAMAGE_RECTS {
+                            self.full_damage();
+                            return;
+                        }
+                        self.damage.len() - 1
                     }
+                };
+                for tx in start..x {
+                    self.tile_damage[tx + y * cols] = d as u16;
                 }
             }
         }
@@ -218,6 +265,7 @@ impl RenderCache {
     fn full_damage(&mut self) {
         self.damage.clear();
         self.damage.push(Rect::new(0, 0, self.width as i32, self.height as i32));
+        self.tile_damage.fill(0);
     }
 }
 

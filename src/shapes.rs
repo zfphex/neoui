@@ -129,10 +129,24 @@ fn solid_fill_span(buffer: &mut [u32], window_width: usize, x0: i32, x1: i32, y0
     let x0 = x0 as usize;
     let x1 = x1 as usize;
     let len = x1 - x0;
+    let src = color_linear(color);
     for py in y0 as usize..y1 as usize {
         let start = py * window_width + x0;
         if let Some(slice) = buffer.get_mut(start..start + len) {
-            slice.fill(color);
+            fill_span_color(slice, color, src);
+        }
+    }
+}
+
+/// Fill a contiguous run with `color`, blending per-pixel when it is translucent.
+/// `src` must be `color_linear(color)`.
+#[inline]
+fn fill_span_color(slice: &mut [u32], color: u32, src: (f32, f32, f32, f32)) {
+    if src.3 >= 0.999 {
+        slice.fill(color & 0x00FF_FFFF);
+    } else if src.3 > 0.0 {
+        for bg in slice {
+            blend_srgb(bg, src, src.3);
         }
     }
 }
@@ -143,17 +157,18 @@ fn solid_fill_rect(buffer: &mut [u32], window_width: usize, area: Rect, color: u
 }
 
 #[inline]
-fn color_linear(color: u32) -> (f32, f32, f32) {
+fn color_linear(color: u32) -> (f32, f32, f32, f32) {
     (
         GAMMA_TO_LINEAR[((color >> 16) & 0xFF) as usize],
         GAMMA_TO_LINEAR[((color >> 8) & 0xFF) as usize],
         GAMMA_TO_LINEAR[(color & 0xFF) as usize],
+        alpha(color) as f32 / 255.0,
     )
 }
 
 #[inline]
-fn blend_srgb(bg: &mut u32, src: (f32, f32, f32), alpha: f32) {
-    let a = alpha.clamp(0.0, 1.0);
+fn blend_srgb(bg: &mut u32, src: (f32, f32, f32, f32), a: f32) {
+    let a = a.clamp(0.0, 1.0);
     let bg_val = *bg;
     let inv = 1.0 - a;
 
@@ -168,11 +183,12 @@ fn blend_srgb(bg: &mut u32, src: (f32, f32, f32), alpha: f32) {
 }
 
 #[inline]
-fn apply_coverage(bg: &mut u32, color: u32, src: (f32, f32, f32), alpha: f32) {
-    if alpha >= 0.999 {
-        *bg = color;
-    } else if alpha > 0.0 {
-        blend_srgb(bg, src, alpha);
+fn apply_coverage(bg: &mut u32, color: u32, src: (f32, f32, f32, f32), coverage: f32) {
+    let a = coverage * src.3;
+    if a >= 0.999 {
+        *bg = color & 0x00FF_FFFF;
+    } else if a > 0.0 {
+        blend_srgb(bg, src, a);
     }
 }
 
@@ -508,7 +524,7 @@ pub fn draw_rect_fill(
 
         if py >= y_top_safe && py < y_bottom_safe {
             if let Some(slice) = buffer.get_mut(row_start + min_x..row_start + max_x) {
-                slice.fill(color);
+                fill_span_color(slice, color, src);
             }
             continue;
         }
@@ -527,7 +543,7 @@ pub fn draw_rect_fill(
                 apply_coverage(bg, color, src, 0.5 - rounded_rect_sdf(dx, dy, r_f32));
             }
 
-            mid_slice.fill(color);
+            fill_span_color(mid_slice, color, src);
 
             for (i, bg) in right_slice.iter_mut().enumerate() {
                 let px = right_limit + i;
@@ -825,17 +841,22 @@ pub fn draw_triangle_sdf(
             let cov1 = (dist1 + 0.5).clamp(0.0, 1.0);
             let cov2 = (dist2 + 0.5).clamp(0.0, 1.0);
 
-            let alpha = cov0 * cov1 * cov2;
+            let coverage = cov0 * cov1 * cov2;
 
-            if alpha >= 0.999 {
+            // Only fully-covered pixels of a fully-opaque color take the solid run;
+            // a translucent color always blends so it composites over the background.
+            if coverage >= 0.999 && src.3 >= 0.999 {
                 if solid_start == window_width {
                     solid_start = x;
                 }
                 solid_end = x + 1;
-            } else if alpha > 0.0 {
-                let idx = y as usize * window_width + x;
-                if let Some(bg) = buffer.get_mut(idx) {
-                    blend_srgb(bg, src, alpha);
+            } else {
+                let a = coverage * src.3;
+                if a > 0.0 {
+                    let idx = y as usize * window_width + x;
+                    if let Some(bg) = buffer.get_mut(idx) {
+                        blend_srgb(bg, src, a);
+                    }
                 }
             }
         }
@@ -844,7 +865,7 @@ pub fn draw_triangle_sdf(
             let start_idx = y as usize * window_width + solid_start;
             let end_idx = y as usize * window_width + solid_end;
             if let Some(slice) = buffer.get_mut(start_idx..end_idx) {
-                slice.fill(color);
+                slice.fill(color & 0x00FF_FFFF);
             }
         }
     }
@@ -911,10 +932,12 @@ pub fn draw_text(
     let line_metrics = font.horizontal_line_metrics(size).unwrap();
     let ascent = line_metrics.ascent;
 
-    let (txt_r, txt_g, txt_b) = split(color);
+    let (txt_r, txt_g, txt_b, txt_a) = split(color);
     let txt_r_lin = GAMMA_TO_LINEAR[txt_r as usize];
     let txt_g_lin = GAMMA_TO_LINEAR[txt_g as usize];
     let txt_b_lin = GAMMA_TO_LINEAR[txt_b as usize];
+    // Fold the color's alpha into the per-channel coverage mask.
+    let txt_a = txt_a as f32 / 255.0;
 
     let mut y_pos = y_start;
     let mut max_x = x_start.max(0.0) as usize;
@@ -980,11 +1003,11 @@ pub fn draw_text(
                             continue;
                         }
 
-                        let mask_r = m_r as f32 * INV_255;
-                        let mask_g = m_g as f32 * INV_255;
-                        let mask_b = m_b as f32 * INV_255;
+                        let mask_r = m_r as f32 * INV_255 * txt_a;
+                        let mask_g = m_g as f32 * INV_255 * txt_a;
+                        let mask_b = m_b as f32 * INV_255 * txt_a;
 
-                        let (bg_r, bg_g, bg_b) = split(*bg);
+                        let (bg_r, bg_g, bg_b, _) = split(*bg);
 
                         let bg_r_lin = GAMMA_TO_LINEAR[bg_r as usize];
                         let bg_g_lin = GAMMA_TO_LINEAR[bg_g as usize];

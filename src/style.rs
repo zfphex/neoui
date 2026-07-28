@@ -317,6 +317,21 @@ pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
     (r as u32) << 16 | (g as u32) << 8 | (b as u32)
 }
 
+pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
+    (a as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | (b as u32)
+}
+
+pub const fn with_alpha(color: u32, a: u8) -> u32 {
+    (color & 0x00FF_FFFF) | ((a as u32) << 24)
+}
+
+pub const fn alpha(color: u32) -> u8 {
+    match (color >> 24) & 0xFF {
+        0 => 255,
+        a => a as u8,
+    }
+}
+
 pub const fn hex(color: &str) -> u32 {
     match u32::from_str_radix(color.split_at(1).1, 16) {
         Ok(hex) => hex,
@@ -324,11 +339,12 @@ pub const fn hex(color: &str) -> u32 {
     }
 }
 
-pub const fn split(color: u32) -> (u8, u8, u8) {
+pub const fn split(color: u32) -> (u8, u8, u8, u8) {
     (
         (color >> 16 & 0xFF) as u8,
         (color >> 8 & 0xFF) as u8,
         (color & 0xFF) as u8,
+        alpha(color),
     )
 }
 

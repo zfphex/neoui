@@ -521,7 +521,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         (top_rect, bottom_rect)
     }
 
-    pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
+    pub fn resolve_size_relative(&self, size: Size, flow: Flow, start_pos: i32) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
         match size {
             Size::Pixel(px) => px,
@@ -533,17 +533,26 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 (total as f32 * pct) as i32
             }
             Size::Fill => match flow {
-                Flow::Down => frame.bounds.bottom().saturating_sub(frame.cursor_y),
-                Flow::Right => frame.bounds.right().saturating_sub(frame.cursor_x),
+                Flow::Down => frame.bounds.bottom().saturating_sub(start_pos),
+                Flow::Right => frame.bounds.right().saturating_sub(start_pos),
             },
             Size::FillMinus(sub) => {
                 let remaining = match flow {
-                    Flow::Down => frame.bounds.bottom().saturating_sub(frame.cursor_y),
-                    Flow::Right => frame.bounds.right().saturating_sub(frame.cursor_x),
+                    Flow::Down => frame.bounds.bottom().saturating_sub(start_pos),
+                    Flow::Right => frame.bounds.right().saturating_sub(start_pos),
                 };
                 remaining.saturating_sub(sub.abs())
             }
         }
+    }
+
+    pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
+        let frame = self.layout_stack.last().expect("No active frame");
+        let start_pos = match flow {
+            Flow::Down => frame.cursor_y,
+            Flow::Right => frame.cursor_x,
+        };
+        self.resolve_size_relative(size, flow, start_pos)
     }
 
     #[cfg(target_os = "windows")]
@@ -1126,28 +1135,31 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         scroll_y: usize,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let parent_scroll = self.layout_stack.last().map(|f| f.scroll_y).unwrap_or(0);
+        let parent_frame = self.current_frame();
+        let parent_scroll = parent_frame.scroll_y;
 
         let style = style.into();
-        let mut bounds = self.current_frame_bounds();
 
-        if let Some(width) = style.width {
-            bounds.width = self.resolve_size(width, Flow::Right);
-        }
+        let x = style.x.map(|x| self.resolve_size(x, Flow::Right)).unwrap_or(parent_frame.cursor_x);
+        let y = style.y.map(|y| self.resolve_size(y, Flow::Down)).unwrap_or_else(|| {
+            if parent_scroll != 0 {
+                parent_frame.cursor_y - parent_scroll as i32
+            } else {
+                parent_frame.cursor_y
+            }
+        });
 
-        if let Some(height) = style.height {
-            bounds.height = self.resolve_size(height, Flow::Down);
-        }
+        let width = style
+            .width
+            .map(|w| self.resolve_size_relative(w, Flow::Right, x))
+            .unwrap_or_else(|| parent_frame.bounds.right().saturating_sub(x));
 
-        if let Some(x) = style.x {
-            bounds.x = self.resolve_size(x, Flow::Right);
-        }
+        let height = style
+            .height
+            .map(|h| self.resolve_size_relative(h, Flow::Down, y))
+            .unwrap_or_else(|| parent_frame.bounds.bottom().saturating_sub(y));
 
-        if let Some(y) = style.y {
-            bounds.y = self.resolve_size(y, Flow::Down);
-        } else if parent_scroll != 0 {
-            bounds.y -= parent_scroll as i32;
-        }
+        let mut bounds = Rect::new(x, y, width, height);
 
         let frame = self.current_frame();
         let depth = style.depth.unwrap_or(frame.depth);

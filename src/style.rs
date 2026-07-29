@@ -227,6 +227,12 @@ impl Style {
         self.opacity = Some(opacity);
         self
     }
+
+    pub fn fill(mut self) -> Self {
+        self.width = Some(Size::Fill);
+        self.height = Some(Size::Fill);
+        self
+    }
 }
 
 impl Into<Style> for Rect {

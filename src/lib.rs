@@ -1159,7 +1159,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             .map(|h| self.resolve_size_relative(h, Flow::Down, y))
             .unwrap_or_else(|| parent_frame.bounds.bottom().saturating_sub(y));
 
-        let mut bounds = Rect::new(x, y, width, height);
+        let outer_bounds = Rect::new(x, y, width, height);
 
         let frame = self.current_frame();
         let depth = style.depth.unwrap_or(frame.depth);
@@ -1167,33 +1167,34 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let cross_align = style.cross_align.unwrap_or_default();
 
-        bounds.x += padding.left as i32;
-        bounds.width = bounds.width.saturating_sub((padding.left + padding.right) as i32);
-        bounds.y += padding.top as i32;
-        bounds.height = bounds.height.saturating_sub((padding.top + padding.bottom) as i32);
-
-        // Draw the background first.
+        // Draw the background across the full outer bounds.
         if let Some(color) = style.bg {
             self.commands[depth].push(Command::Rect {
-                bounds,
+                bounds: outer_bounds,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
             });
         }
 
+        let mut inner_bounds = outer_bounds;
+        inner_bounds.x += padding.left as i32;
+        inner_bounds.width = inner_bounds.width.saturating_sub((padding.left + padding.right) as i32);
+        inner_bounds.y += padding.top as i32;
+        inner_bounds.height = inner_bounds.height.saturating_sub((padding.top + padding.bottom) as i32);
+
         let explicit_w = style.width.map(|w| self.resolve_size(w, Flow::Right));
         let explicit_h = style.height.map(|h| self.resolve_size(h, Flow::Down));
         let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
         let new_frame = Frame {
-            bounds,
-            clip: clip.intersection(bounds),
+            bounds: inner_bounds,
+            clip: clip.intersection(outer_bounds),
             flow,
             cross_align,
             depth,
-            cursor_x: bounds.x,
-            cursor_y: bounds.y,
+            cursor_x: inner_bounds.x,
+            cursor_y: inner_bounds.y,
             // Nested flows are already placed in screen space; do not re-apply parent scroll
             // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
@@ -1212,10 +1213,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.layout_stack.push(new_frame);
         let result = ui(self);
 
-        // Draw the border over the content, idk.
+        // Draw the border over the full outer bounds.
         if let Some(color) = style.border {
             self.commands[depth].push(Command::RectStroke {
-                bounds,
+                bounds: outer_bounds,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),

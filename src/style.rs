@@ -196,6 +196,51 @@ impl Style {
         self
     }
 
+    pub fn align_left(mut self) -> Self {
+        self.alignment = Some(Alignment::Left);
+        self
+    }
+
+    pub fn align_center(mut self) -> Self {
+        self.alignment = Some(Alignment::Center);
+        self
+    }
+
+    pub fn align_right(mut self) -> Self {
+        self.alignment = Some(Alignment::Right);
+        self
+    }
+
+    pub fn align_top_left(mut self) -> Self {
+        self.alignment = Some(Alignment::TopLeft);
+        self
+    }
+
+    pub fn align_top_center(mut self) -> Self {
+        self.alignment = Some(Alignment::TopCenter);
+        self
+    }
+
+    pub fn align_top_right(mut self) -> Self {
+        self.alignment = Some(Alignment::TopRight);
+        self
+    }
+
+    pub fn align_bottom_left(mut self) -> Self {
+        self.alignment = Some(Alignment::BottomLeft);
+        self
+    }
+
+    pub fn align_bottom_center(mut self) -> Self {
+        self.alignment = Some(Alignment::BottomCenter);
+        self
+    }
+
+    pub fn align_bottom_right(mut self) -> Self {
+        self.alignment = Some(Alignment::BottomRight);
+        self
+    }
+
     pub fn cross_align(mut self, cross_align: CrossAlign) -> Self {
         self.cross_align = Some(cross_align);
         self

@@ -40,6 +40,9 @@ pub struct Frame {
     pub max_child_width: i32,
     pub max_child_height: i32,
     pub scroll_y: usize,
+    pub padding: Padding,
+    pub outer_width: Option<i32>,
+    pub outer_height: Option<i32>,
     scope: usize,
     anim_slot: usize,
 }
@@ -1166,6 +1169,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             });
         }
 
+        let explicit_w = style.width.map(|w| self.resolve_size(w, Flow::Right));
+        let explicit_h = style.height.map(|h| self.resolve_size(h, Flow::Down));
+
         let new_frame = Frame {
             bounds,
             clip: clip.intersection(bounds),
@@ -1177,6 +1183,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             // Nested flows are already placed in screen space; do not re-apply parent scroll
             // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
+            padding,
+            outer_width: explicit_w,
+            outer_height: explicit_h,
             scope: {
                 let s = self.next_scope;
                 self.next_scope += 1;
@@ -1249,16 +1258,21 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let frame = self.layout_stack.pop().expect("Layout underflow");
         if let Some(parent) = self.layout_stack.last_mut() {
+            let pad_w = (frame.padding.left + frame.padding.right) as i32;
+            let pad_h = (frame.padding.top + frame.padding.bottom) as i32;
+            let frame_w = frame.outer_width.unwrap_or(frame.max_child_width + pad_w);
+            let frame_h = frame.outer_height.unwrap_or(frame.max_child_height + pad_h);
+
             match parent.flow {
                 Flow::Down => {
-                    parent.cursor_y += frame.bounds.height;
-                    parent.max_child_width = parent.max_child_width.max(frame.bounds.width);
-                    parent.max_child_height += frame.bounds.height;
+                    parent.cursor_y += frame_h;
+                    parent.max_child_width = parent.max_child_width.max(frame_w);
+                    parent.max_child_height += frame_h;
                 }
                 Flow::Right => {
-                    parent.cursor_x += frame.bounds.width;
-                    parent.max_child_width += frame.bounds.width;
-                    parent.max_child_height = parent.max_child_height.max(frame.bounds.height);
+                    parent.cursor_x += frame_w;
+                    parent.max_child_width += frame_w;
+                    parent.max_child_height = parent.max_child_height.max(frame_h);
                 }
             }
         }
@@ -1351,16 +1365,21 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     pub fn end_layout(&mut self) {
         let finished = self.layout_stack.pop().expect("Layout underflow");
         if let Some(parent) = self.layout_stack.last_mut() {
+            let pad_w = (finished.padding.left + finished.padding.right) as i32;
+            let pad_h = (finished.padding.top + finished.padding.bottom) as i32;
+            let frame_w = finished.outer_width.unwrap_or(finished.max_child_width + pad_w);
+            let frame_h = finished.outer_height.unwrap_or(finished.max_child_height + pad_h);
+
             match parent.flow {
                 Flow::Down => {
-                    parent.cursor_y += finished.max_child_height;
-                    parent.max_child_width = parent.max_child_width.max(finished.max_child_width);
-                    parent.max_child_height += finished.max_child_height;
+                    parent.cursor_y += frame_h;
+                    parent.max_child_width = parent.max_child_width.max(frame_w);
+                    parent.max_child_height += frame_h;
                 }
                 Flow::Right => {
-                    parent.cursor_x += finished.max_child_width;
-                    parent.max_child_width += finished.max_child_width;
-                    parent.max_child_height = parent.max_child_height.max(finished.max_child_height);
+                    parent.cursor_x += frame_w;
+                    parent.max_child_width += frame_w;
+                    parent.max_child_height = parent.max_child_height.max(frame_h);
                 }
             }
         }

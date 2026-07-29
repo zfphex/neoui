@@ -70,7 +70,6 @@ fn scene(static_count: usize, spots: usize) -> Scene {
 }
 
 fn old_path(s: &mut Scene) {
-    clear_damage(&mut s.buffer, WIDTH as usize, s.cache.damage(), 0);
     for prepared in s.cache.prepared() {
         let command = &s.commands[prepared.layer][prepared.index];
         for region in s.cache.damage() {
@@ -81,11 +80,10 @@ fn old_path(s: &mut Scene) {
                     &mut s.buffer,
                     WIDTH as usize,
                     HEIGHT as usize,
-                    0,
                     1.0,
                     &s.fonts,
-                    &s.font_bitmaps,
-                    &s.image_cache,
+                    &mut s.font_bitmaps,
+                    &mut s.image_cache,
                 );
             }
         }
@@ -100,7 +98,6 @@ fn new_path(s: &mut Scene) {
         WIDTH as usize,
         HEIGHT as usize,
         1.0,
-        0,
         &s.fonts,
         &mut s.font_bitmaps,
         &mut s.image_cache,

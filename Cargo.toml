@@ -58,11 +58,5 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
-name = "pool"
-harness = false
-required-features = ["bench"]
-
-[[bench]]
 name = "draw_rect_fill"
 harness = false
-

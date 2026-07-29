@@ -8,6 +8,7 @@ fontdue = { git = "https://github.com/zfphex/fontdue", default-features = false,
 mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = ["profile"] }
 rustc-hash = "2.1.2"
 divan = { version = "0.1.21", optional = true }
+criterion = { version = "0.5", features = ["html_reports"], optional = true  }
 # minwin = { git = "https://github.com/zfphex/minwin", version = "0.1.0" }
 minwin = { version = "0.1.0", path = "../minwin" }
 zune-jpeg = { version = "0.5.15", optional = true }
@@ -15,7 +16,7 @@ zune-png = { version = "0.5.2", optional = true }
 
 [features]
 profile = ["mini/profile"]
-bench = ["divan"]
+bench = ["divan", "criterion"]
 jpeg = ["dep:zune-jpeg"]
 png = ["dep:zune-png"]
 image = ["jpeg", "png"]
@@ -23,9 +24,6 @@ image = ["jpeg", "png"]
 [[example]]
 name = "image"
 required-features = ["image"]
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
 name = "font"
@@ -60,3 +58,4 @@ required-features = ["bench"]
 [[bench]]
 name = "draw_rect_fill"
 harness = false
+required-features = ["bench"]

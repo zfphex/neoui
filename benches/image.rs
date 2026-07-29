@@ -27,7 +27,7 @@ struct Bed {
     buffer: Vec<u32>,
     cache: ImageCache,
     fonts: Vec<fontdue::Font>,
-    glyphs: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    glyphs: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
 }
 
 impl Bed {
@@ -57,6 +57,7 @@ impl Bed {
             FB_H,
             1.0,
             &self.fonts,
+            &[],
             &mut self.glyphs,
             &mut self.cache,
         );

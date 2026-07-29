@@ -147,6 +147,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
         window,
         state: UiState {
             fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
+            fallbacks: Vec::new(),
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
             font_metrics: FxHashMap::default(),
@@ -190,8 +191,10 @@ impl DerefMut for Context {
 
 pub struct UiState {
     pub fonts: Vec<fontdue::Font>,
-    pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
+    /// Font IDs searched in order when the requested font has no glyph for a character.
+    pub fallbacks: Vec<usize>,
+    pub font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
+    pub font_metrics: FxHashMap<(usize, char, usize), fontdue::Metrics>,
     pub image_cache: ImageCache,
     pub default_font_size: usize,
     pub clear_color: u32,
@@ -218,6 +221,11 @@ impl UiState {
         let id = self.fonts.len();
         self.fonts.push(font);
         id
+    }
+
+    pub fn add_font_fallback(&mut self, font: fontdue::Font) {
+        let font = self.add_font(font);
+        self.fallbacks.push(font);
     }
 }
 
@@ -752,9 +760,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
         let state = &mut *self.state;
-        let font = &state.fonts[font_id];
-        let metrics = state.font_metrics.entry(font_id).or_default();
-        measure_text(text, font, font_size, metrics)
+        measure_text(
+            text,
+            &state.fonts,
+            font_id,
+            &state.fallbacks,
+            font_size,
+            &mut state.font_metrics,
+        )
     }
 
     pub fn gap(&mut self, gap: impl IntoSize) {
@@ -1383,6 +1396,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 framebuffer_height,
                 display_scale,
                 &state.fonts,
+                &state.fallbacks,
                 &mut state.font_bitmaps,
                 &mut state.image_cache,
             );

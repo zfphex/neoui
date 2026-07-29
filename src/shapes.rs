@@ -893,20 +893,23 @@ pub fn apply_lcd_filter(bitmap: &mut [u8], width: usize, height: usize) {
 
 pub fn draw_text(
     text: &str,
-    font: &fontdue::Font,
+    fonts: &[fontdue::Font],
+    font_id: usize,
+    fallbacks: &[usize],
     x: i32,
     y: i32,
     font_size: usize,
     window_width: usize,
     buffer: &mut [u32],
     color: u32,
-    cache: &mut FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>,
+    cache: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     clip: Rect,
 ) -> Rect {
     if text.is_empty() || font_size == 0 || window_width == 0 {
         return Rect::default();
     }
 
+    let font = &fonts[font_id];
     let size = font_size as f32;
     let x_start = x as f32;
     let y_start = y as f32;
@@ -936,8 +939,17 @@ pub fn draw_text(
         let baseline_y = y_pos + ascent;
 
         for ch in line.chars() {
-            let (metrics, bitmap) = cache.entry((ch, font_size)).or_insert_with(|| {
-                let (metrics, mut bitmap) = font.rasterize_subpixel(ch, size);
+            let (metrics, bitmap) = cache.entry((font_id, ch, font_size)).or_insert_with(|| {
+                let glyph_font = if fallbacks.is_empty() || font.lookup_glyph_index(ch) != 0 {
+                    font_id
+                } else {
+                    fallbacks
+                        .iter()
+                        .copied()
+                        .find(|f| fonts[*f].lookup_glyph_index(ch) != 0)
+                        .unwrap_or(font_id)
+                };
+                let (metrics, mut bitmap) = fonts[glyph_font].rasterize_subpixel(ch, size);
                 apply_lcd_filter(&mut bitmap, metrics.width, metrics.height);
                 (metrics, bitmap)
             });
@@ -1031,14 +1043,17 @@ pub fn draw_text(
 
 pub fn measure_text(
     text: &str,
-    font: &fontdue::Font,
+    fonts: &[fontdue::Font],
+    font_id: usize,
+    fallbacks: &[usize],
     font_size: usize,
-    metrics: &mut FxHashMap<(char, usize), fontdue::Metrics>,
+    metrics: &mut FxHashMap<(usize, char, usize), fontdue::Metrics>,
 ) -> Rect {
     if text.is_empty() || font_size == 0 {
         return Rect::default();
     }
 
+    let font = &fonts[font_id];
     let size = font_size as f32;
     let line_metrics = font.horizontal_line_metrics(size).unwrap();
 
@@ -1054,7 +1069,18 @@ pub fn measure_text(
             continue;
         }
 
-        let metrics = metrics.entry((ch, font_size)).or_insert_with(|| font.metrics(ch, size));
+        let metrics = metrics.entry((font_id, ch, font_size)).or_insert_with(|| {
+            let glyph_font = if fallbacks.is_empty() || font.lookup_glyph_index(ch) != 0 {
+                font_id
+            } else {
+                fallbacks
+                    .iter()
+                    .copied()
+                    .find(|f| fonts[*f].lookup_glyph_index(ch) != 0)
+                    .unwrap_or(font_id)
+            };
+            fonts[glyph_font].metrics(ch, size)
+        });
 
         current_width += metrics.advance_width;
     }
@@ -1093,7 +1119,8 @@ pub fn draw_command(
     framebuffer_height: usize,
     display_scale: f32,
     fonts: &[fontdue::Font],
-    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    fallbacks: &[usize],
+    font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     image_cache: &mut ImageCache,
 ) {
     let clip = command.clip().scale(display_scale).intersection(damage);
@@ -1142,18 +1169,19 @@ pub fn draw_command(
             font_id,
             clip: _,
         } => {
-            let bitmap = font_bitmaps.entry(*font_id).or_default();
             let origin = bounds.scale(display_scale);
             draw_text(
                 text,
-                &fonts[*font_id],
+                fonts,
+                *font_id,
+                fallbacks,
                 origin.x,
                 origin.y,
                 scale(*size, display_scale),
                 framebuffer_width,
                 buffer,
                 *color,
-                bitmap,
+                font_bitmaps,
                 clip,
             );
         }
@@ -1207,7 +1235,8 @@ pub fn raster_damage(
     framebuffer_height: usize,
     display_scale: f32,
     fonts: &[fontdue::Font],
-    font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    fallbacks: &[usize],
+    font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     image_cache: &mut ImageCache,
 ) {
     let damage = cache.damage();
@@ -1225,6 +1254,7 @@ pub fn raster_damage(
                         framebuffer_height,
                         display_scale,
                         fonts,
+                        fallbacks,
                         font_bitmaps,
                         image_cache,
                     );
@@ -1248,6 +1278,7 @@ pub fn raster_damage(
                         framebuffer_height,
                         display_scale,
                         fonts,
+                        fallbacks,
                         font_bitmaps,
                         image_cache,
                     );
@@ -1264,6 +1295,7 @@ pub fn raster_damage(
                             framebuffer_height,
                             display_scale,
                             fonts,
+                            fallbacks,
                             font_bitmaps,
                             image_cache,
                         );

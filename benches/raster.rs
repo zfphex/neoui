@@ -30,7 +30,7 @@ struct Scene {
     commands: [Vec<Command<'static>>; 16],
     buffer: Vec<u32>,
     fonts: Vec<fontdue::Font>,
-    font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
+    font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     image_cache: ImageCache,
 }
 
@@ -82,6 +82,7 @@ fn old_path(s: &mut Scene) {
                     HEIGHT as usize,
                     1.0,
                     &s.fonts,
+                    &[],
                     &mut s.font_bitmaps,
                     &mut s.image_cache,
                 );
@@ -99,6 +100,7 @@ fn new_path(s: &mut Scene) {
         HEIGHT as usize,
         1.0,
         &s.fonts,
+        &[],
         &mut s.font_bitmaps,
         &mut s.image_cache,
     );

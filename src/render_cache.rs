@@ -309,10 +309,13 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
             radius,
             ..
         } => {
-            // Clip Fixed overflow to the paint rect before scaling.
-            let fitted = fitted_bounds(*bounds, image, *fit)
-                .intersection(*bounds)
-                .scale(scale_factor);
+            let fitted = if bounds.is_empty() {
+                *bounds
+            } else {
+                place(image.width, image.height, *bounds, *fit).1
+            }
+            .intersection(*bounds)
+            .scale(scale_factor);
             if *radius == 0 {
                 fitted
             } else {

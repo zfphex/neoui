@@ -2,31 +2,29 @@ use minwin::Rect;
 use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(any(feature = "jpeg", feature = "png"))]
+use zune_core::{bytestream::ZCursor, colorspace::ColorSpace, options::DecoderOptions};
+#[cfg(feature = "png")]
+use zune_core::result::DecodingResult;
+#[cfg(feature = "jpeg")]
+use zune_jpeg::{JpegDecoder, errors::DecodeErrors};
+#[cfg(feature = "png")]
+use zune_png::{PngDecoder, error::PngDecodeErrors};
+
+const LANES: u32 = 0x00FF_00FF;
+const BIAS: u32 = 0x0080_0080;
+const RGB: u32 = 0x00FF_FFFF;
+const WEIGHT_ONE: u32 = 256;
+const CACHE_BUDGET: usize = 64 << 20;
+
 static NEXT_IMAGE_ID: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ImageKey {
-    pub image_id: u64,
-    pub width: u32,
-    pub height: u32,
-    pub fit: ImageFit,
-    pub opacity: u8,
-    pub radius: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct ImageEntry {
-    pub width: usize,
-    pub height: usize,
-    pub pixels: Box<[u32]>,
-}
 
 #[derive(Debug, Clone)]
 pub struct Image {
     pub id: u64,
     pub width: usize,
     pub height: usize,
-    ///ARGB
+    pub opaque: bool,
     pub pixels: Box<[u32]>,
 }
 
@@ -36,222 +34,270 @@ impl std::hash::Hash for Image {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImageFormat {
-    Jpeg,
-    Png,
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFit {
-    /// Scale the image to fill the rect, ignoring aspect ratio.
     #[default]
     Stretch,
-    /// Scale uniformly to fit inside the rect (letterbox).
     Contain,
-    /// Scale uniformly to cover the rect (crop overflow).
     Cover,
-    /// Draw at the image's intrinsic pixel size, centered in the rect.
-    /// Overflow is clipped to the rect.
     Fixed,
 }
 
 impl Image {
-    pub fn from_rgba8(width: usize, height: usize, pixels: impl Into<Box<[u8]>>) -> Result<Self, String> {
-        let pixels = pixels.into();
-        let count = checked_pixels(width, height)?;
-        let expected = count
-            .checked_mul(4)
-            .ok_or_else(|| "image dimensions overflow addressable memory".to_string())?;
-        if pixels.len() != expected {
-            return Err(format!(
-                "invalid image buffer length: expected {expected}, got {}",
-                pixels.len()
-            ));
-        }
-        let packed = pixels.chunks(4).map(|p| premultiply(p[0], p[1], p[2], p[3])).collect();
-        Ok(Self::new(width, height, packed))
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::decode(&std::fs::read(path)?)
     }
 
-    pub fn from_argb32(width: usize, height: usize, pixels: impl Into<Box<[u32]>>) -> Result<Self, String> {
-        let pixels = pixels.into();
-        let expected = checked_pixels(width, height)?;
-        if pixels.len() != expected {
-            return Err(format!(
-                "invalid image buffer length: expected {expected}, got {}",
-                pixels.len()
-            ));
-        }
-        let packed = pixels
-            .iter()
-            .map(|p| premultiply((p >> 16) as u8, (p >> 8) as u8, *p as u8, (p >> 24) as u8))
-            .collect();
-        Ok(Self::new(width, height, packed))
-    }
-
-    fn new(width: usize, height: usize, pixels: Box<[u32]>) -> Self {
-        Self {
-            id: NEXT_IMAGE_ID
-                .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-                .unwrap(),
-            width,
-            height,
-            pixels,
-        }
-    }
-
-    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        Self::decode(&std::fs::read(path).map_err(|error| error.to_string())?)
-    }
-
-    pub fn decode(bytes: &[u8]) -> Result<Self, String> {
+    pub fn decode(bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
             #[cfg(feature = "jpeg")]
-            return decode_jpeg(bytes);
+            return Ok(decode_jpeg(bytes)?);
             #[cfg(not(feature = "jpeg"))]
-            return Err(format!("JPEG decoder is not enabled"));
+            return Err("JPEG decoder is not enabled".into());
         }
 
         if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
             #[cfg(feature = "png")]
-            return decode_png(bytes);
+            return Ok(decode_png(bytes)?);
             #[cfg(not(feature = "png"))]
-            return Err(format!("PNG decoder is not enabled"));
+            return Err("PNG decoder is not enabled".into());
         }
 
-        Err("unsupported image format".to_string())
+        Err("unsupported image format".into())
     }
 
-    /// Center-crop and scale to a square `size`×`size` image.
+    pub fn from_rgba8(width: usize, height: usize, pixels: &[u8]) -> Self {
+        assert_eq!(pixels.len(), width * height * 4);
+        Self::packed(
+            width,
+            height,
+            pixels
+                .chunks_exact(4)
+                .map(|p| premultiply(p[0], p[1], p[2], p[3]))
+                .collect(),
+        )
+    }
+
+    pub fn packed(width: usize, height: usize, pixels: Box<[u32]>) -> Self {
+        Self {
+            id: NEXT_IMAGE_ID.fetch_add(1, Ordering::Relaxed),
+            width,
+            height,
+            opaque: pixels.iter().all(|p| p >> 24 == 255),
+            pixels,
+        }
+    }
+
     pub fn thumbnail(&self, size: usize) -> Self {
         let size = size.max(1);
         if self.width == size && self.height == size {
             return self.clone();
         }
-
-        // Cover-scale: fill the square, crop overflow.
-        let scale = (self.width as f32 / size as f32).min(self.height as f32 / size as f32);
-        let crop_w = size as f32 * scale;
-        let crop_h = size as f32 * scale;
-        let x0 = (self.width as f32 - crop_w) * 0.5;
-        let y0 = (self.height as f32 - crop_h) * 0.5;
-
-        let mut pixels = vec![0u32; size * size].into_boxed_slice();
-        for ty in 0..size {
-            let sy0 = y0 + ty as f32 * scale;
-            let sy1 = y0 + (ty + 1) as f32 * scale;
-            for tx in 0..size {
-                let sx0 = x0 + tx as f32 * scale;
-                let sx1 = x0 + (tx + 1) as f32 * scale;
-                pixels[ty * size + tx] = average_rect(self, sx0, sy0, sx1, sy1);
-            }
-        }
-        Self::new(size, size, pixels)
+        let square = Rect::new(0, 0, size as i32, size as i32);
+        let (source, _) = place(self.width, self.height, square, ImageFit::Cover);
+        Self::packed(size, size, resample(self, source, size, size).pixels)
     }
 }
 
-fn checked_pixels(width: usize, height: usize) -> Result<usize, String> {
-    if width == 0 || height == 0 {
-        return Err("image dimensions must be non-zero".into());
-    }
-    width
-        .checked_mul(height)
-        .ok_or_else(|| "image dimensions overflow addressable memory".to_string())
+fn premultiply(r: u8, g: u8, b: u8, a: u8) -> u32 {
+    let mul = |v: u8| (v as u32 * a as u32 + 127) / 255;
+    (a as u32) << 24 | mul(r) << 16 | mul(g) << 8 | mul(b)
 }
 
 #[cfg(feature = "jpeg")]
-fn decode_jpeg(bytes: &[u8]) -> Result<Image, String> {
-    use zune_jpeg::zune_core::{bytestream::ZCursor, colorspace::ColorSpace, options::DecoderOptions};
+fn decode_jpeg(bytes: &[u8]) -> Result<Image, DecodeErrors> {
     let settings = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
-    let mut decoder = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(bytes), settings);
-    decoder
-        .decode_headers()
-        .map_err(|e| decode_error(ImageFormat::Jpeg, e))?;
-    let info = decoder
-        .info()
-        .ok_or_else(|| "failed to decode Jpeg: missing JPEG dimensions".to_string())?;
-    let (width, height) = (info.width as usize, info.height as usize);
-    let pixels = decoder.decode().map_err(|e| decode_error(ImageFormat::Jpeg, e))?;
-    Image::from_rgba8(width, height, pixels)
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), settings);
+    decoder.decode_headers()?;
+    let info = decoder.info().ok_or(DecodeErrors::FormatStatic("missing JPEG dimensions"))?;
+    let pixels = decoder.decode()?;
+    Ok(Image::from_rgba8(info.width as usize, info.height as usize, &pixels))
 }
 
 #[cfg(feature = "png")]
-fn decode_png(bytes: &[u8]) -> Result<Image, String> {
-    use zune_png::zune_core::{
-        bytestream::ZCursor, colorspace::ColorSpace, options::DecoderOptions, result::DecodingResult,
-    };
+fn decode_png(bytes: &[u8]) -> Result<Image, PngDecodeErrors> {
     let settings = DecoderOptions::default().png_set_strip_to_8bit(true);
-    let mut decoder = zune_png::PngDecoder::new_with_options(ZCursor::new(bytes), settings);
-    decoder
-        .decode_headers()
-        .map_err(|e| decode_error(ImageFormat::Png, e))?;
+    let mut decoder = PngDecoder::new_with_options(ZCursor::new(bytes), settings);
+    decoder.decode_headers()?;
     if decoder.is_animated() {
-        return Err("animated PNG images are not supported".into());
+        return Err(PngDecodeErrors::UnsupportedAPNGImage);
     }
     let (width, height) = decoder
         .dimensions()
-        .ok_or_else(|| "failed to decode Png: missing PNG dimensions".to_string())?;
+        .ok_or(PngDecodeErrors::GenericStatic("missing PNG dimensions"))?;
     let color = decoder
         .colorspace()
-        .ok_or_else(|| "unsupported decoded image color space".to_string())?;
-    let raw = match decoder.decode().map_err(|e| decode_error(ImageFormat::Png, e))? {
+        .ok_or(PngDecodeErrors::GenericStatic("unknown color space"))?;
+    let raw = match decoder.decode()? {
         DecodingResult::U8(data) => data,
-        _ => return Err("unsupported decoded image color space".into()),
+        _ => return Err(PngDecodeErrors::GenericStatic("unsupported color space")),
     };
-    let mut rgba = Vec::with_capacity(width * height * 4);
-    match color {
-        ColorSpace::Luma => {
-            for &v in &raw {
-                rgba.extend_from_slice(&[v, v, v, 255]);
-            }
-        }
-        ColorSpace::LumaA => {
-            for p in raw.chunks(2) {
-                rgba.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
-            }
-        }
-        ColorSpace::RGB => {
-            for p in raw.chunks(3) {
-                rgba.extend_from_slice(&[p[0], p[1], p[2], 255]);
-            }
-        }
-        ColorSpace::RGBA => rgba = raw,
-        _ => return Err("unsupported decoded image color space".into()),
-    }
-    Image::from_rgba8(width, height, rgba)
+
+    let pixels: Box<[u32]> = match color {
+        ColorSpace::Luma => raw.iter().map(|&v| premultiply(v, v, v, 255)).collect(),
+        ColorSpace::LumaA => raw
+            .chunks_exact(2)
+            .map(|p| premultiply(p[0], p[0], p[0], p[1]))
+            .collect(),
+        ColorSpace::RGB => raw
+            .chunks_exact(3)
+            .map(|p| premultiply(p[0], p[1], p[2], 255))
+            .collect(),
+        ColorSpace::RGBA => raw
+            .chunks_exact(4)
+            .map(|p| premultiply(p[0], p[1], p[2], p[3]))
+            .collect(),
+        _ => return Err(PngDecodeErrors::GenericStatic("unsupported color space")),
+    };
+    assert_eq!(pixels.len(), width * height);
+    Ok(Image::packed(width, height, pixels))
 }
 
-#[cfg(any(feature = "jpeg", feature = "png"))]
-fn decode_error(format: ImageFormat, error: impl std::fmt::Debug) -> String {
-    format!("failed to decode {format:?}: {error:?}")
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Source {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
-pub fn fitted_bounds(bounds: Rect, image: &Image, fit: ImageFit) -> Rect {
-    if bounds.is_empty() {
-        return bounds;
-    }
+pub fn place(width: usize, height: usize, bounds: Rect, fit: ImageFit) -> (Source, Rect) {
+    let full = Source {
+        x: 0.0,
+        y: 0.0,
+        width: width as f32,
+        height: height as f32,
+    };
+    let (iw, ih) = (width as f64, height as f64);
+    let (bw, bh) = (bounds.width as f64, bounds.height as f64);
+
     match fit {
-        ImageFit::Stretch | ImageFit::Cover => bounds,
+        ImageFit::Stretch => (full, bounds),
         ImageFit::Contain => {
-            let scale = (bounds.width as f64 / image.width as f64).min(bounds.height as f64 / image.height as f64);
-            let width = (image.width as f64 * scale).round().max(1.0) as i32;
-            let height = (image.height as f64 * scale).round().max(1.0) as i32;
-            Rect::new(
-                bounds.x + (bounds.width - width) / 2,
-                bounds.y + (bounds.height - height) / 2,
-                width,
-                height,
+            let scale = (bw / iw).min(bh / ih);
+            let dest_width = (iw * scale).round().max(1.0) as i32;
+            let dest_height = (ih * scale).round().max(1.0) as i32;
+            (
+                full,
+                Rect::new(
+                    bounds.x + (bounds.width - dest_width) / 2,
+                    bounds.y + (bounds.height - dest_height) / 2,
+                    dest_width,
+                    dest_height,
+                ),
             )
         }
-        ImageFit::Fixed => {
-            let width = image.width as i32;
-            let height = image.height as i32;
-            Rect::new(
-                bounds.x + (bounds.width - width) / 2,
-                bounds.y + (bounds.height - height) / 2,
-                width,
-                height,
+        ImageFit::Cover => {
+            let scale = (bw / iw).max(bh / ih);
+            let visible_width = (bw / scale) as f32;
+            let visible_height = (bh / scale) as f32;
+            (
+                Source {
+                    x: (width as f32 - visible_width) * 0.5,
+                    y: (height as f32 - visible_height) * 0.5,
+                    width: visible_width,
+                    height: visible_height,
+                },
+                bounds,
             )
+        }
+        ImageFit::Fixed => (
+            full,
+            Rect::new(
+                bounds.x + (bounds.width - width as i32) / 2,
+                bounds.y + (bounds.height - height as i32) / 2,
+                width as i32,
+                height as i32,
+            ),
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScaleKey {
+    pub image: u64,
+    pub source: [i32; 4],
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug)]
+pub struct Scaled {
+    pub width: usize,
+    pub height: usize,
+    pub opaque: bool,
+    pub last_used: u32,
+    pub pixels: Box<[u32]>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Pixels<'a> {
+    pub data: &'a [u32],
+    pub width: usize,
+    pub height: usize,
+    pub opaque: bool,
+}
+
+#[derive(Debug)]
+pub struct ImageCache {
+    pub entries: FxHashMap<ScaleKey, Scaled>,
+    pub frame: u32,
+    pub bytes: usize,
+    pub budget: usize,
+}
+
+impl ImageCache {
+    pub fn new() -> Self {
+        Self {
+            entries: FxHashMap::default(),
+            frame: 0,
+            bytes: 0,
+            budget: CACHE_BUDGET,
+        }
+    }
+
+    pub fn tick(&mut self) {
+        self.frame = self.frame.wrapping_add(1);
+        if self.bytes <= self.budget {
+            return;
+        }
+        let mut ages: Vec<(u32, ScaleKey)> = self.entries.iter().map(|(key, e)| (e.last_used, *key)).collect();
+        ages.sort_unstable_by_key(|(used, _)| *used);
+        for (_, key) in ages {
+            if self.bytes <= self.budget {
+                break;
+            }
+            if let Some(entry) = self.entries.remove(&key) {
+                self.bytes -= entry.pixels.len() * 4;
+            }
+        }
+    }
+
+    pub fn scaled(&mut self, image: &Image, source: Source, width: usize, height: usize) -> Pixels<'_> {
+        let key = ScaleKey {
+            image: image.id,
+            source: [
+                (source.x * 16.0).round() as i32,
+                (source.y * 16.0).round() as i32,
+                (source.width * 16.0).round() as i32,
+                (source.height * 16.0).round() as i32,
+            ],
+            width: width as u32,
+            height: height as u32,
+        };
+        let frame = self.frame;
+        let bytes = &mut self.bytes;
+        let entry = self.entries.entry(key).or_insert_with(|| {
+            let scaled = resample(image, source, width, height);
+            *bytes += scaled.pixels.len() * 4;
+            scaled
+        });
+        entry.last_used = frame;
+        Pixels {
+            data: &entry.pixels,
+            width: entry.width,
+            height: entry.height,
+            opaque: entry.opaque,
         }
     }
 }
@@ -267,233 +313,290 @@ pub fn draw_image(
     opacity: u8,
     radius: usize,
     scale_factor: f32,
-    cache: &mut FxHashMap<ImageKey, ImageEntry>,
+    cache: &mut ImageCache,
 ) {
     if bounds.is_empty() || clip.is_empty() || opacity == 0 || framebuffer_width == 0 || framebuffer_height == 0 {
         return;
     }
-    let scaled_bounds = bounds.scale(scale_factor);
-    let target = fitted_bounds(bounds, image, fit).scale(scale_factor);
-    // Fixed images may extend past the paint rect; always clip to it.
-    let draw = target
-        .intersection(scaled_bounds)
+
+    let (source, placed) = place(image.width, image.height, bounds, fit);
+    let dest = placed.scale(scale_factor);
+    let draw = dest
+        .intersection(bounds.scale(scale_factor))
         .intersection(clip)
         .clamp_to_size(framebuffer_width as i32, framebuffer_height as i32);
-    if draw.is_empty() || target.width <= 0 || target.height <= 0 {
+    if draw.is_empty() || dest.width <= 0 || dest.height <= 0 {
         return;
     }
-    let tw = target.width as usize;
-    let th = target.height as usize;
-    let radius = crate::scale(radius, scale_factor).min(tw.min(th) / 2);
-    let key = ImageKey {
-        image_id: image.id,
-        width: tw as u32,
-        height: th as u32,
-        fit,
-        opacity,
-        radius: radius as u32,
-    };
-    let entry = cache
-        .entry(key)
-        .or_insert_with(|| rasterize_image(image, tw, th, fit, opacity, radius));
-    blit_image(buffer, framebuffer_width, entry, target.x, target.y, draw);
+
+    let width = dest.width as usize;
+    let height = dest.height as usize;
+    let radius = crate::scale(radius, scale_factor).min(width.min(height) / 2);
+    let whole_source = source.x == 0.0
+        && source.y == 0.0
+        && source.width == image.width as f32
+        && source.height == image.height as f32;
+
+    if width == image.width && height == image.height && whole_source {
+        let pixels = Pixels {
+            data: &image.pixels,
+            width: image.width,
+            height: image.height,
+            opaque: image.opaque,
+        };
+        composite(buffer, framebuffer_width, pixels, dest, draw, opacity, radius);
+        return;
+    }
+
+    let pixels = cache.scaled(image, source, width, height);
+    composite(buffer, framebuffer_width, pixels, dest, draw, opacity, radius);
 }
 
-fn rasterize_image(
-    image: &Image,
-    width: usize,
-    height: usize,
-    fit: ImageFit,
-    opacity: u8,
-    radius: usize,
-) -> ImageEntry {
-    let radius = radius.min(width.min(height) / 2);
-    // 1:1 copy path — common for pre-sized thumbnails.
-    if image.width == width && image.height == height && !matches!(fit, ImageFit::Fixed) {
-        if opacity == 255 && radius == 0 {
-            return ImageEntry {
-                width,
-                height,
-                pixels: image.pixels.clone(),
-            };
+pub struct Axis {
+    pub taps: usize,
+    pub first: Vec<usize>,
+    pub weights: Vec<u16>,
+}
+
+fn axis(start: f32, span: f32, source_len: usize, dest_len: usize) -> Axis {
+    let ratio = span / dest_len as f32;
+    let half = (ratio * 0.5).max(0.5);
+    let taps = ((2.0 * half).ceil() as usize + 1).min(source_len).max(1);
+    let last_window = source_len - taps;
+
+    let mut first = Vec::with_capacity(dest_len);
+    let mut weights = vec![0u16; dest_len * taps];
+    let mut scratch = vec![0f32; taps];
+
+    for i in 0..dest_len {
+        let center = start + (i as f32 + 0.5) * ratio;
+        let (low, high) = (center - half, center + half);
+        let begin = low.floor() as i64;
+        let window = begin.clamp(0, last_window as i64) as usize;
+
+        scratch.fill(0.0);
+        let mut total = 0.0;
+        for tap in 0..taps {
+            let edge = begin + tap as i64;
+            let weight = (((edge + 1) as f32).min(high) - (edge as f32).max(low)).max(0.0);
+            let j = edge.clamp(0, source_len as i64 - 1) as usize;
+            scratch[(j.saturating_sub(window)).min(taps - 1)] += weight;
+            total += weight;
         }
-        let mut pixels = image.pixels.clone();
-        let local = Rect::new(0, 0, width as i32, height as i32);
-        let r = radius as f32;
-        for y in 0..height as i32 {
-            for x in 0..width as i32 {
-                let i = y as usize * width + x as usize;
-                let coverage = rounded_coverage(x, y, local, r);
-                if coverage >= 1.0 && opacity == 255 {
-                    continue;
-                }
-                if coverage <= 0.0 {
-                    pixels[i] = 0;
-                    continue;
-                }
-                let pixel = pixels[i];
-                let alpha_scale = opacity as f32 / 255.0 * coverage;
-                let a = (((pixel >> 24) & 255) as f32 * alpha_scale).round() as u32;
-                let r8 = (((pixel >> 16) & 255) as f32 * alpha_scale).round() as u32;
-                let g8 = (((pixel >> 8) & 255) as f32 * alpha_scale).round() as u32;
-                let b8 = ((pixel & 255) as f32 * alpha_scale).round() as u32;
-                pixels[i] = a << 24 | r8 << 16 | g8 << 8 | b8;
-            }
+        if total <= 0.0 {
+            scratch[0] = 1.0;
+            total = 1.0;
         }
-        return ImageEntry { width, height, pixels };
+
+        let normalize = WEIGHT_ONE as f32 / total;
+        let (mut exact, mut assigned) = (0.0f32, 0u32);
+        for tap in 0..taps {
+            exact += scratch[tap] * normalize;
+            let cumulative = exact.round() as u32;
+            let weight = cumulative.saturating_sub(assigned).min(WEIGHT_ONE);
+            weights[i * taps + tap] = weight as u16;
+            assigned += weight;
+        }
+        first.push(window);
+    }
+
+    Axis { taps, first, weights }
+}
+
+#[inline(always)]
+fn gather(source: &[u32], weights: &[u16], stride: usize) -> u32 {
+    if weights.len() == 2 {
+        let (a, b) = (source[0], source[stride]);
+        let (wa, wb) = (weights[0] as u32, weights[1] as u32);
+        let low = (a & LANES) * wa + (b & LANES) * wb;
+        let high = ((a >> 8) & LANES) * wa + ((b >> 8) & LANES) * wb;
+        return ((low >> 8) & LANES) | (((high >> 8) & LANES) << 8);
+    }
+    let (mut low, mut high) = (0u32, 0u32);
+    for (tap, &weight) in weights.iter().enumerate() {
+        let pixel = source[tap * stride];
+        let weight = weight as u32;
+        low += (pixel & LANES) * weight;
+        high += ((pixel >> 8) & LANES) * weight;
+    }
+    ((low >> 8) & LANES) | (((high >> 8) & LANES) << 8)
+}
+
+fn halve(source: &[u32], width: usize, height: usize, dest: &mut [u32], dest_width: usize, dest_height: usize) {
+    for y in 0..dest_height {
+        let top = (y * 2).min(height - 1) * width;
+        let bottom = (y * 2 + 1).min(height - 1) * width;
+        let dest_row = &mut dest[y * dest_width..][..dest_width];
+        for (x, out) in dest_row.iter_mut().enumerate() {
+            let left = x * 2;
+            let right = (left + 1).min(width - 1);
+            let (a, b) = (source[top + left], source[top + right]);
+            let (c, d) = (source[bottom + left], source[bottom + right]);
+            let low = (a & LANES) + (b & LANES) + (c & LANES) + (d & LANES) + 0x0002_0002;
+            let high = ((a >> 8) & LANES) + ((b >> 8) & LANES) + ((c >> 8) & LANES) + ((d >> 8) & LANES) + 0x0002_0002;
+            *out = ((low >> 2) & LANES) | (((high >> 2) & LANES) << 8);
+        }
+    }
+}
+
+fn resample(image: &Image, source: Source, width: usize, height: usize) -> Scaled {
+    let mut reduced: Vec<u32> = Vec::new();
+    let (mut source_width, mut source_height) = (image.width, image.height);
+    let mut rect = source;
+    while source_width >= 2
+        && source_height >= 2
+        && rect.width >= 2.0 * width as f32
+        && rect.height >= 2.0 * height as f32
+    {
+        let (half_width, half_height) = (source_width.div_ceil(2), source_height.div_ceil(2));
+        let mut next = vec![0u32; half_width * half_height];
+        let current: &[u32] = if reduced.is_empty() { &image.pixels } else { &reduced };
+        halve(current, source_width, source_height, &mut next, half_width, half_height);
+        reduced = next;
+        source_width = half_width;
+        source_height = half_height;
+        rect = Source {
+            x: rect.x * 0.5,
+            y: rect.y * 0.5,
+            width: rect.width * 0.5,
+            height: rect.height * 0.5,
+        };
+    }
+
+    let exact = rect.x == 0.0 && rect.y == 0.0 && rect.width == width as f32 && rect.height == height as f32;
+    if source_width == width && source_height == height && exact && !reduced.is_empty() {
+        return Scaled {
+            width,
+            height,
+            opaque: image.opaque,
+            last_used: 0,
+            pixels: reduced.into_boxed_slice(),
+        };
+    }
+    let pixels_in: &[u32] = if reduced.is_empty() { &image.pixels } else { &reduced };
+
+    let horizontal = axis(rect.x, rect.width, source_width, width);
+    let vertical = axis(rect.y, rect.height, source_height, height);
+
+    let row_start = vertical.first[0];
+    let row_end = (vertical.first[height - 1] + vertical.taps).min(source_height);
+    let rows = row_end - row_start;
+
+    let mut scratch = vec![0u32; width * rows];
+    for row in 0..rows {
+        let source_row = &pixels_in[(row_start + row) * source_width..][..source_width];
+        let dest_row = &mut scratch[row * width..][..width];
+        for (i, out) in dest_row.iter_mut().enumerate() {
+            let weights = &horizontal.weights[i * horizontal.taps..][..horizontal.taps];
+            *out = gather(&source_row[horizontal.first[i]..], weights, 1);
+        }
     }
 
     let mut pixels = vec![0u32; width * height].into_boxed_slice();
-    let local = Rect::new(0, 0, width as i32, height as i32);
-    let radius = radius as f32;
-    let (scale_x, scale_y) = match fit {
-        ImageFit::Stretch | ImageFit::Contain | ImageFit::Fixed => {
-            (image.width as f32 / width as f32, image.height as f32 / height as f32)
+    for y in 0..height {
+        let weights = &vertical.weights[y * vertical.taps..][..vertical.taps];
+        let top = vertical.first[y] - row_start;
+        let dest_row = &mut pixels[y * width..][..width];
+        for (x, out) in dest_row.iter_mut().enumerate() {
+            *out = gather(&scratch[top * width + x..], weights, width);
         }
-        ImageFit::Cover => {
-            let scale = (width as f32 / image.width as f32).max(height as f32 / image.height as f32);
-            (1.0 / scale, 1.0 / scale)
-        }
-    };
-    let visible_src_w = width as f32 * scale_x;
-    let visible_src_h = height as f32 * scale_y;
-    let src_x0 = (image.width as f32 - visible_src_w) * 0.5;
-    let src_y0 = (image.height as f32 - visible_src_h) * 0.5;
+    }
 
-    for y in 0..height as i32 {
-        for x in 0..width as i32 {
-            let coverage = rounded_coverage(x, y, local, radius);
+    Scaled {
+        width,
+        height,
+        opaque: image.opaque,
+        last_used: 0,
+        pixels,
+    }
+}
+
+#[inline(always)]
+fn scale_argb(pixel: u32, factor: u32) -> u32 {
+    let low = (pixel & LANES) * factor + BIAS;
+    let low = (low + ((low >> 8) & LANES)) >> 8 & LANES;
+    let high = ((pixel >> 8) & LANES) * factor + BIAS;
+    let high = (high + ((high >> 8) & LANES)) >> 8 & LANES;
+    low | (high << 8)
+}
+
+#[inline(always)]
+fn over(source: u32, background: u32) -> u32 {
+    (source + scale_argb(background, 255 - (source >> 24))) & RGB
+}
+
+#[inline]
+fn blit_row(dest: &mut [u32], source: &[u32], opacity: u8, opaque: bool) {
+    if opacity == 255 {
+        if opaque {
+            for (d, &s) in dest.iter_mut().zip(source) {
+                *d = s & RGB;
+            }
+        } else {
+            for (d, &s) in dest.iter_mut().zip(source) {
+                *d = over(s, *d);
+            }
+        }
+        return;
+    }
+    let opacity = opacity as u32;
+    for (d, &s) in dest.iter_mut().zip(source) {
+        *d = over(scale_argb(s, opacity), *d);
+    }
+}
+
+fn composite(
+    buffer: &mut [u32],
+    framebuffer_width: usize,
+    pixels: Pixels<'_>,
+    dest: Rect,
+    draw: Rect,
+    opacity: u8,
+    radius: usize,
+) {
+    let radius = radius.min(pixels.width / 2).min(pixels.height / 2);
+    let width = draw.width as usize;
+
+    let top = dest.y + radius as i32;
+    let bottom = dest.bottom() - radius as i32;
+    let left = (dest.x + radius as i32).clamp(draw.x, draw.right());
+    let right = (dest.right() - radius as i32).clamp(left, draw.right());
+
+    let centre_x = dest.x as f32 + pixels.width as f32 / 2.0;
+    let centre_y = dest.y as f32 + pixels.height as f32 / 2.0;
+    let inset_x = pixels.width as f32 / 2.0 - radius as f32;
+    let inset_y = pixels.height as f32 / 2.0 - radius as f32;
+
+    for y in draw.y..draw.bottom() {
+        let source_row = (y - dest.y) as usize * pixels.width + (draw.x - dest.x) as usize;
+        let dest_row = y as usize * framebuffer_width + draw.x as usize;
+        let source = &pixels.data[source_row..][..width];
+        let dest_slice = &mut buffer[dest_row..][..width];
+
+        if radius == 0 || (y >= top && y < bottom) {
+            blit_row(dest_slice, source, opacity, pixels.opaque);
+            continue;
+        }
+
+        let lead = (left - draw.x) as usize;
+        let trail = (right - draw.x) as usize;
+        blit_row(
+            &mut dest_slice[lead..trail],
+            &source[lead..trail],
+            opacity,
+            pixels.opaque,
+        );
+
+        let distance_y = crate::shapes::rounded_axis(y as f32 + 0.5, centre_y, inset_y);
+        for column in (0..lead).chain(trail..width) {
+            let x = draw.x + column as i32;
+            let distance_x = crate::shapes::rounded_axis(x as f32 + 0.5, centre_x, inset_x);
+            let coverage = crate::shapes::rounded_coverage(distance_x, distance_y, radius as f32);
             if coverage <= 0.0 {
                 continue;
             }
-            let sx = src_x0 + (x as f32 + 0.5) * scale_x - 0.5;
-            let sy = src_y0 + (y as f32 + 0.5) * scale_y - 0.5;
-            let pixel = sample_bilinear(image, sx, sy);
-            let alpha_scale = opacity as f32 / 255.0 * coverage;
-            let a = (((pixel >> 24) & 255) as f32 * alpha_scale).round() as u32;
-            if a == 0 {
-                continue;
-            }
-            let r = (((pixel >> 16) & 255) as f32 * alpha_scale).round() as u32;
-            let g = (((pixel >> 8) & 255) as f32 * alpha_scale).round() as u32;
-            let b = ((pixel & 255) as f32 * alpha_scale).round() as u32;
-            pixels[y as usize * width + x as usize] = a << 24 | r << 16 | g << 8 | b;
+            let factor = (coverage * opacity as f32).round() as u32;
+            dest_slice[column] = over(scale_argb(source[column], factor), dest_slice[column]);
         }
     }
-
-    ImageEntry { width, height, pixels }
-}
-
-/// Box-filter average of the source rect (coordinates in pixel space).
-fn average_rect(image: &Image, x0: f32, y0: f32, x1: f32, y1: f32) -> u32 {
-    let x0 = x0.clamp(0.0, image.width as f32);
-    let y0 = y0.clamp(0.0, image.height as f32);
-    let x1 = x1.clamp(0.0, image.width as f32).max(x0 + 1e-6);
-    let y1 = y1.clamp(0.0, image.height as f32).max(y0 + 1e-6);
-
-    // Single-pixel sample when the region is tiny (upscale / near 1:1).
-    if x1 - x0 <= 1.0 && y1 - y0 <= 1.0 {
-        return sample_bilinear(image, (x0 + x1) * 0.5 - 0.5, (y0 + y1) * 0.5 - 0.5);
-    }
-
-    let ix0 = (x0.floor() as usize).min(image.width - 1);
-    let iy0 = (y0.floor() as usize).min(image.height - 1);
-    let ix1 = ((x1.ceil() as usize).saturating_sub(1)).min(image.width - 1);
-    let iy1 = ((y1.ceil() as usize).saturating_sub(1)).min(image.height - 1);
-
-    let mut sa = 0u64;
-    let mut sr = 0u64;
-    let mut sg = 0u64;
-    let mut sb = 0u64;
-    let mut count = 0u64;
-    for y in iy0..=iy1 {
-        let row = y * image.width;
-        for x in ix0..=ix1 {
-            let p = image.pixels[row + x];
-            sa += ((p >> 24) & 255) as u64;
-            sr += ((p >> 16) & 255) as u64;
-            sg += ((p >> 8) & 255) as u64;
-            sb += (p & 255) as u64;
-            count += 1;
-        }
-    }
-    if count == 0 {
-        return 0;
-    }
-    let a = (sa / count) as u32;
-    let r = (sr / count) as u32;
-    let g = (sg / count) as u32;
-    let b = (sb / count) as u32;
-    a << 24 | r << 16 | g << 8 | b
-}
-
-fn blit_image(buffer: &mut [u32], framebuffer_width: usize, entry: &ImageEntry, dest_x: i32, dest_y: i32, draw: Rect) {
-    for y in draw.y..draw.bottom() {
-        let ly = (y - dest_y) as usize;
-        let row = ly * entry.width;
-        for x in draw.x..draw.right() {
-            let lx = (x - dest_x) as usize;
-            let pixel = entry.pixels[row + lx];
-            let a = (pixel >> 24) & 255;
-            if a == 0 {
-                continue;
-            }
-            let r = (pixel >> 16) & 255;
-            let g = (pixel >> 8) & 255;
-            let b = pixel & 255;
-            let index = y as usize * framebuffer_width + x as usize;
-            if a >= 255 {
-                buffer[index] = r << 16 | g << 8 | b;
-                continue;
-            }
-            let bg = buffer[index];
-            let inv = 255 - a;
-            let br = (bg >> 16) & 255;
-            let bgc = (bg >> 8) & 255;
-            let bb = bg & 255;
-            buffer[index] =
-                (r + (br * inv + 127) / 255) << 16 | (g + (bgc * inv + 127) / 255) << 8 | (b + (bb * inv + 127) / 255);
-        }
-    }
-}
-
-fn premultiply(r: u8, g: u8, b: u8, a: u8) -> u32 {
-    let mul = |v: u8| (v as u32 * a as u32 + 127) / 255;
-    (a as u32) << 24 | mul(r) << 16 | mul(g) << 8 | mul(b)
-}
-
-fn sample_bilinear(image: &Image, x: f32, y: f32) -> u32 {
-    let x = x.clamp(0.0, (image.width - 1) as f32);
-    let y = y.clamp(0.0, (image.height - 1) as f32);
-    let x0 = x.floor() as usize;
-    let y0 = y.floor() as usize;
-    let x1 = (x0 + 1).min(image.width - 1);
-    let y1 = (y0 + 1).min(image.height - 1);
-    let fx = x - x0 as f32;
-    let fy = y - y0 as f32;
-    let pixels = [
-        image.pixels[y0 * image.width + x0],
-        image.pixels[y0 * image.width + x1],
-        image.pixels[y1 * image.width + x0],
-        image.pixels[y1 * image.width + x1],
-    ];
-    let mut out = 0;
-    for shift in [0, 8, 16, 24] {
-        let a = ((pixels[0] >> shift) & 255) as f32 * (1.0 - fx) + ((pixels[1] >> shift) & 255) as f32 * fx;
-        let b = ((pixels[2] >> shift) & 255) as f32 * (1.0 - fx) + ((pixels[3] >> shift) & 255) as f32 * fx;
-        out |= (a.mul_add(1.0 - fy, b * fy).round() as u32) << shift;
-    }
-    out
-}
-
-fn rounded_coverage(x: i32, y: i32, bounds: Rect, radius: f32) -> f32 {
-    if radius <= 0.0 {
-        return 1.0;
-    }
-    let px = x as f32 + 0.5;
-    let py = y as f32 + 0.5;
-    let cx = px.clamp(bounds.x as f32 + radius, bounds.right() as f32 - radius);
-    let cy = py.clamp(bounds.y as f32 + radius, bounds.bottom() as f32 - radius);
-    let distance = ((px - cx).powi(2) + (py - cy).powi(2)).sqrt();
-    (radius + 0.5 - distance).clamp(0.0, 1.0)
 }

@@ -150,7 +150,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
             font_metrics: FxHashMap::default(),
-            image_cache: FxHashMap::default(),
+            image_cache: ImageCache::new(),
             default_font_size: 32,
             clear_color: black(),
             scroll_y: 0,
@@ -192,7 +192,7 @@ pub struct UiState {
     pub fonts: Vec<fontdue::Font>,
     pub font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
     pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
-    pub image_cache: FxHashMap<ImageKey, ImageEntry>,
+    pub image_cache: ImageCache,
     pub default_font_size: usize,
     pub clear_color: u32,
     pub scroll_y: i32,
@@ -773,6 +773,91 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.item(text, style)
     }
 
+    #[cfg(feature = "image")]
+    pub fn image(&mut self, image: &'text Image, style: Style) -> State {
+        let padding = style.padding.unwrap_or_default();
+        let width = style
+            .width
+            .map(|w| self.resolve_size(w, Flow::Right))
+            .unwrap_or(image.width as i32 + padding.left as i32 + padding.right as i32);
+        let height = style
+            .height
+            .map(|h| self.resolve_size(h, Flow::Down))
+            .unwrap_or(image.height as i32 + padding.top as i32 + padding.bottom as i32);
+
+        let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
+        if rect.is_empty() {
+            return State {
+                clicked: false,
+                double_clicked: false,
+                hovered: false,
+                pressed: false,
+                released: false,
+                rect,
+            };
+        }
+
+        let frame = self.current_frame();
+        let depth = style.depth.unwrap_or(frame.depth);
+        let clip = frame.clip;
+        let hovered = self.hovered_depth(rect, depth);
+        let clicked = hovered && self.clicked(rect);
+        let double_clicked = hovered && self.double_clicked(rect);
+        let pressed = hovered && self.pressed(rect);
+        let released = hovered && self.released(rect);
+        let radius = style.radius.unwrap_or(0);
+        let paint_bounds = Rect::new(paint_x, paint_y, width, height);
+
+        let bg = if hovered && style.hover.is_some() {
+            style.hover
+        } else {
+            style.bg
+        };
+
+        if let Some(color) = bg {
+            self.commands[depth].push(Command::Rect {
+                bounds: paint_bounds,
+                clip,
+                color,
+                radius,
+            });
+        }
+
+        self.commands[depth].push(Command::Image {
+            image,
+            bounds: Rect::new(
+                paint_x + padding.left as i32,
+                paint_y + padding.top as i32,
+                width - (padding.left + padding.right) as i32,
+                height - (padding.top + padding.bottom) as i32,
+            ),
+            clip,
+            fit: style.fit.unwrap_or_default(),
+            opacity: style.opacity.unwrap_or(255),
+            radius,
+        });
+
+        if let Some(border) = style.border {
+            self.commands[depth].push(Command::RectStroke {
+                bounds: paint_bounds,
+                clip,
+                color: border,
+                radius,
+                border_thickness: style.border_thickness.unwrap_or(1),
+                border_sides: style.border_side.unwrap_or(border::ALL),
+            });
+        }
+
+        State {
+            clicked,
+            double_clicked,
+            hovered,
+            rect,
+            pressed,
+            released,
+        }
+    }
+
     pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>, style: Style) -> State {
         let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
         let default_size = self.default_font_size;
@@ -1305,6 +1390,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
 
         state.render_cache.finish();
+        state.image_cache.tick();
     }
 
     pub fn with_id<R>(&mut self, id: impl Hash, ui: impl FnOnce(&mut Self) -> R) -> R {

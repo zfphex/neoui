@@ -31,7 +31,7 @@ struct Scene {
     buffer: Vec<u32>,
     fonts: Vec<fontdue::Font>,
     font_bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    image_cache: FxHashMap<ImageKey, ImageEntry>,
+    image_cache: ImageCache,
 }
 
 fn scene(static_count: usize, spots: usize) -> Scene {
@@ -65,7 +65,7 @@ fn scene(static_count: usize, spots: usize) -> Scene {
         buffer: vec![0; (WIDTH * HEIGHT) as usize],
         fonts: Vec::new(),
         font_bitmaps: FxHashMap::default(),
-        image_cache: FxHashMap::default(),
+        image_cache: ImageCache::new(),
     }
 }
 

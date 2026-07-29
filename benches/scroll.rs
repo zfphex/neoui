@@ -87,7 +87,7 @@ struct ScrollBench {
     buffer: Vec<u32>,
     fonts: Vec<fontdue::Font>,
     bitmaps: FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    image_cache: FxHashMap<ImageKey, ImageEntry>,
+    image_cache: ImageCache,
     frames: [[Vec<Command<'static>>; 16]; 2],
     step: usize,
     /// last frame metrics (for reporting, not timed)
@@ -108,7 +108,7 @@ impl ScrollBench {
             buffer: vec![0u32; FB_W * FB_H],
             fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
             bitmaps: FxHashMap::default(),
-            image_cache: FxHashMap::default(),
+            image_cache: ImageCache::new(),
             frames,
             step: 0,
             last_damage_rects: 0,
@@ -192,7 +192,7 @@ fn scroll_path_six_steps_full(bencher: divan::Bencher) {
             let buffer = vec![0u32; FB_W * FB_H];
             let fonts = vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()];
             let bitmaps = FxHashMap::default();
-            let image_cache = FxHashMap::default();
+            let image_cache = ImageCache::new();
             cache.update(&sequence[0], 1.0, FB_W, FB_H, black());
             cache.finish();
             (cache, buffer, fonts, bitmaps, image_cache, 0usize)

@@ -151,6 +151,16 @@ fn solid_fill_rect(buffer: &mut [u32], window_width: usize, area: Rect, color: u
     solid_fill_span(buffer, window_width, area.x, area.right(), area.y, area.bottom(), color);
 }
 
+#[inline(always)]
+pub(crate) fn rounded_axis(position: f32, centre: f32, inset: f32) -> f32 {
+    (position - centre).abs() - inset
+}
+
+#[inline(always)]
+pub(crate) fn rounded_coverage(distance_x: f32, distance_y: f32, radius: f32) -> f32 {
+    (0.5 - rounded_rect_sdf(distance_x, distance_y, radius)).clamp(0.0, 1.0)
+}
+
 #[inline]
 fn color_linear(color: u32) -> (f32, f32, f32, f32) {
     (
@@ -1084,7 +1094,7 @@ pub fn draw_command(
     display_scale: f32,
     fonts: &[fontdue::Font],
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
+    image_cache: &mut ImageCache,
 ) {
     let clip = command.clip().scale(display_scale).intersection(damage);
     if clip.is_empty() {
@@ -1198,7 +1208,7 @@ pub fn raster_damage(
     display_scale: f32,
     fonts: &[fontdue::Font],
     font_bitmaps: &mut FxHashMap<usize, FxHashMap<(char, usize), (fontdue::Metrics, Vec<u8>)>>,
-    image_cache: &mut FxHashMap<ImageKey, ImageEntry>,
+    image_cache: &mut ImageCache,
 ) {
     let damage = cache.damage();
 

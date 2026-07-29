@@ -11,14 +11,15 @@ divan = { version = "0.1.21", optional = true }
 criterion = { version = "0.5", features = ["html_reports"], optional = true  }
 # minwin = { git = "https://github.com/zfphex/minwin", version = "0.1.0" }
 minwin = { version = "0.1.0", path = "../minwin" }
+zune-core = { version = "0.5.1", optional = true }
 zune-jpeg = { version = "0.5.15", optional = true }
 zune-png = { version = "0.5.2", optional = true }
 
 [features]
 profile = ["mini/profile"]
 bench = ["divan", "criterion"]
-jpeg = ["dep:zune-jpeg"]
-png = ["dep:zune-png"]
+jpeg = ["dep:zune-jpeg", "dep:zune-core"]
+png = ["dep:zune-png", "dep:zune-core"]
 image = ["jpeg", "png"]
 
 [[example]]
@@ -47,6 +48,11 @@ required-features = ["bench"]
 
 [[bench]]
 name = "raster"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "image"
 harness = false
 required-features = ["bench"]
 

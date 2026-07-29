@@ -358,6 +358,7 @@ dependencies = [
  "mini",
  "minwin",
  "rustc-hash",
+ "zune-core",
  "zune-jpeg",
  "zune-png",
 ]

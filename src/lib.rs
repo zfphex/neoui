@@ -152,7 +152,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             font_metrics: FxHashMap::default(),
             image_cache: ImageCache::new(),
             default_font_size: 32,
-            root: Style::default(),
+            clear_color: black(),
             scroll_y: 0,
             left_mouse_start: None,
             left_mouse_release: None,
@@ -194,7 +194,7 @@ pub struct UiState {
     pub font_metrics: FxHashMap<usize, FxHashMap<(char, usize), fontdue::Metrics>>,
     pub image_cache: ImageCache,
     pub default_font_size: usize,
-    pub root: Style,
+    pub clear_color: u32,
     pub scroll_y: i32,
 
     pub dt: f32,
@@ -273,16 +273,7 @@ impl Context {
             }
 
             let (width, height) = frame.window.content_size();
-            let padding = frame.root.padding.unwrap_or_default();
-            let bounds = Rect::new(
-                padding.left as i32,
-                padding.top as i32,
-                (width as i32).saturating_sub((padding.left + padding.right) as i32),
-                (height as i32).saturating_sub((padding.top + padding.bottom) as i32),
-            );
-
-            let flow = frame.root.flow.unwrap_or(Flow::Down);
-            let cross_align = frame.root.cross_align.unwrap_or_default();
+            let bounds = Rect::new(0, 0, width as i32, height as i32);
 
             frame.layout_stack.clear();
             let scope = frame.next_scope;
@@ -290,10 +281,7 @@ impl Context {
             frame.layout_stack.push(Frame {
                 bounds,
                 clip: bounds,
-                flow,
-                cross_align,
-                cursor_x: bounds.x,
-                cursor_y: bounds.y,
+                flow: Flow::Down,
                 scope,
                 ..Default::default()
             });
@@ -1168,7 +1156,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let new_frame = Frame {
             bounds,
             clip: clip.intersection(bounds),
-            flow: style.flow.unwrap_or(flow),
+            flow,
             cross_align,
             depth,
             cursor_x: bounds.x,
@@ -1376,7 +1364,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             display_scale,
             framebuffer_width,
             framebuffer_height,
-            state.root.bg.unwrap_or(black()),
+            state.clear_color,
         );
 
         if dirty {
@@ -1385,7 +1373,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 buffer,
                 framebuffer_width,
                 state.render_cache.damage(),
-                state.root.bg.unwrap_or(black()),
+                state.clear_color,
             );
             raster_damage(
                 &self.commands,

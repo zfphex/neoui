@@ -41,6 +41,7 @@ pub struct Frame {
     pub max_child_height: i32,
     pub scroll_y: usize,
     pub padding: Padding,
+    pub gap: i32,
     pub outer_width: Option<i32>,
     pub outer_height: Option<i32>,
     scope: usize,
@@ -1171,6 +1172,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let explicit_w = style.width.map(|w| self.resolve_size(w, Flow::Right));
         let explicit_h = style.height.map(|h| self.resolve_size(h, Flow::Down));
+        let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
         let new_frame = Frame {
             bounds,
@@ -1184,6 +1186,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
             padding,
+            gap,
             outer_width: explicit_w,
             outer_height: explicit_h,
             scope: {
@@ -1265,13 +1268,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
             match parent.flow {
                 Flow::Down => {
-                    parent.cursor_y += frame_h;
+                    parent.cursor_y += frame_h + parent.gap;
                     parent.max_child_width = parent.max_child_width.max(frame_w);
-                    parent.max_child_height += frame_h;
+                    parent.max_child_height += frame_h + parent.gap;
                 }
                 Flow::Right => {
-                    parent.cursor_x += frame_w;
-                    parent.max_child_width += frame_w;
+                    parent.cursor_x += frame_w + parent.gap;
+                    parent.max_child_width += frame_w + parent.gap;
                     parent.max_child_height = parent.max_child_height.max(frame_h);
                 }
             }
@@ -1313,8 +1316,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Style) -> (i32, i32, Rect) {
-        let flow = self.layout_stack.last().expect("No active frame").flow;
-        let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
+        let frame = self.layout_stack.last().expect("No active frame");
+        let gap = style
+            .gap
+            .map(|gap| self.resolve_size(gap, frame.flow))
+            .unwrap_or(frame.gap);
         let layout = self.walk_layout(width, height, gap);
         let paint_x = style.x.map_or(layout.paint_x, |x| self.resolve_size(x, Flow::Right));
         let paint_y = style.y.map_or(layout.paint_y, |y| self.resolve_size(y, Flow::Down));
@@ -1372,13 +1378,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
             match parent.flow {
                 Flow::Down => {
-                    parent.cursor_y += frame_h;
+                    parent.cursor_y += frame_h + parent.gap;
                     parent.max_child_width = parent.max_child_width.max(frame_w);
-                    parent.max_child_height += frame_h;
+                    parent.max_child_height += frame_h + parent.gap;
                 }
                 Flow::Right => {
-                    parent.cursor_x += frame_w;
-                    parent.max_child_width += frame_w;
+                    parent.cursor_x += frame_w + parent.gap;
+                    parent.max_child_width += frame_w + parent.gap;
                     parent.max_child_height = parent.max_child_height.max(frame_h);
                 }
             }

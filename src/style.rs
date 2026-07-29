@@ -79,6 +79,7 @@ pub struct Style {
 
     pub alignment: Option<Alignment>,
     pub cross_align: Option<CrossAlign>,
+    pub flow: Option<Flow>,
     pub gap: Option<Size>,
 
     pub opacity: Option<u8>,
@@ -198,6 +199,14 @@ impl Style {
 
     pub fn cross_align(mut self, cross_align: CrossAlign) -> Self {
         self.cross_align = Some(cross_align);
+        self
+    }
+
+    //TODO: Should probably have flow work similar
+    //to flow_down and flow_right, should just modifiy
+    //the style instead of it being seperate...
+    pub fn flow(mut self, flow: Flow) -> Self {
+        self.flow = Some(flow);
         self
     }
 

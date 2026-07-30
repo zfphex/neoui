@@ -68,6 +68,7 @@ pub struct Style {
 
     pub font: usize,
     pub font_size: Option<usize>,
+    pub line_height: Option<usize>,
 
     pub x: Option<Size>,
     pub y: Option<Size>,
@@ -133,6 +134,11 @@ impl Style {
 
     pub fn font_size(mut self, font_size: usize) -> Self {
         self.font_size = Some(font_size);
+        self
+    }
+
+    pub fn line_height(mut self, line_height: usize) -> Self {
+        self.line_height = Some(line_height);
         self
     }
 

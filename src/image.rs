@@ -2,10 +2,10 @@ use minwin::Rect;
 use rustc_hash::FxHashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[cfg(any(feature = "jpeg", feature = "png"))]
-use zune_core::{bytestream::ZCursor, colorspace::ColorSpace, options::DecoderOptions};
 #[cfg(feature = "png")]
 use zune_core::result::DecodingResult;
+#[cfg(any(feature = "jpeg", feature = "png"))]
+use zune_core::{bytestream::ZCursor, colorspace::ColorSpace, options::DecoderOptions};
 #[cfg(feature = "jpeg")]
 use zune_jpeg::{JpegDecoder, errors::DecodeErrors};
 #[cfg(feature = "png")]
@@ -109,7 +109,9 @@ fn decode_jpeg(bytes: &[u8]) -> Result<Image, DecodeErrors> {
     let settings = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
     let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), settings);
     decoder.decode_headers()?;
-    let info = decoder.info().ok_or(DecodeErrors::FormatStatic("missing JPEG dimensions"))?;
+    let info = decoder
+        .info()
+        .ok_or(DecodeErrors::FormatStatic("missing JPEG dimensions"))?;
     let pixels = decoder.decode()?;
     Ok(Image::from_rgba8(info.width as usize, info.height as usize, &pixels))
 }

@@ -38,11 +38,16 @@ fn main() {
             ui.rect(overlay(cx - 40, 240, size, rgba(60, 220, 90, a)));
             ui.rect(overlay(cx - 95, 330, size, rgba(70, 120, 255, a)));
 
-            ui.rect(style().x(40).y(560).width(w - 80).height(56).radius(12).bg(rgb(255, 190, 40)));
-            ui.text(
-                "opaque white",
-                style().x(70).y(576).fg(white()).font_size(22),
+            ui.rect(
+                style()
+                    .x(40)
+                    .y(560)
+                    .width(w - 80)
+                    .height(56)
+                    .radius(12)
+                    .bg(rgb(255, 190, 40)),
             );
+            ui.text("opaque white", style().x(70).y(576).fg(white()).font_size(22));
             ui.text(
                 "40% white",
                 style().x(w / 2 + 30).y(576).fg(with_alpha(white(), 102)).font_size(22),

@@ -65,6 +65,8 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
             bounds: Rect::new(bounds.x + 8, bounds.y, bounds.width - 16, bounds.height),
             color: white(),
             size: 16,
+            line_height: None,
+            alignment: Alignment::Left,
         });
         // Outline like selected/hover chrome.
         if row % 7 == 0 {
@@ -203,7 +205,18 @@ fn scroll_path_six_steps_full(bencher: divan::Bencher) {
             let commands = &sequence[*idx];
             if cache.update(commands, 1.0, FB_W, FB_H, black()) {
                 clear_damage(buffer, FB_W, cache.damage(), black());
-                raster_damage(commands, cache, buffer, FB_W, FB_H, 1.0, fonts, &[], bitmaps, image_cache);
+                raster_damage(
+                    commands,
+                    cache,
+                    buffer,
+                    FB_W,
+                    FB_H,
+                    1.0,
+                    fonts,
+                    &[],
+                    bitmaps,
+                    image_cache,
+                );
             }
             cache.finish();
             black_box(*idx);

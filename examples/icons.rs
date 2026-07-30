@@ -83,6 +83,7 @@ fn main() {
                     white(),
                     icon_id,
                     64,
+                    None,
                     Alignment::Center,
                     Padding::default(),
                     0,

@@ -62,7 +62,7 @@ pub fn visible_rect(shape: Rect, clip: Rect, fb_w: i32, fb_h: i32) -> Option<Rec
     if r.is_empty() { None } else { Some(r) }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, std::hash::Hash)]
 pub enum Alignment {
     Left,
     Center,
@@ -891,14 +891,39 @@ pub fn apply_lcd_filter(bitmap: &mut [u8], width: usize, height: usize) {
     }
 }
 
+fn glyph<'a>(
+    cache: &'a mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
+    fonts: &[fontdue::Font],
+    fallbacks: &[usize],
+    font_id: usize,
+    ch: char,
+    font_size: usize,
+) -> &'a (fontdue::Metrics, Vec<u8>) {
+    cache.entry((font_id, ch, font_size)).or_insert_with(|| {
+        let glyph_font = if fallbacks.is_empty() || fonts[font_id].lookup_glyph_index(ch) != 0 {
+            font_id
+        } else {
+            fallbacks
+                .iter()
+                .copied()
+                .find(|f| fonts[*f].lookup_glyph_index(ch) != 0)
+                .unwrap_or(font_id)
+        };
+        let (metrics, mut bitmap) = fonts[glyph_font].rasterize_subpixel(ch, font_size as f32);
+        apply_lcd_filter(&mut bitmap, metrics.width, metrics.height);
+        (metrics, bitmap)
+    })
+}
+
 pub fn draw_text(
     text: &str,
     fonts: &[fontdue::Font],
     font_id: usize,
     fallbacks: &[usize],
-    x: i32,
-    y: i32,
+    bounds: Rect,
     font_size: usize,
+    line_height: Option<usize>,
+    alignment: Alignment,
     window_width: usize,
     buffer: &mut [u32],
     color: u32,
@@ -911,11 +936,15 @@ pub fn draw_text(
 
     let font = &fonts[font_id];
     let size = font_size as f32;
-    let x_start = x as f32;
-    let y_start = y as f32;
+    let x_start = bounds.x as f32;
+    let y_start = bounds.y as f32;
 
     let line_metrics = font.horizontal_line_metrics(size).unwrap();
     let ascent = line_metrics.ascent;
+    let line_step = line_height.map_or(line_metrics.new_line_size, |h| h as f32);
+    // A single line always spans the whole block, and flush-left lines never move.
+    let align_lines =
+        !matches!(alignment, Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft) && text.contains('\n');
 
     let (txt_r, txt_g, txt_b, txt_a) = split(color);
     let txt_r_lin = GAMMA_TO_LINEAR[txt_r as usize];
@@ -936,23 +965,21 @@ pub fn draw_text(
 
     for line in text.lines() {
         let mut glyph_x = x_start;
+        if align_lines {
+            let mut line_width = 0.0;
+            for ch in line.chars() {
+                line_width += glyph(cache, fonts, fallbacks, font_id, ch, font_size).0.advance_width;
+            }
+            let slack = bounds.width as f32 - line_width;
+            glyph_x += match alignment {
+                Alignment::Right | Alignment::TopRight | Alignment::BottomRight => slack,
+                _ => slack / 2.0,
+            };
+        }
         let baseline_y = y_pos + ascent;
 
         for ch in line.chars() {
-            let (metrics, bitmap) = cache.entry((font_id, ch, font_size)).or_insert_with(|| {
-                let glyph_font = if fallbacks.is_empty() || font.lookup_glyph_index(ch) != 0 {
-                    font_id
-                } else {
-                    fallbacks
-                        .iter()
-                        .copied()
-                        .find(|f| fonts[*f].lookup_glyph_index(ch) != 0)
-                        .unwrap_or(font_id)
-                };
-                let (metrics, mut bitmap) = fonts[glyph_font].rasterize_subpixel(ch, size);
-                apply_lcd_filter(&mut bitmap, metrics.width, metrics.height);
-                (metrics, bitmap)
-            });
+            let (metrics, bitmap) = glyph(cache, fonts, fallbacks, font_id, ch, font_size);
 
             let glyph_screen_y = (baseline_y - metrics.height as f32 - metrics.ymin as f32).round() as i32;
             let glyph_screen_x = (glyph_x + metrics.xmin as f32).round() as i32;
@@ -1028,11 +1055,11 @@ pub fn draw_text(
                 break;
             }
         }
-        y_pos += line_metrics.new_line_size;
+        y_pos += line_step;
     }
 
-    let x0 = x;
-    let y0 = y;
+    let x0 = bounds.x;
+    let y0 = bounds.y;
     Rect {
         x: x0,
         y: y0,
@@ -1047,6 +1074,7 @@ pub fn measure_text(
     font_id: usize,
     fallbacks: &[usize],
     font_size: usize,
+    line_height: Option<usize>,
     metrics: &mut FxHashMap<(usize, char, usize), fontdue::Metrics>,
 ) -> Rect {
     if text.is_empty() || font_size == 0 {
@@ -1059,7 +1087,7 @@ pub fn measure_text(
 
     let mut max_width = 0.0f32;
     let mut current_width = 0.0f32;
-    let mut lines = 1;
+    let mut lines: i32 = 1;
 
     for ch in text.chars() {
         if ch == '\n' {
@@ -1091,7 +1119,10 @@ pub fn measure_text(
         x: 0,
         y: 0,
         width: max_width.round() as i32,
-        height: (lines as f32 * line_metrics.new_line_size).round() as i32,
+        height: match line_height {
+            Some(line_height) => lines * line_height as i32,
+            None => (lines as f32 * line_metrics.new_line_size).round() as i32,
+        },
     }
 }
 
@@ -1167,17 +1198,19 @@ pub fn draw_command(
             color,
             size,
             font_id,
+            line_height,
+            alignment,
             clip: _,
         } => {
-            let origin = bounds.scale(display_scale);
             draw_text(
                 text,
                 fonts,
                 *font_id,
                 fallbacks,
-                origin.x,
-                origin.y,
+                bounds.scale(display_scale),
                 scale(*size, display_scale),
+                line_height.map(|h| scale(h, display_scale)),
+                *alignment,
                 framebuffer_width,
                 buffer,
                 *color,

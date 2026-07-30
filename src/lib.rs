@@ -69,8 +69,10 @@ impl Frame {
             w = w.saturating_sub(self.gap);
         }
         (
-            self.outer_width.unwrap_or(w + (self.padding.left + self.padding.right) as i32),
-            self.outer_height.unwrap_or(h + (self.padding.top + self.padding.bottom) as i32),
+            self.outer_width
+                .unwrap_or(w + (self.padding.left + self.padding.right) as i32),
+            self.outer_height
+                .unwrap_or(h + (self.padding.top + self.padding.bottom) as i32),
         )
     }
 }
@@ -120,6 +122,8 @@ pub enum Command<'a> {
         bounds: Rect,
         color: u32,
         size: usize,
+        line_height: Option<usize>,
+        alignment: Alignment,
     },
     Image {
         image: &'a Image,
@@ -362,14 +366,28 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 CrossAlign::Center => frame.bounds.x + (frame.bounds.width.saturating_sub(width)) / 2,
                 CrossAlign::End => frame.bounds.right().saturating_sub(width),
             };
-            (x, if frame.flow.reverse() { frame.cursor_y - height } else { frame.cursor_y })
+            (
+                x,
+                if frame.flow.reverse() {
+                    frame.cursor_y - height
+                } else {
+                    frame.cursor_y
+                },
+            )
         } else {
             let y = match frame.cross_align {
                 CrossAlign::Start => frame.cursor_y,
                 CrossAlign::Center => frame.bounds.y + (frame.bounds.height.saturating_sub(height)) / 2,
                 CrossAlign::End => frame.bounds.bottom().saturating_sub(height),
             };
-            (if frame.flow.reverse() { frame.cursor_x - width } else { frame.cursor_x }, y)
+            (
+                if frame.flow.reverse() {
+                    frame.cursor_x - width
+                } else {
+                    frame.cursor_x
+                },
+                y,
+            )
         };
         let rect = Rect::new(x, y, width, height);
 
@@ -534,7 +552,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         } else {
             (frame.bounds.width, frame.bounds.x, frame.bounds.right())
         };
-        let remaining = if flow.reverse() { start_pos - start } else { end - start_pos }.max(0);
+        let remaining = if flow.reverse() {
+            start_pos - start
+        } else {
+            end - start_pos
+        }
+        .max(0);
         match size {
             Size::Pixel(px) => px,
             Size::Percentage(pct) => (total as f32 * pct) as i32,
@@ -545,7 +568,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
-        let start_pos = if flow.vertical() { frame.cursor_y } else { frame.cursor_x };
+        let start_pos = if flow.vertical() {
+            frame.cursor_y
+        } else {
+            frame.cursor_x
+        };
         self.resolve_size_relative(size, flow, start_pos)
     }
 
@@ -708,6 +735,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         color: u32,
         font_id: usize,
         font_size: usize,
+        line_height: Option<usize>,
         alignment: Alignment,
         padding: Padding,
         depth: usize,
@@ -741,6 +769,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             color,
             font_id,
             size: font_size,
+            line_height,
+            alignment,
         });
     }
 
@@ -751,6 +781,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         color: u32,
         font_id: usize,
         font_size: usize,
+        line_height: Option<usize>,
         alignment: Alignment,
         padding: Padding,
         depth: usize,
@@ -759,13 +790,22 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         if text.is_empty() {
             return;
         }
-        let metrics = self.measure_text(&text, font_id, font_size);
+        let metrics = self.measure_text(&text, font_id, font_size, line_height);
         self.paint_text_measured(
-            text, metrics, rect, color, font_id, font_size, alignment, padding, depth,
+            text,
+            metrics,
+            rect,
+            color,
+            font_id,
+            font_size,
+            line_height,
+            alignment,
+            padding,
+            depth,
         );
     }
 
-    pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize) -> Rect {
+    pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize, line_height: Option<usize>) -> Rect {
         let state = &mut *self.state;
         measure_text(
             text,
@@ -773,6 +813,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             font_id,
             &state.fallbacks,
             font_size,
+            line_height,
             &mut state.font_metrics,
         )
     }
@@ -891,7 +932,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             let metrics = if part.content.is_empty() {
                 Rect::default()
             } else {
-                self.measure_text(&part.content, part.style.font, font_size)
+                self.measure_text(&part.content, part.style.font, font_size, part.style.line_height)
             };
             let run_pad = part.style.padding.unwrap_or_default();
             let w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
@@ -999,6 +1040,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 part.style.fg.unwrap_or(style.fg.unwrap_or(white())),
                 part.style.font,
                 font_size,
+                part.style.line_height,
                 Alignment::Left,
                 run_pad,
                 part.style.depth.unwrap_or(depth),
@@ -1024,7 +1066,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let metrics = if text.is_empty() {
             Rect::default()
         } else {
-            self.measure_text(&text, style.font, font_size)
+            self.measure_text(&text, style.font, font_size, style.line_height)
         };
 
         let padding = style.padding.unwrap_or_default();
@@ -1105,6 +1147,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 style.fg.unwrap_or(white()),
                 style.font,
                 font_size,
+                style.line_height,
                 style.alignment.unwrap_or(Alignment::Center),
                 style.padding.unwrap_or_default(),
                 depth,
@@ -1151,13 +1194,21 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let width = style
             .width
             .map(|w| self.resolve_size_relative(w, if reverse_x { Flow::Left } else { Flow::Right }, anchor_x))
-            .unwrap_or(if reverse_x { anchor_x - pb.x } else { pb.right() - anchor_x })
+            .unwrap_or(if reverse_x {
+                anchor_x - pb.x
+            } else {
+                pb.right() - anchor_x
+            })
             .max(0);
 
         let height = style
             .height
             .map(|h| self.resolve_size_relative(h, if reverse_y { Flow::Up } else { Flow::Down }, anchor_y))
-            .unwrap_or(if reverse_y { anchor_y - pb.y } else { pb.bottom() - anchor_y })
+            .unwrap_or(if reverse_y {
+                anchor_y - pb.y
+            } else {
+                pb.bottom() - anchor_y
+            })
             .max(0);
 
         let x = if reverse_x { anchor_x - width } else { anchor_x };
@@ -1185,7 +1236,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         inner_bounds.x += padding.left as i32;
         inner_bounds.width = inner_bounds.width.saturating_sub((padding.left + padding.right) as i32);
         inner_bounds.y += padding.top as i32;
-        inner_bounds.height = inner_bounds.height.saturating_sub((padding.top + padding.bottom) as i32);
+        inner_bounds.height = inner_bounds
+            .height
+            .saturating_sub((padding.top + padding.bottom) as i32);
 
         let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
@@ -1195,8 +1248,16 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             flow,
             cross_align,
             depth,
-            cursor_x: if flow == Flow::Left { inner_bounds.right() } else { inner_bounds.x },
-            cursor_y: if flow == Flow::Up { inner_bounds.bottom() } else { inner_bounds.y },
+            cursor_x: if flow == Flow::Left {
+                inner_bounds.right()
+            } else {
+                inner_bounds.x
+            },
+            cursor_y: if flow == Flow::Up {
+                inner_bounds.bottom()
+            } else {
+                inner_bounds.y
+            },
             // Nested flows are already placed in screen space; do not re-apply parent scroll
             // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
@@ -1217,8 +1278,16 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let (fitted_w, fitted_h) = self.current_frame().fitted_size();
         let fitted_bounds = Rect::new(
-            if flow == Flow::Left { outer_bounds.right() - fitted_w } else { x },
-            if flow == Flow::Up { outer_bounds.bottom() - fitted_h } else { y },
+            if flow == Flow::Left {
+                outer_bounds.right() - fitted_w
+            } else {
+                x
+            },
+            if flow == Flow::Up {
+                outer_bounds.bottom() - fitted_h
+            } else {
+                y
+            },
             fitted_w,
             fitted_h,
         );

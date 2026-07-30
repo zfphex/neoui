@@ -13,7 +13,7 @@ pub enum Size {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum CrossAlign {
+pub enum AlignFlow {
     #[default]
     Start,
     Center,
@@ -78,8 +78,8 @@ pub struct Style {
 
     pub depth: Option<usize>,
 
-    pub alignment: Option<Alignment>,
-    pub cross_align: Option<CrossAlign>,
+    pub align_item: Option<Alignment>,
+    pub align_flow: Option<AlignFlow>,
     pub gap: Option<Size>,
     pub clip: bool,
 
@@ -199,57 +199,57 @@ impl Style {
     }
 
     pub fn align(mut self, alignment: Alignment) -> Self {
-        self.alignment = Some(alignment);
+        self.align_item = Some(alignment);
         self
     }
 
     pub fn align_left(mut self) -> Self {
-        self.alignment = Some(Alignment::Left);
+        self.align_item = Some(Alignment::Left);
         self
     }
 
     pub fn align_center(mut self) -> Self {
-        self.alignment = Some(Alignment::Center);
+        self.align_item = Some(Alignment::Center);
         self
     }
 
     pub fn align_right(mut self) -> Self {
-        self.alignment = Some(Alignment::Right);
+        self.align_item = Some(Alignment::Right);
         self
     }
 
     pub fn align_top_left(mut self) -> Self {
-        self.alignment = Some(Alignment::TopLeft);
+        self.align_item = Some(Alignment::TopLeft);
         self
     }
 
     pub fn align_top_center(mut self) -> Self {
-        self.alignment = Some(Alignment::TopCenter);
+        self.align_item = Some(Alignment::TopCenter);
         self
     }
 
     pub fn align_top_right(mut self) -> Self {
-        self.alignment = Some(Alignment::TopRight);
+        self.align_item = Some(Alignment::TopRight);
         self
     }
 
     pub fn align_bottom_left(mut self) -> Self {
-        self.alignment = Some(Alignment::BottomLeft);
+        self.align_item = Some(Alignment::BottomLeft);
         self
     }
 
     pub fn align_bottom_center(mut self) -> Self {
-        self.alignment = Some(Alignment::BottomCenter);
+        self.align_item = Some(Alignment::BottomCenter);
         self
     }
 
     pub fn align_bottom_right(mut self) -> Self {
-        self.alignment = Some(Alignment::BottomRight);
+        self.align_item = Some(Alignment::BottomRight);
         self
     }
 
-    pub fn cross_align(mut self, cross_align: CrossAlign) -> Self {
-        self.cross_align = Some(cross_align);
+    pub fn align_flow(mut self, align_flow: AlignFlow) -> Self {
+        self.align_flow = Some(align_flow);
         self
     }
 

@@ -1,7 +1,7 @@
 use neoui::*;
 
 fn main() {
-    let mut ui = ui("clip and cross_align", 900, 600);
+    let mut ui = ui("clip and align_flow", 900, 600);
     ui.default_font_size = 14;
 
     while ui.window.open() {
@@ -39,12 +39,12 @@ fn main() {
 
                 ui.flow_down(style().gap(20), |ui| {
                     for (name, align) in [
-                        ("CrossAlign::Start", CrossAlign::Start),
-                        ("CrossAlign::Center", CrossAlign::Center),
-                        ("CrossAlign::End", CrossAlign::End),
+                        ("AlignFlow::Start", AlignFlow::Start),
+                        ("AlignFlow::Center", AlignFlow::Center),
+                        ("AlignFlow::End", AlignFlow::End),
                     ] {
                         ui.text(name, label);
-                        ui.flow_down(panel.cross_align(align).gap(4).padtb(10), |ui| {
+                        ui.flow_down(panel.align_flow(align).gap(4).padtb(10), |ui| {
                             ui.text("short", row);
                             ui.text("a little longer", row);
                             ui.text("the longest row of the three", row);

@@ -45,7 +45,7 @@ pub struct Frame {
     pub bounds: Rect,
     pub clip: Rect,
     pub flow: Flow,
-    pub cross_align: CrossAlign,
+    pub align_flow: AlignFlow,
     pub depth: usize,
     pub cursor_x: i32,
     pub cursor_y: i32,
@@ -361,10 +361,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     pub fn walk_layout(&mut self, width: i32, height: i32, gap: i32) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
         let (x, y) = if frame.flow.vertical() {
-            let x = match frame.cross_align {
-                CrossAlign::Start => frame.cursor_x,
-                CrossAlign::Center => frame.bounds.x + (frame.bounds.width.saturating_sub(width)) / 2,
-                CrossAlign::End => frame.bounds.right().saturating_sub(width),
+            let x = match frame.align_flow {
+                AlignFlow::Start => frame.cursor_x,
+                AlignFlow::Center => frame.bounds.x + (frame.bounds.width.saturating_sub(width)) / 2,
+                AlignFlow::End => frame.bounds.right().saturating_sub(width),
             };
             (
                 x,
@@ -375,10 +375,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 },
             )
         } else {
-            let y = match frame.cross_align {
-                CrossAlign::Start => frame.cursor_y,
-                CrossAlign::Center => frame.bounds.y + (frame.bounds.height.saturating_sub(height)) / 2,
-                CrossAlign::End => frame.bounds.bottom().saturating_sub(height),
+            let y = match frame.align_flow {
+                AlignFlow::Start => frame.cursor_y,
+                AlignFlow::Center => frame.bounds.y + (frame.bounds.height.saturating_sub(height)) / 2,
+                AlignFlow::End => frame.bounds.bottom().saturating_sub(height),
             };
             (
                 if frame.flow.reverse() {
@@ -1014,7 +1014,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let inner_w = (width - padding.left as i32 - padding.right as i32).max(0);
         let inner_h = (height - padding.top as i32 - padding.bottom as i32).max(0);
 
-        let group_x = match style.alignment.unwrap_or(Alignment::Left) {
+        let group_x = match style.align_item.unwrap_or(Alignment::Left) {
             Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft => inner_x,
             Alignment::Center | Alignment::TopCenter | Alignment::BottomCenter => {
                 inner_x + (inner_w.saturating_sub(content_w)) / 2
@@ -1148,7 +1148,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 style.font,
                 font_size,
                 style.line_height,
-                style.alignment.unwrap_or(Alignment::Center),
+                style.align_item.unwrap_or(Alignment::Center),
                 style.padding.unwrap_or_default(),
                 depth,
             );
@@ -1220,7 +1220,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         let padding = style.padding.unwrap_or_default();
-        let cross_align = style.cross_align.unwrap_or_default();
+        let align_flow = style.align_flow.unwrap_or_default();
 
         let bg_index = style.bg.map(|color| {
             self.commands[depth].push(Command::Rect {
@@ -1250,7 +1250,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 clip
             },
             flow,
-            cross_align,
+            align_flow,
             depth,
             cursor_x: if flow == Flow::Left {
                 inner_bounds.right()

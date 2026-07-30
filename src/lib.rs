@@ -165,6 +165,39 @@ pub struct State {
     pub rect: Rect,
 }
 
+impl State {
+    pub fn new(rect: Rect) -> Self {
+        State {
+            pressed: false,
+            released: false,
+            clicked: false,
+            double_clicked: false,
+            hovered: false,
+            rect,
+        }
+    }
+}
+
+fn resolve_bg(style: &Style, hovered: bool) -> Option<u32> {
+    if style.is_selected && style.selected.is_some() {
+        style.selected
+    } else if hovered && style.hover.is_some() {
+        style.hover
+    } else {
+        style.bg
+    }
+}
+
+fn resolve_border(style: &Style, hovered: bool) -> Option<u32> {
+    if style.is_selected && style.selected_border.is_some() {
+        style.selected_border
+    } else if hovered && style.hover_border.is_some() {
+        style.hover_border
+    } else {
+        style.border
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ScrollState {
     pub max_scroll: i32,
@@ -606,6 +639,18 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.mouse_position().intersects(rect)
     }
 
+    pub fn interact(&mut self, rect: Rect, depth: usize) -> State {
+        let hovered = self.hovered_depth(rect, depth);
+        State {
+            clicked: hovered && self.clicked(rect),
+            double_clicked: hovered && self.double_clicked(rect),
+            pressed: hovered && self.pressed(rect),
+            released: hovered && self.released(rect),
+            hovered,
+            rect,
+        }
+    }
+
     pub fn hovered_depth(&mut self, rect: Rect, depth: usize) -> bool {
         if !self.hovered(rect) {
             return false;
@@ -850,32 +895,17 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
         if rect.is_empty() {
-            return State {
-                clicked: false,
-                double_clicked: false,
-                hovered: false,
-                pressed: false,
-                released: false,
-                rect,
-            };
+            return State::new(rect);
         }
 
         let frame = self.current_frame();
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
-        let hovered = self.hovered_depth(rect, depth);
-        let clicked = hovered && self.clicked(rect);
-        let double_clicked = hovered && self.double_clicked(rect);
-        let pressed = hovered && self.pressed(rect);
-        let released = hovered && self.released(rect);
+        let state = self.interact(rect, depth);
         let radius = style.radius.unwrap_or(0);
         let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
-        let bg = if hovered && style.hover.is_some() {
-            style.hover
-        } else {
-            style.bg
-        };
+        let bg = resolve_bg(&style, state.hovered);
 
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
@@ -912,20 +942,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             });
         }
 
-        State {
-            clicked,
-            double_clicked,
-            hovered,
-            rect,
-            pressed,
-            released,
-        }
+        state
     }
 
     pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>, style: Style) -> State {
         let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
         let default_size = self.default_font_size;
-        let selected = style.is_selected;
 
         let mut content_w = 0i32;
         let mut content_h = 0i32;
@@ -958,33 +980,16 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
 
         if rect.is_empty() {
-            return State {
-                clicked: false,
-                double_clicked: false,
-                hovered: false,
-                pressed: false,
-                released: false,
-                rect,
-            };
+            return State::new(rect);
         }
 
         let frame = self.current_frame();
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
-        let hovered = self.hovered_depth(rect, depth);
-        let clicked = hovered && self.clicked(rect);
-        let double_clicked = hovered && self.double_clicked(rect);
-        let pressed = hovered && self.pressed(rect);
-        let released = hovered && self.released(rect);
+        let state = self.interact(rect, depth);
         let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
-        let bg = if selected && style.selected.is_some() {
-            style.selected
-        } else if hovered && style.hover.is_some() {
-            style.hover
-        } else {
-            style.bg
-        };
+        let bg = resolve_bg(&style, state.hovered);
 
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
@@ -996,11 +1001,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             });
         }
 
-        let border = if selected && style.selected_border.is_some() {
-            style.selected_border
-        } else {
-            style.border
-        };
+        let border = resolve_border(&style, state.hovered);
 
         if let Some(border) = border {
             self.commands[depth].push(Command::RectStroke {
@@ -1053,19 +1054,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             cursor_x += run_w;
         }
 
-        State {
-            clicked,
-            double_clicked,
-            hovered,
-            rect,
-            pressed,
-            released,
-        }
+        state
     }
 
     pub fn item(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
         let text = text.into();
-        let selected = style.is_selected;
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let metrics = if text.is_empty() {
             Rect::default()
@@ -1086,34 +1079,16 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
 
         if rect.is_empty() {
-            return State {
-                clicked: false,
-                double_clicked: false,
-                hovered: false,
-                pressed: false,
-                released: false,
-                rect,
-            };
+            return State::new(rect);
         }
 
         let frame = self.current_frame();
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
-        let hovered = self.hovered_depth(rect, depth);
-        // Input follows the same depth ordering as hover.
-        let clicked = hovered && self.clicked(rect);
-        let double_clicked = hovered && self.double_clicked(rect);
-        let pressed = hovered && self.pressed(rect);
-        let released = hovered && self.released(rect);
+        let state = self.interact(rect, depth);
         let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
-        let bg = if selected && style.selected.is_some() {
-            style.selected
-        } else if hovered && style.hover.is_some() {
-            style.hover
-        } else {
-            style.bg
-        };
+        let bg = resolve_bg(&style, state.hovered);
 
         if let Some(color) = bg {
             self.commands[depth].push(Command::Rect {
@@ -1125,11 +1100,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             });
         }
 
-        let border = if selected && style.selected_border.is_some() {
-            style.selected_border
-        } else {
-            style.border
-        };
+        let border = resolve_border(&style, state.hovered);
 
         // TODO: Borders render inside of the bounding box
         // for text which means they can overlap...
@@ -1159,14 +1130,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             );
         }
 
-        State {
-            clicked,
-            double_clicked,
-            hovered,
-            rect,
-            pressed,
-            released,
-        }
+        state
     }
 
     pub fn flow<R>(
@@ -1176,7 +1140,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         advance: bool,
         scroll_y: usize,
         ui: impl FnOnce(&mut Self) -> R,
-    ) -> R {
+    ) -> State {
         let parent_frame = self.current_frame();
         let parent_scroll = parent_frame.scroll_y;
 
@@ -1227,11 +1191,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let align_flow = style.align_flow.unwrap_or_default();
 
-        let bg_index = style.bg.map(|color| {
+        let paints_bg = style.bg.is_some() || style.hover.is_some() || style.selected.is_some();
+        let bg_index = paints_bg.then(|| {
             self.commands[depth].push(Command::Rect {
                 bounds: outer_bounds,
                 clip,
-                color,
+                color: style.bg.unwrap_or_default(),
                 radius: style.radius.unwrap_or(0),
                 gradient: style.gradient,
             });
@@ -1284,7 +1249,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         };
 
         self.layout_stack.push(new_frame);
-        let result = ui(self);
+        ui(self);
 
         let (fitted_w, fitted_h) = self.current_frame().fitted_size();
         let fitted_bounds = Rect::new(
@@ -1302,13 +1267,22 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             fitted_h,
         );
 
+        let state = self.interact(fitted_bounds, depth);
+
         if let Some(index) = bg_index {
-            if let Command::Rect { bounds, .. } = &mut self.commands[depth][index] {
-                *bounds = fitted_bounds;
+            let bg = resolve_bg(&style, state.hovered);
+            if let Command::Rect { bounds, color, .. } = &mut self.commands[depth][index] {
+                match bg {
+                    Some(bg) => {
+                        *bounds = fitted_bounds;
+                        *color = bg;
+                    }
+                    None => *bounds = Rect::default(),
+                }
             }
         }
 
-        if let Some(color) = style.border {
+        if let Some(color) = resolve_border(&style, state.hovered) {
             self.commands[depth].push(Command::RectStroke {
                 bounds: fitted_bounds,
                 clip,
@@ -1323,47 +1297,47 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             self.end_layout();
         }
 
-        result
+        state
     }
 
-    pub fn flow_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn flow_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Down, true, 0, ui)
     }
 
-    pub fn flow_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn flow_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Right, true, 0, ui)
     }
 
-    pub fn flow_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn flow_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Up, true, 0, ui)
     }
 
-    pub fn flow_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn flow_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Left, true, 0, ui)
     }
 
-    pub fn place_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
-        let r = self.flow(style, Flow::Up, false, 0, ui);
+    pub fn place_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+        let state = self.flow(style, Flow::Up, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
-        r
+        state
     }
 
-    pub fn place_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
-        let r = self.flow(style, Flow::Left, false, 0, ui);
+    pub fn place_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+        let state = self.flow(style, Flow::Left, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
-        r
+        state
     }
 
-    pub fn place_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
-        let r = self.flow(style, Flow::Down, false, 0, ui);
+    pub fn place_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+        let state = self.flow(style, Flow::Down, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
-        r
+        state
     }
 
-    pub fn place_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
-        let r = self.flow(style, Flow::Right, false, 0, ui);
+    pub fn place_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+        let state = self.flow(style, Flow::Right, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
-        r
+        state
     }
 
     pub fn scroll<R>(
@@ -1372,7 +1346,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         scroll_y: &mut usize,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> ScrollState {
-        self.flow_scroll(style, scroll_y, ui, false)
+        self.flow_scroll(style, scroll_y, ui)
     }
 
     pub fn flow_scroll<R>(
@@ -1380,32 +1354,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         style: impl Into<Style>,
         scroll_y: &mut usize,
         ui: impl FnOnce(&mut Self) -> R,
-        advance: bool,
     ) -> ScrollState {
-        let flow = Flow::Down;
         let style = style.into().clip(true);
-        let _ = self.flow(style, flow, advance, *scroll_y, ui);
+        self.flow(style, Flow::Down, false, *scroll_y, ui);
 
-        let frame = self.layout_stack.pop().expect("Layout underflow");
-        if let Some(parent) = self.layout_stack.last_mut() {
-            let (frame_w, frame_h) = frame.fitted_size();
-
-            match parent.flow {
-                Flow::Down | Flow::Up => {
-                    let step = frame_h + parent.gap;
-                    parent.cursor_y += if parent.flow.reverse() { -step } else { step };
-                    parent.max_child_width = parent.max_child_width.max(frame_w);
-                    parent.max_child_height += step;
-                }
-                Flow::Right | Flow::Left => {
-                    let step = frame_w + parent.gap;
-                    parent.cursor_x += if parent.flow.reverse() { -step } else { step };
-                    parent.max_child_width += step;
-                    parent.max_child_height = parent.max_child_height.max(frame_h);
-                }
-            }
-        }
-
+        let frame = self.end_layout();
         let bounds = frame.bounds;
         let content_height = frame.max_child_height;
 
@@ -1499,7 +1452,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.layout_stack.push(new_frame);
     }
 
-    pub fn end_layout(&mut self) {
+    pub fn end_layout(&mut self) -> Frame {
         let finished = self.layout_stack.pop().expect("Layout underflow");
         if let Some(parent) = self.layout_stack.last_mut() {
             let (frame_w, frame_h) = finished.fitted_size();
@@ -1519,6 +1472,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 }
             }
         }
+
+        finished
     }
 
     fn draw_frame(&mut self) {

@@ -20,6 +20,7 @@ fn rect(x: i32, y: i32, w: i32, h: i32, color: u32) -> Command<'static> {
         clip: Rect::new(0, 0, WIDTH, HEIGHT),
         color,
         radius: 0,
+        gradient: None,
     }
 }
 

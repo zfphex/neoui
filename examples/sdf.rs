@@ -17,7 +17,7 @@ fn main() {
                     ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
                     ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
                     ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
-                })
+                });
             }
         });
     }

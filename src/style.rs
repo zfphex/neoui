@@ -81,6 +81,7 @@ pub struct Style {
     pub alignment: Option<Alignment>,
     pub cross_align: Option<CrossAlign>,
     pub gap: Option<Size>,
+    pub clip: bool,
 
     pub opacity: Option<u8>,
 
@@ -249,6 +250,11 @@ impl Style {
 
     pub fn cross_align(mut self, cross_align: CrossAlign) -> Self {
         self.cross_align = Some(cross_align);
+        self
+    }
+
+    pub fn clip(mut self, clip: bool) -> Self {
+        self.clip = clip;
         self
     }
 

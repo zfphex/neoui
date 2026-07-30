@@ -1244,7 +1244,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let new_frame = Frame {
             bounds: inner_bounds,
-            clip: clip.intersection(outer_bounds),
+            clip: if style.clip {
+                clip.intersection(outer_bounds)
+            } else {
+                clip
+            },
             flow,
             cross_align,
             depth,
@@ -1373,7 +1377,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         advance: bool,
     ) -> ScrollState {
         let flow = Flow::Down;
-        let style = style.into();
+        let style = style.into().clip(true);
         let _ = self.flow(style, flow, advance, *scroll_y, ui);
 
         let frame = self.layout_stack.pop().expect("Layout underflow");

@@ -80,6 +80,7 @@ pub struct Style {
 
     pub align_item: Option<Alignment>,
     pub align_flow: Option<AlignFlow>,
+    pub gradient: Option<(u32, u32)>,
     pub gap: Option<Size>,
     pub clip: bool,
 
@@ -245,6 +246,11 @@ impl Style {
 
     pub fn align_bottom_right(mut self) -> Self {
         self.align_item = Some(Alignment::BottomRight);
+        self
+    }
+
+    pub fn gradient(mut self, from: u32, to: u32) -> Self {
+        self.gradient = Some((from, to));
         self
     }
 

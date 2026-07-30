@@ -172,6 +172,16 @@ fn color_linear(color: u32) -> (f32, f32, f32, f32) {
 }
 
 #[inline]
+fn lerp_color(from: u32, to: u32, t: f32) -> u32 {
+    let (fr, fg, fb) = split_f32(from);
+    let (tr, tg, tb) = split_f32(to);
+    let r = (fr + (tr - fr) * t + 0.5) as u32;
+    let g = (fg + (tg - fg) * t + 0.5) as u32;
+    let b = (fb + (tb - fb) * t + 0.5) as u32;
+    r << 16 | g << 8 | b
+}
+
+#[inline]
 fn blend_srgb(bg: &mut u32, src: (f32, f32, f32, f32), a: f32) {
     let a = a.clamp(0.0, 1.0);
     let bg_val = *bg;
@@ -484,6 +494,7 @@ pub fn draw_rect_fill(
     window_height: usize,
     radius: usize,
     color: u32,
+    gradient: Option<(u32, u32)>,
     clip: Rect,
 ) {
     if bounds.is_empty() || window_width == 0 {
@@ -500,7 +511,7 @@ pub fn draw_rect_fill(
     let min_y = vis.y as usize;
     let max_y = vis.bottom() as usize;
 
-    if radius == 0 {
+    if radius == 0 && gradient.is_none() {
         solid_fill_span(buffer, window_width, vis.x, vis.right(), vis.y, vis.bottom(), color);
         return;
     }
@@ -523,6 +534,50 @@ pub fn draw_rect_fill(
 
     let left_limit = x_left_safe.max(min_x).min(max_x);
     let right_limit = x_right_safe.max(min_x).min(max_x);
+
+    if let Some((from, to)) = gradient {
+        let (from_a, to_a) = (alpha(from) as f32 / 255.0, alpha(to) as f32 / 255.0);
+
+        for py in min_y..max_y {
+            let row_start = py * window_width;
+            let t = ((py as f32 + 0.5 - y as f32) / height as f32).clamp(0.0, 1.0);
+            let color = lerp_color(from, to, t);
+            let (r, g, b, _) = color_linear(color);
+            let src = (r, g, b, from_a + (to_a - from_a) * t);
+
+            if py >= y_top_safe && py < y_bottom_safe {
+                if let Some(slice) = buffer.get_mut(row_start + min_x..row_start + max_x) {
+                    fill_span_color(slice, color, src);
+                }
+                continue;
+            }
+
+            let dy = (py as f32 + 0.5 - cy).abs() - half_h + r_f32;
+
+            if let Some(row_slice) = buffer.get_mut(row_start + min_x..row_start + max_x) {
+                let left_len = left_limit - min_x;
+                let mid_len = right_limit - left_limit;
+                let (left_slice, rest) = row_slice.split_at_mut(left_len);
+                let (mid_slice, right_slice) = rest.split_at_mut(mid_len);
+
+                for (i, bg) in left_slice.iter_mut().enumerate() {
+                    let px = min_x + i;
+                    let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                    apply_coverage(bg, color, src, 0.5 - rounded_rect_sdf(dx, dy, r_f32));
+                }
+
+                fill_span_color(mid_slice, color, src);
+
+                for (i, bg) in right_slice.iter_mut().enumerate() {
+                    let px = right_limit + i;
+                    let dx = (px as f32 + 0.5 - cx).abs() - half_w + r_f32;
+                    apply_coverage(bg, color, src, 0.5 - rounded_rect_sdf(dx, dy, r_f32));
+                }
+            }
+        }
+
+        return;
+    }
 
     for py in min_y..max_y {
         let row_start = py * window_width;
@@ -1164,6 +1219,7 @@ pub fn draw_command(
             bounds,
             color,
             radius,
+            gradient,
             clip: _,
         } => draw_rect_fill(
             buffer,
@@ -1172,6 +1228,7 @@ pub fn draw_command(
             framebuffer_height,
             scale(*radius, display_scale),
             *color,
+            *gradient,
             clip,
         ),
         Command::RectStroke {

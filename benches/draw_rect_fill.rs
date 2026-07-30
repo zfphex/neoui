@@ -33,6 +33,7 @@ fn bench_draw_rect_fill_sizes(c: &mut Criterion) {
                     WIN_H,
                     black_box(0),
                     black_box(color),
+                    None,
                     black_box(clip),
                 );
             });
@@ -72,6 +73,7 @@ fn bench_draw_rect_fill_aspect_ratios(c: &mut Criterion) {
                     WIN_H,
                     black_box(8),
                     black_box(color),
+                    None,
                     black_box(clip),
                 );
             });
@@ -111,6 +113,7 @@ fn bench_draw_rect_fill_radii(c: &mut Criterion) {
                     WIN_H,
                     black_box(radius),
                     black_box(color),
+                    None,
                     black_box(clip),
                 );
             });
@@ -173,6 +176,7 @@ fn bench_draw_rect_fill_clipping(c: &mut Criterion) {
                     WIN_H,
                     black_box(16),
                     black_box(color),
+                    None,
                     black_box(clip),
                 );
             });
@@ -209,6 +213,7 @@ fn bench_draw_rect_fill_colors(c: &mut Criterion) {
                     WIN_H,
                     black_box(12),
                     black_box(color),
+                    None,
                     black_box(clip),
                 );
             });
@@ -273,6 +278,7 @@ fn bench_draw_rect_fill_simd_vs_scalar(c: &mut Criterion) {
                     WIN_H,
                     black_box(16),
                     black_box(color),
+                    None,
                     black_box(clip),
                 );
             });

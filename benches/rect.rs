@@ -24,6 +24,7 @@ fn bench_draw_rect_no_radius(bencher: divan::Bencher) {
             1000,
             0,
             red(),
+            None,
             Rect::new(0, 0, 1000, 1000),
         );
     });
@@ -39,6 +40,7 @@ fn bench_draw_rect_pill_shape(bencher: divan::Bencher) {
             1000,
             150,
             red(),
+            None,
             Rect::new(0, 0, 1000, 1000),
         );
     });
@@ -54,6 +56,7 @@ fn bench_draw_rect_fully_clipped(bencher: divan::Bencher) {
             1000,
             12,
             red(),
+            None,
             Rect::new(500, 500, 0, 0), // Zero size clip box
         );
     });
@@ -69,6 +72,7 @@ fn bench_draw_rect_partially_clipped(bencher: divan::Bencher) {
             1000,
             12,
             red(),
+            None,
             Rect::new(0, 0, 1000, 1000), // Screen bounds force clipping of negative coordinates
         );
     });

@@ -32,7 +32,7 @@ fn main() {
                 ui.text("ImageFit", heading);
                 ui.flow_right(style().height(150), |ui| {
                     for (_, fit) in fits {
-                        ui.image(&wide, cell.fit(fit).bg(rgb(26, 26, 30)));
+                        ui.image(&wide, cell.image_fit(fit).bg(rgb(26, 26, 30)));
                     }
                 });
                 ui.flow_right(style().height(20), |ui| {
@@ -44,7 +44,7 @@ fn main() {
                 ui.text("radius", heading);
                 ui.flow_right(style().height(150), |ui| {
                     for radius in radii {
-                        ui.image(&wide, cell.fit(ImageFit::Cover).radius(radius));
+                        ui.image(&wide, cell.image_fit(ImageFit::Cover).radius(radius));
                     }
                 });
                 ui.flow_right(style().height(20), |ui| {
@@ -58,7 +58,7 @@ fn main() {
                     for opacity in opacities {
                         ui.image(
                             &tall,
-                            cell.fit(ImageFit::Cover)
+                            cell.image_fit(ImageFit::Cover)
                                 .radius(8)
                                 .opacity(opacity)
                                 .bg(rgb(190, 80, 30)),
@@ -74,10 +74,10 @@ fn main() {
                 ui.text("alpha, thumbnail, upscale", heading);
                 ui.flow_right(style().height(150), |ui| {
                     let panel = cell.bg(rgb(40, 70, 110));
-                    ui.image(&logo, panel.fit(ImageFit::Contain));
-                    ui.image(&thumb, panel.fit(ImageFit::Fixed));
-                    ui.image(&small, panel.fit(ImageFit::Cover));
-                    ui.image(&small, panel.fit(ImageFit::Fixed));
+                    ui.image(&logo, panel.image_fit(ImageFit::Contain));
+                    ui.image(&thumb, panel.image_fit(ImageFit::Fixed));
+                    ui.image(&small, panel.image_fit(ImageFit::Cover));
+                    ui.image(&small, panel.image_fit(ImageFit::Fixed));
                 });
                 ui.flow_right(style().height(20), |ui| {
                     for name in ["logo.png alpha", "thumbnail(96)", "48px upscaled", "48px at 1:1"] {

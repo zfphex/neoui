@@ -48,6 +48,20 @@ pub struct Frame {
     anim_slot: usize,
 }
 
+impl Frame {
+    pub fn fitted_size(&self) -> (i32, i32) {
+        let (mut w, mut h) = (self.max_child_width, self.max_child_height);
+        match self.flow {
+            Flow::Down => h = h.saturating_sub(self.gap),
+            Flow::Right => w = w.saturating_sub(self.gap),
+        }
+        (
+            self.outer_width.unwrap_or(w + (self.padding.left + self.padding.right) as i32),
+            self.outer_height.unwrap_or(h + (self.padding.top + self.padding.bottom) as i32),
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Ease {
     Linear,
@@ -1167,15 +1181,15 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let cross_align = style.cross_align.unwrap_or_default();
 
-        // Draw the background across the full outer bounds.
-        if let Some(color) = style.bg {
+        let bg_index = style.bg.map(|color| {
             self.commands[depth].push(Command::Rect {
                 bounds: outer_bounds,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
             });
-        }
+            self.commands[depth].len() - 1
+        });
 
         let mut inner_bounds = outer_bounds;
         inner_bounds.x += padding.left as i32;
@@ -1213,10 +1227,18 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.layout_stack.push(new_frame);
         let result = ui(self);
 
-        // Draw the border over the full outer bounds.
+        let (fitted_w, fitted_h) = self.current_frame().fitted_size();
+        let fitted_bounds = Rect::new(x, y, fitted_w, fitted_h);
+
+        if let Some(index) = bg_index {
+            if let Command::Rect { bounds, .. } = &mut self.commands[depth][index] {
+                *bounds = fitted_bounds;
+            }
+        }
+
         if let Some(color) = style.border {
             self.commands[depth].push(Command::RectStroke {
-                bounds: outer_bounds,
+                bounds: fitted_bounds,
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
@@ -1274,10 +1296,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let frame = self.layout_stack.pop().expect("Layout underflow");
         if let Some(parent) = self.layout_stack.last_mut() {
-            let pad_w = (frame.padding.left + frame.padding.right) as i32;
-            let pad_h = (frame.padding.top + frame.padding.bottom) as i32;
-            let frame_w = frame.outer_width.unwrap_or(frame.max_child_width + pad_w);
-            let frame_h = frame.outer_height.unwrap_or(frame.max_child_height + pad_h);
+            let (frame_w, frame_h) = frame.fitted_size();
 
             match parent.flow {
                 Flow::Down => {
@@ -1384,10 +1403,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     pub fn end_layout(&mut self) {
         let finished = self.layout_stack.pop().expect("Layout underflow");
         if let Some(parent) = self.layout_stack.last_mut() {
-            let pad_w = (finished.padding.left + finished.padding.right) as i32;
-            let pad_h = (finished.padding.top + finished.padding.bottom) as i32;
-            let frame_w = finished.outer_width.unwrap_or(finished.max_child_width + pad_w);
-            let frame_h = finished.outer_height.unwrap_or(finished.max_child_height + pad_h);
+            let (frame_w, frame_h) = finished.fitted_size();
 
             match parent.flow {
                 Flow::Down => {

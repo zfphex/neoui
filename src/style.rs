@@ -263,7 +263,7 @@ impl Style {
     }
 
     #[cfg(feature = "image")]
-    pub fn fit(mut self, fit: ImageFit) -> Self {
+    pub fn image_fit(mut self, fit: ImageFit) -> Self {
         self.fit = Some(fit);
         self
     }

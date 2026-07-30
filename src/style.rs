@@ -384,9 +384,31 @@ pub const fn alpha(color: u32) -> u8 {
 }
 
 pub const fn hex(color: &str) -> u32 {
-    match u32::from_str_radix(color.split_at(1).1, 16) {
-        Ok(hex) => hex,
-        Err(_) => panic!("Invalid hex color."),
+    let bytes = color.as_bytes();
+    let s = if !bytes.is_empty() && bytes[0] == b'#' {
+        match color.split_at(1) {
+            (_, rest) => rest,
+        }
+    } else {
+        color
+    };
+
+    match s.len() {
+        6 => match u32::from_str_radix(s, 16) {
+            Ok(hex) => hex,
+            Err(_) => panic!("Invalid hex color."),
+        },
+        8 => match u32::from_str_radix(s, 16) {
+            Ok(val) => {
+                let rr = (val >> 24) & 0xFF;
+                let gg = (val >> 16) & 0xFF;
+                let bb = (val >> 8) & 0xFF;
+                let aa = val & 0xFF;
+                (aa << 24) | (rr << 16) | (gg << 8) | bb
+            }
+            Err(_) => panic!("Invalid hex color."),
+        },
+        _ => panic!("Hex color must be 6 or 8 characters."),
     }
 }
 

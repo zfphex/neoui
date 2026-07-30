@@ -26,6 +26,18 @@ pub enum Flow {
     #[default]
     Down,
     Right,
+    Up,
+    Left,
+}
+
+impl Flow {
+    pub fn vertical(self) -> bool {
+        matches!(self, Flow::Down | Flow::Up)
+    }
+
+    pub fn reverse(self) -> bool {
+        matches!(self, Flow::Up | Flow::Left)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -51,9 +63,10 @@ pub struct Frame {
 impl Frame {
     pub fn fitted_size(&self) -> (i32, i32) {
         let (mut w, mut h) = (self.max_child_width, self.max_child_height);
-        match self.flow {
-            Flow::Down => h = h.saturating_sub(self.gap),
-            Flow::Right => w = w.saturating_sub(self.gap),
+        if self.flow.vertical() {
+            h = h.saturating_sub(self.gap);
+        } else {
+            w = w.saturating_sub(self.gap);
         }
         (
             self.outer_width.unwrap_or(w + (self.padding.left + self.padding.right) as i32),
@@ -343,35 +356,34 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
     pub fn walk_layout(&mut self, width: i32, height: i32, gap: i32) -> Layout {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
-        let (x, y) = match frame.flow {
-            Flow::Down => {
-                let x = match frame.cross_align {
-                    CrossAlign::Start => frame.cursor_x,
-                    CrossAlign::Center => frame.bounds.x + (frame.bounds.width.saturating_sub(width)) / 2,
-                    CrossAlign::End => frame.bounds.right().saturating_sub(width),
-                };
-                (x, frame.cursor_y)
-            }
-            Flow::Right => {
-                let y = match frame.cross_align {
-                    CrossAlign::Start => frame.cursor_y,
-                    CrossAlign::Center => frame.bounds.y + (frame.bounds.height.saturating_sub(height)) / 2,
-                    CrossAlign::End => frame.bounds.bottom().saturating_sub(height),
-                };
-                (frame.cursor_x, y)
-            }
+        let (x, y) = if frame.flow.vertical() {
+            let x = match frame.cross_align {
+                CrossAlign::Start => frame.cursor_x,
+                CrossAlign::Center => frame.bounds.x + (frame.bounds.width.saturating_sub(width)) / 2,
+                CrossAlign::End => frame.bounds.right().saturating_sub(width),
+            };
+            (x, if frame.flow.reverse() { frame.cursor_y - height } else { frame.cursor_y })
+        } else {
+            let y = match frame.cross_align {
+                CrossAlign::Start => frame.cursor_y,
+                CrossAlign::Center => frame.bounds.y + (frame.bounds.height.saturating_sub(height)) / 2,
+                CrossAlign::End => frame.bounds.bottom().saturating_sub(height),
+            };
+            (if frame.flow.reverse() { frame.cursor_x - width } else { frame.cursor_x }, y)
         };
         let rect = Rect::new(x, y, width, height);
 
         match frame.flow {
-            Flow::Down => {
-                frame.cursor_y += height + gap;
+            Flow::Down | Flow::Up => {
+                let step = height + gap;
+                frame.cursor_y += if frame.flow.reverse() { -step } else { step };
                 frame.max_child_width = frame.max_child_width.max(width);
-                frame.max_child_height += height + gap;
+                frame.max_child_height += step;
             }
-            Flow::Right => {
-                frame.cursor_x += width + gap;
-                frame.max_child_width += width + gap;
+            Flow::Right | Flow::Left => {
+                let step = width + gap;
+                frame.cursor_x += if frame.flow.reverse() { -step } else { step };
+                frame.max_child_width += step;
                 frame.max_child_height = frame.max_child_height.max(height);
             }
         }
@@ -456,26 +468,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn resolve_rect(&self, rect: Rect, flow: Flow, size: Size) -> i32 {
+        let total = if flow.vertical() { rect.height } else { rect.width };
         match size {
             Size::Pixel(px) => px,
-            Size::Percentage(pct) => {
-                let total = match flow {
-                    Flow::Down => rect.height,
-                    Flow::Right => rect.width,
-                };
-                (total as f32 * pct) as i32
-            }
-            Size::Fill => match flow {
-                Flow::Down => rect.height,
-                Flow::Right => rect.width,
-            },
-            Size::FillMinus(sub) => {
-                let remaining = match flow {
-                    Flow::Down => rect.height,
-                    Flow::Right => rect.width,
-                };
-                remaining.saturating_sub(sub.abs())
-            }
+            Size::Percentage(pct) => (total as f32 * pct) as i32,
+            Size::Fill => total,
+            Size::FillMinus(sub) => total.saturating_sub(sub.abs()),
         }
     }
 
@@ -504,16 +502,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     /// Splits the current frame's remaining space horizontally.
     pub fn split_h(&self, left_width: impl IntoSize) -> (Rect, Rect) {
         let left_width = self.resolve_size(left_width.into_size().unwrap_or_default(), Flow::Right);
-        let frame = self.layout_stack.last().expect("No active frame");
+        let remaining = self.current_frame_bounds();
 
-        let total_w = frame.bounds.right().saturating_sub(frame.cursor_x);
-        let total_h = frame.bounds.bottom().saturating_sub(frame.cursor_y);
+        let left_w = left_width.min(remaining.width);
+        let right_w = remaining.width.saturating_sub(left_w);
 
-        let left_w = left_width.min(total_w);
-        let right_w = total_w.saturating_sub(left_w);
-
-        let left_rect = Rect::new(frame.cursor_x, frame.cursor_y, left_w, total_h);
-        let right_rect = Rect::new(frame.cursor_x + left_w, frame.cursor_y, right_w, total_h);
+        let left_rect = Rect::new(remaining.x, remaining.y, left_w, remaining.height);
+        let right_rect = Rect::new(remaining.x + left_w, remaining.y, right_w, remaining.height);
 
         (left_rect, right_rect)
     }
@@ -521,51 +516,36 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     /// Splits the current frame's remaining space vertically.
     pub fn split_v(&self, top_height: impl IntoSize) -> (Rect, Rect) {
         let top_height = self.resolve_size(top_height.into_size().unwrap_or_default(), Flow::Down);
-        let frame = self.layout_stack.last().expect("No active frame");
+        let remaining = self.current_frame_bounds();
 
-        let total_w = frame.bounds.right().saturating_sub(frame.cursor_x);
-        let total_h = frame.bounds.bottom().saturating_sub(frame.cursor_y);
+        let top_h = top_height.min(remaining.height);
+        let bottom_h = remaining.height.saturating_sub(top_h);
 
-        let top_h = top_height.min(total_h);
-        let bottom_h = total_h.saturating_sub(top_h);
-
-        let top_rect = Rect::new(frame.cursor_x, frame.cursor_y, total_w, top_h);
-        let bottom_rect = Rect::new(frame.cursor_x, frame.cursor_y + top_h, total_w, bottom_h);
+        let top_rect = Rect::new(remaining.x, remaining.y, remaining.width, top_h);
+        let bottom_rect = Rect::new(remaining.x, remaining.y + top_h, remaining.width, bottom_h);
 
         (top_rect, bottom_rect)
     }
 
     pub fn resolve_size_relative(&self, size: Size, flow: Flow, start_pos: i32) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
+        let (total, start, end) = if flow.vertical() {
+            (frame.bounds.height, frame.bounds.y, frame.bounds.bottom())
+        } else {
+            (frame.bounds.width, frame.bounds.x, frame.bounds.right())
+        };
+        let remaining = if flow.reverse() { start_pos - start } else { end - start_pos }.max(0);
         match size {
             Size::Pixel(px) => px,
-            Size::Percentage(pct) => {
-                let total = match flow {
-                    Flow::Down => frame.bounds.height,
-                    Flow::Right => frame.bounds.width,
-                };
-                (total as f32 * pct) as i32
-            }
-            Size::Fill => match flow {
-                Flow::Down => frame.bounds.bottom().saturating_sub(start_pos),
-                Flow::Right => frame.bounds.right().saturating_sub(start_pos),
-            },
-            Size::FillMinus(sub) => {
-                let remaining = match flow {
-                    Flow::Down => frame.bounds.bottom().saturating_sub(start_pos),
-                    Flow::Right => frame.bounds.right().saturating_sub(start_pos),
-                };
-                remaining.saturating_sub(sub.abs())
-            }
+            Size::Percentage(pct) => (total as f32 * pct) as i32,
+            Size::Fill => remaining,
+            Size::FillMinus(sub) => (remaining - sub.abs()).max(0),
         }
     }
 
     pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
-        let start_pos = match flow {
-            Flow::Down => frame.cursor_y,
-            Flow::Right => frame.cursor_x,
-        };
+        let start_pos = if flow.vertical() { frame.cursor_y } else { frame.cursor_x };
         self.resolve_size_relative(size, flow, start_pos)
     }
 
@@ -1154,24 +1134,34 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let style = style.into();
 
-        let x = style.x.map(|x| self.resolve_size(x, Flow::Right)).unwrap_or(parent_frame.cursor_x);
-        let y = style.y.map(|y| self.resolve_size(y, Flow::Down)).unwrap_or_else(|| {
-            if parent_scroll != 0 {
-                parent_frame.cursor_y - parent_scroll as i32
-            } else {
-                parent_frame.cursor_y
-            }
+        let pb = parent_frame.bounds;
+        let explicit_x = style.x.map(|x| self.resolve_size(x, Flow::Right));
+        let explicit_y = style.y.map(|y| self.resolve_size(y, Flow::Down));
+
+        let reverse_x = parent_frame.flow == Flow::Left && explicit_x.is_none();
+        let reverse_y = parent_frame.flow == Flow::Up && explicit_y.is_none();
+
+        let anchor_x = explicit_x.unwrap_or(parent_frame.cursor_x);
+        let anchor_y = explicit_y.unwrap_or(if parent_scroll != 0 {
+            parent_frame.cursor_y - parent_scroll as i32
+        } else {
+            parent_frame.cursor_y
         });
 
         let width = style
             .width
-            .map(|w| self.resolve_size_relative(w, Flow::Right, x))
-            .unwrap_or_else(|| parent_frame.bounds.right().saturating_sub(x));
+            .map(|w| self.resolve_size_relative(w, if reverse_x { Flow::Left } else { Flow::Right }, anchor_x))
+            .unwrap_or(if reverse_x { anchor_x - pb.x } else { pb.right() - anchor_x })
+            .max(0);
 
         let height = style
             .height
-            .map(|h| self.resolve_size_relative(h, Flow::Down, y))
-            .unwrap_or_else(|| parent_frame.bounds.bottom().saturating_sub(y));
+            .map(|h| self.resolve_size_relative(h, if reverse_y { Flow::Up } else { Flow::Down }, anchor_y))
+            .unwrap_or(if reverse_y { anchor_y - pb.y } else { pb.bottom() - anchor_y })
+            .max(0);
+
+        let x = if reverse_x { anchor_x - width } else { anchor_x };
+        let y = if reverse_y { anchor_y - height } else { anchor_y };
 
         let outer_bounds = Rect::new(x, y, width, height);
 
@@ -1197,8 +1187,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         inner_bounds.y += padding.top as i32;
         inner_bounds.height = inner_bounds.height.saturating_sub((padding.top + padding.bottom) as i32);
 
-        let explicit_w = style.width.map(|w| self.resolve_size(w, Flow::Right));
-        let explicit_h = style.height.map(|h| self.resolve_size(h, Flow::Down));
         let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
         let new_frame = Frame {
@@ -1207,15 +1195,15 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             flow,
             cross_align,
             depth,
-            cursor_x: inner_bounds.x,
-            cursor_y: inner_bounds.y,
+            cursor_x: if flow == Flow::Left { inner_bounds.right() } else { inner_bounds.x },
+            cursor_y: if flow == Flow::Up { inner_bounds.bottom() } else { inner_bounds.y },
             // Nested flows are already placed in screen space; do not re-apply parent scroll
             // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
             padding,
             gap,
-            outer_width: explicit_w,
-            outer_height: explicit_h,
+            outer_width: style.width.map(|_| width),
+            outer_height: style.height.map(|_| height),
             scope: {
                 let s = self.next_scope;
                 self.next_scope += 1;
@@ -1228,7 +1216,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let result = ui(self);
 
         let (fitted_w, fitted_h) = self.current_frame().fitted_size();
-        let fitted_bounds = Rect::new(x, y, fitted_w, fitted_h);
+        let fitted_bounds = Rect::new(
+            if flow == Flow::Left { outer_bounds.right() - fitted_w } else { x },
+            if flow == Flow::Up { outer_bounds.bottom() - fitted_h } else { y },
+            fitted_w,
+            fitted_h,
+        );
 
         if let Some(index) = bg_index {
             if let Command::Rect { bounds, .. } = &mut self.commands[depth][index] {
@@ -1260,6 +1253,26 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn flow_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
         self.flow(style, Flow::Right, true, 0, ui)
+    }
+
+    pub fn flow_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.flow(style, Flow::Up, true, 0, ui)
+    }
+
+    pub fn flow_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        self.flow(style, Flow::Left, true, 0, ui)
+    }
+
+    pub fn place_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let r = self.flow(style, Flow::Up, false, 0, ui);
+        self.layout_stack.pop().expect("Layout underflow");
+        r
+    }
+
+    pub fn place_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
+        let r = self.flow(style, Flow::Left, false, 0, ui);
+        self.layout_stack.pop().expect("Layout underflow");
+        r
     }
 
     pub fn place_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> R {
@@ -1299,14 +1312,16 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             let (frame_w, frame_h) = frame.fitted_size();
 
             match parent.flow {
-                Flow::Down => {
-                    parent.cursor_y += frame_h + parent.gap;
+                Flow::Down | Flow::Up => {
+                    let step = frame_h + parent.gap;
+                    parent.cursor_y += if parent.flow.reverse() { -step } else { step };
                     parent.max_child_width = parent.max_child_width.max(frame_w);
-                    parent.max_child_height += frame_h + parent.gap;
+                    parent.max_child_height += step;
                 }
-                Flow::Right => {
-                    parent.cursor_x += frame_w + parent.gap;
-                    parent.max_child_width += frame_w + parent.gap;
+                Flow::Right | Flow::Left => {
+                    let step = frame_w + parent.gap;
+                    parent.cursor_x += if parent.flow.reverse() { -step } else { step };
+                    parent.max_child_width += step;
                     parent.max_child_height = parent.max_child_height.max(frame_h);
                 }
             }
@@ -1366,12 +1381,17 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn current_frame_bounds(&self) -> Rect {
         let parent = self.layout_stack.last().expect("Layout stack empty");
-        Rect::new(
-            parent.cursor_x,
-            parent.cursor_y,
-            parent.bounds.right().saturating_sub(parent.cursor_x),
-            parent.bounds.bottom().saturating_sub(parent.cursor_y),
-        )
+        let (x, width) = if parent.flow == Flow::Left {
+            (parent.bounds.x, parent.cursor_x - parent.bounds.x)
+        } else {
+            (parent.cursor_x, parent.bounds.right() - parent.cursor_x)
+        };
+        let (y, height) = if parent.flow == Flow::Up {
+            (parent.bounds.y, parent.cursor_y - parent.bounds.y)
+        } else {
+            (parent.cursor_y, parent.bounds.bottom() - parent.cursor_y)
+        };
+        Rect::new(x, y, width.max(0), height.max(0))
     }
 
     pub fn begin_layout(&mut self, flow: Flow, bounds: Option<Rect>) {
@@ -1387,8 +1407,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             clip: parent.clip.intersection(bounds),
             flow,
             depth: parent.depth,
-            cursor_x: bounds.x,
-            cursor_y: bounds.y,
+            cursor_x: if flow == Flow::Left { bounds.right() } else { bounds.x },
+            cursor_y: if flow == Flow::Up { bounds.bottom() } else { bounds.y },
             scope: {
                 let s = self.next_scope;
                 self.next_scope += 1;
@@ -1406,14 +1426,16 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             let (frame_w, frame_h) = finished.fitted_size();
 
             match parent.flow {
-                Flow::Down => {
-                    parent.cursor_y += frame_h + parent.gap;
+                Flow::Down | Flow::Up => {
+                    let step = frame_h + parent.gap;
+                    parent.cursor_y += if parent.flow.reverse() { -step } else { step };
                     parent.max_child_width = parent.max_child_width.max(frame_w);
-                    parent.max_child_height += frame_h + parent.gap;
+                    parent.max_child_height += step;
                 }
-                Flow::Right => {
-                    parent.cursor_x += frame_w + parent.gap;
-                    parent.max_child_width += frame_w + parent.gap;
+                Flow::Right | Flow::Left => {
+                    let step = frame_w + parent.gap;
+                    parent.cursor_x += if parent.flow.reverse() { -step } else { step };
+                    parent.max_child_width += step;
                     parent.max_child_height = parent.max_child_height.max(frame_h);
                 }
             }

@@ -42,7 +42,10 @@ impl Flow {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Frame {
-    pub bounds: Rect,
+    pub inner_bounds: Rect,
+    /// bounds without padding
+    pub outer_bounds: Rect,
+    pub bleed: bool,
     pub clip: Rect,
     pub flow: Flow,
     pub align_flow: AlignFlow,
@@ -68,12 +71,17 @@ impl Frame {
         } else {
             w = w.saturating_sub(self.gap);
         }
-        (
+        let (w, h) = (
             self.outer_width
                 .unwrap_or(w + (self.padding.left + self.padding.right) as i32),
             self.outer_height
                 .unwrap_or(h + (self.padding.top + self.padding.bottom) as i32),
-        )
+        );
+        if self.bleed {
+            (w.min(self.outer_bounds.width), h.min(self.outer_bounds.height))
+        } else {
+            (w, h)
+        }
     }
 }
 
@@ -162,18 +170,18 @@ pub struct State {
     pub clicked: bool,
     pub double_clicked: bool,
     pub hovered: bool,
-    pub rect: Rect,
+    pub bounds: Rect,
 }
 
 impl State {
-    pub fn new(rect: Rect) -> Self {
+    pub fn new(bounds: Rect) -> Self {
         State {
             pressed: false,
             released: false,
             clicked: false,
             double_clicked: false,
             hovered: false,
-            rect,
+            bounds,
         }
     }
 }
@@ -356,7 +364,8 @@ impl Context {
             let scope = frame.next_scope;
             frame.next_scope += 1;
             frame.layout_stack.push(Frame {
-                bounds,
+                inner_bounds: bounds,
+                outer_bounds: bounds,
                 clip: bounds,
                 flow: Flow::Down,
                 scope,
@@ -397,8 +406,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let (x, y) = if frame.flow.vertical() {
             let x = match frame.align_flow {
                 AlignFlow::Start => frame.cursor_x,
-                AlignFlow::Center => frame.bounds.x + (frame.bounds.width.saturating_sub(width)) / 2,
-                AlignFlow::End => frame.bounds.right().saturating_sub(width),
+                AlignFlow::Center => frame.inner_bounds.x + (frame.inner_bounds.width.saturating_sub(width)) / 2,
+                AlignFlow::End => frame.inner_bounds.right().saturating_sub(width),
             };
             (
                 x,
@@ -411,8 +420,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         } else {
             let y = match frame.align_flow {
                 AlignFlow::Start => frame.cursor_y,
-                AlignFlow::Center => frame.bounds.y + (frame.bounds.height.saturating_sub(height)) / 2,
-                AlignFlow::End => frame.bounds.bottom().saturating_sub(height),
+                AlignFlow::Center => frame.inner_bounds.y + (frame.inner_bounds.height.saturating_sub(height)) / 2,
+                AlignFlow::End => frame.inner_bounds.bottom().saturating_sub(height),
             };
             (
                 if frame.flow.reverse() {
@@ -579,12 +588,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         (top_rect, bottom_rect)
     }
 
-    pub fn resolve_size_relative(&self, size: Size, flow: Flow, start_pos: i32) -> i32 {
-        let frame = self.layout_stack.last().expect("No active frame");
+    pub fn resolve_size_in(&self, bounds: Rect, size: Size, flow: Flow, start_pos: i32) -> i32 {
         let (total, start, end) = if flow.vertical() {
-            (frame.bounds.height, frame.bounds.y, frame.bounds.bottom())
+            (bounds.height, bounds.y, bounds.bottom())
         } else {
-            (frame.bounds.width, frame.bounds.x, frame.bounds.right())
+            (bounds.width, bounds.x, bounds.right())
         };
         let remaining = if flow.reverse() {
             start_pos - start
@@ -600,14 +608,28 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
     }
 
-    pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
+    pub fn resolve_size_relative(&self, size: Size, flow: Flow, start_pos: i32) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
+        self.resolve_size_in(frame.inner_bounds, size, flow, start_pos)
+    }
+
+    pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
+        self.resolve_style_size(size, flow, false)
+    }
+
+    pub fn resolve_style_size(&self, size: Size, flow: Flow, fill_padding: bool) -> i32 {
+        let frame = self.layout_stack.last().expect("No active frame");
+        let bounds = if fill_padding {
+            frame.outer_bounds
+        } else {
+            frame.inner_bounds
+        };
         let start_pos = if flow.vertical() {
             frame.cursor_y
         } else {
             frame.cursor_x
         };
-        self.resolve_size_relative(size, flow, start_pos)
+        self.resolve_size_in(bounds, size, flow, start_pos)
     }
 
     #[cfg(target_os = "windows")]
@@ -647,7 +669,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             pressed: hovered && self.pressed(rect),
             released: hovered && self.released(rect),
             hovered,
-            rect,
+            bounds: rect,
         }
     }
 
@@ -886,11 +908,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
-            .map(|w| self.resolve_size(w, Flow::Right))
+            .map(|w| self.resolve_style_size(w, Flow::Right, style.bleed))
             .unwrap_or(image.width as i32 + padding.left as i32 + padding.right as i32);
         let height = style
             .height
-            .map(|h| self.resolve_size(h, Flow::Down))
+            .map(|h| self.resolve_style_size(h, Flow::Down, style.bleed))
             .unwrap_or(image.height as i32 + padding.top as i32 + padding.bottom as i32);
 
         let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
@@ -970,11 +992,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
-            .map(|w| self.resolve_size(w, Flow::Right))
+            .map(|w| self.resolve_style_size(w, Flow::Right, style.bleed))
             .unwrap_or(content_w + padding.left as i32 + padding.right as i32);
         let height = style
             .height
-            .map(|h| self.resolve_size(h, Flow::Down))
+            .map(|h| self.resolve_style_size(h, Flow::Down, style.bleed))
             .unwrap_or(content_h + padding.top as i32 + padding.bottom as i32);
 
         let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
@@ -1069,11 +1091,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
-            .map(|w| self.resolve_size(w, Flow::Right))
+            .map(|w| self.resolve_style_size(w, Flow::Right, style.bleed))
             .unwrap_or(metrics.width + padding.left as i32 + padding.right as i32);
         let height = style
             .height
-            .map(|h| self.resolve_size(h, Flow::Down))
+            .map(|h| self.resolve_style_size(h, Flow::Down, style.bleed))
             .unwrap_or(metrics.height + padding.top as i32 + padding.bottom as i32);
 
         let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
@@ -1146,7 +1168,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let style = style.into();
 
-        let pb = parent_frame.bounds;
+        let pb = if style.bleed {
+            parent_frame.outer_bounds
+        } else {
+            parent_frame.inner_bounds
+        };
         let explicit_x = style.x.map(|x| self.resolve_size(x, Flow::Right));
         let explicit_y = style.y.map(|y| self.resolve_size(y, Flow::Down));
 
@@ -1162,7 +1188,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let width = style
             .width
-            .map(|w| self.resolve_size_relative(w, if reverse_x { Flow::Left } else { Flow::Right }, anchor_x))
+            .map(|w| self.resolve_size_in(pb, w, if reverse_x { Flow::Left } else { Flow::Right }, anchor_x))
             .unwrap_or(if reverse_x {
                 anchor_x - pb.x
             } else {
@@ -1172,7 +1198,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let height = style
             .height
-            .map(|h| self.resolve_size_relative(h, if reverse_y { Flow::Up } else { Flow::Down }, anchor_y))
+            .map(|h| self.resolve_size_in(pb, h, if reverse_y { Flow::Up } else { Flow::Down }, anchor_y))
             .unwrap_or(if reverse_y {
                 anchor_y - pb.y
             } else {
@@ -1184,6 +1210,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let y = if reverse_y { anchor_y - height } else { anchor_y };
 
         let outer_bounds = Rect::new(x, y, width, height);
+
+        if style.bleed {
+            self.layout_stack.last_mut().unwrap().bleed = true;
+        }
 
         let frame = self.current_frame();
         let depth = style.depth.unwrap_or(frame.depth);
@@ -1214,7 +1244,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
         let new_frame = Frame {
-            bounds: inner_bounds,
+            inner_bounds,
+            outer_bounds,
             clip: if style.clip {
                 clip.intersection(outer_bounds)
             } else {
@@ -1359,7 +1390,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.flow(style, Flow::Down, false, *scroll_y, ui);
 
         let frame = self.end_layout();
-        let bounds = frame.bounds;
+        let bounds = frame.inner_bounds;
         let content_height = frame.max_child_height;
 
         let max_scroll = content_height.saturating_sub(bounds.height).max(0);
@@ -1394,7 +1425,10 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.layout_stack.last().as_ref().unwrap()
     }
 
-    fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Style) -> (i32, i32, Rect) {
+    pub fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Style) -> (i32, i32, Rect) {
+        if style.bleed {
+            self.layout_stack.last_mut().unwrap().bleed = true;
+        }
         let frame = self.layout_stack.last().expect("No active frame");
         let gap = style
             .gap
@@ -1414,14 +1448,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     pub fn current_frame_bounds(&self) -> Rect {
         let parent = self.layout_stack.last().expect("Layout stack empty");
         let (x, width) = if parent.flow == Flow::Left {
-            (parent.bounds.x, parent.cursor_x - parent.bounds.x)
+            (parent.inner_bounds.x, parent.cursor_x - parent.inner_bounds.x)
         } else {
-            (parent.cursor_x, parent.bounds.right() - parent.cursor_x)
+            (parent.cursor_x, parent.inner_bounds.right() - parent.cursor_x)
         };
         let (y, height) = if parent.flow == Flow::Up {
-            (parent.bounds.y, parent.cursor_y - parent.bounds.y)
+            (parent.inner_bounds.y, parent.cursor_y - parent.inner_bounds.y)
         } else {
-            (parent.cursor_y, parent.bounds.bottom() - parent.cursor_y)
+            (parent.cursor_y, parent.inner_bounds.bottom() - parent.cursor_y)
         };
         Rect::new(x, y, width.max(0), height.max(0))
     }
@@ -1435,7 +1469,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let parent = self.layout_stack.last().expect("Layout stack empty");
         let new_frame = Frame {
-            bounds,
+            inner_bounds: bounds,
+            outer_bounds: bounds,
             clip: parent.clip.intersection(bounds),
             flow,
             depth: parent.depth,

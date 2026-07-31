@@ -83,6 +83,8 @@ pub struct Style {
     pub gradient: Option<(u32, u32)>,
     pub gap: Option<Size>,
     pub clip: bool,
+    /// Resolve fill against parent's outer bounds, ignoring padding.
+    pub bleed: bool,
 
     pub opacity: Option<u8>,
 
@@ -169,6 +171,23 @@ impl Style {
         self
     }
 
+    pub fn w(mut self, w: impl IntoSize) -> Self {
+        self.width = w.into_size();
+        self
+    }
+
+    pub fn h(mut self, h: impl IntoSize) -> Self {
+        self.height = h.into_size();
+        self
+    }
+
+    pub fn wh(mut self, wh: impl IntoSize) -> Self {
+        let wh = wh.into_size();
+        self.width = wh;
+        self.height = wh;
+        self
+    }
+
     pub fn width(mut self, w: impl IntoSize) -> Self {
         self.width = w.into_size();
         self
@@ -196,6 +215,11 @@ impl Style {
 
     pub fn fill_height(mut self) -> Self {
         self.height = Some(Size::Fill);
+        self
+    }
+
+    pub fn bleed(mut self) -> Self {
+        self.bleed = true;
         self
     }
 

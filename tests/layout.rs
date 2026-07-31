@@ -1,7 +1,6 @@
 use neoui::*;
 
-#[test]
-fn layout() {
+fn main() {
     let mut ui = ui("layout", 800, 600);
 
     ui.frame(|ui| {
@@ -45,10 +44,9 @@ fn layout() {
         });
 
         // Cross axis alignment of the flow.
-        ui.place_down(
-            bounds(Rect::new(0, 0, 200, 100)).align_flow(AlignFlow::Center),
-            |ui| assert_eq!(ui.rect(style().wh(20)).bounds, Rect::new(90, 0, 20, 20)),
-        );
+        ui.place_down(bounds(Rect::new(0, 0, 200, 100)).align_flow(AlignFlow::Center), |ui| {
+            assert_eq!(ui.rect(style().wh(20)).bounds, Rect::new(90, 0, 20, 20))
+        });
 
         ui.place_down(bounds(Rect::new(0, 0, 200, 100)).align_flow(AlignFlow::End), |ui| {
             assert_eq!(ui.rect(style().wh(20)).bounds, Rect::new(180, 0, 20, 20))

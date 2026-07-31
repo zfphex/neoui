@@ -26,6 +26,10 @@ image = ["jpeg", "png"]
 name = "image"
 required-features = ["image"]
 
+[[test]]
+name = "layout"
+harness = false
+
 [[bench]]
 name = "font"
 harness = false

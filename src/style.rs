@@ -95,6 +95,8 @@ pub struct Style {
     pub gradient: Option<(u32, u32)>,
     pub gap: Option<Size>,
     pub clip: bool,
+    /// Rubber-band past the edges of a scroll view and bounce back.
+    pub elastic: bool,
     /// Resolve fill against parent's outer bounds, ignoring padding.
     pub bleed: bool,
 
@@ -297,6 +299,11 @@ impl Style {
 
     pub fn clip(mut self, clip: bool) -> Self {
         self.clip = clip;
+        self
+    }
+
+    pub fn elastic(mut self, elastic: bool) -> Self {
+        self.elastic = elastic;
         self
     }
 

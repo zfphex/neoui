@@ -32,7 +32,7 @@ fn main() {
     let mut current_menu: Option<(Menu, Rect)> = None;
     let mut selected_song = 0;
     let mut volume = 0.5;
-    let mut scroll_y = 0;
+    let mut scroll = Scroll::new();
 
     let panel_bg = rgb(10, 10, 10);
     let border_color = rgb(45, 45, 45);
@@ -215,7 +215,7 @@ fn main() {
             //This is kinda cursed.
             let (track_rect, scrollbar) = ui.split_rect_h(track_rect, -20);
 
-            let state = ui.scroll(track_rect, &mut scroll_y, |ui| {
+            let state = ui.scroll(bounds(track_rect).elastic(true), &mut scroll, |ui| {
                 ui.text(
                     "beabadoobee - Fake It Flowers (2020)",
                     style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
@@ -240,13 +240,13 @@ fn main() {
                 let thumb_h = 80.0;
                 // Calculate the exact space the bar can move within.
                 let available_height = (h - thumb_h).max(0.0);
-                let mut ratio = (scroll_y as f32 / state.max_scroll as f32).clamp(0.0, 1.0);
+                let mut ratio = (scroll.offset / state.max_scroll as f32).clamp(0.0, 1.0);
 
                 if ui.dragged(scrollbar) {
                     // Offset the mouse position by half the bar height so the drag centers on the thumb.
                     let mousey = ui.mouse_position().y as f32 - y - (thumb_h / 2.0);
                     ratio = (mousey / available_height).clamp(0.0, 1.0);
-                    scroll_y = (ratio * state.max_scroll as f32).round() as usize;
+                    scroll.jump(ratio * state.max_scroll as f32);
                 }
 
                 let y = s.y + (ratio * available_height).round() as i32;

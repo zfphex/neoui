@@ -108,18 +108,19 @@ fn main() {
         });
 
         // Scrolling reports how far the content overflows the viewport.
-        let mut scroll_y = 0;
-        let scroll = ui.scroll(bounds(Rect::new(0, 0, 100, 100)), &mut scroll_y, |ui| {
+        let mut scroll = Scroll::new();
+        let state = ui.scroll(bounds(Rect::new(0, 0, 100, 100)), &mut scroll, |ui| {
             for _ in 0..10 {
                 ui.rect(style().w(10).h(30));
             }
         });
-        assert_eq!(scroll.content_height, 300);
-        assert_eq!(scroll.max_scroll, 200);
+        assert_eq!(state.content_height, 300);
+        assert_eq!(state.max_scroll, 200);
 
         // Items scrolled out of the viewport are culled, the rest are clipped to it.
-        let mut scroll_y = 60;
-        ui.scroll(bounds(Rect::new(0, 0, 100, 100)), &mut scroll_y, |ui| {
+        let mut scroll = Scroll::new();
+        scroll.jump(60.0);
+        ui.scroll(bounds(Rect::new(0, 0, 100, 100)), &mut scroll, |ui| {
             assert!(ui.rect(style().w(10).h(30)).bounds.is_empty());
             assert!(ui.rect(style().w(10).h(30)).bounds.is_empty());
             assert_eq!(ui.rect(style().w(10).h(30)).bounds, Rect::new(0, 0, 10, 30));

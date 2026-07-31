@@ -11,6 +11,9 @@ pub use render_cache::*;
 pub mod image;
 pub use image::*;
 
+pub mod scroll;
+pub use scroll::*;
+
 pub use mini::*;
 pub use minwin::*;
 
@@ -54,7 +57,7 @@ pub struct Frame {
     pub cursor_y: i32,
     pub max_child_width: i32,
     pub max_child_height: i32,
-    pub scroll_y: usize,
+    pub scroll_y: i32,
     pub padding: Padding,
     pub gap: i32,
     pub outer_width: Option<i32>,
@@ -206,15 +209,6 @@ fn resolve_border(style: &Style, hovered: bool) -> Option<u32> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ScrollState {
-    pub max_scroll: i32,
-    pub content_height: i32,
-    pub scrolled: bool,
-    /// 1 up, -1 down.
-    pub direction: i32,
-}
-
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub fn ui(title: &str, width: usize, height: usize) -> Context {
@@ -231,7 +225,8 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             image_cache: ImageCache::new(),
             default_font_size: 32,
             clear_color: black(),
-            scroll_y: 0,
+            scroll_y: 0.0,
+            scroll_events: Vec::new(),
             left_mouse_start: None,
             left_mouse_release: None,
             dt: 0.0,
@@ -275,7 +270,8 @@ pub struct UiState {
     pub image_cache: ImageCache,
     pub default_font_size: usize,
     pub clear_color: u32,
-    pub scroll_y: i32,
+    pub scroll_y: f32,
+    pub scroll_events: Vec<ScrollEvent>,
 
     pub dt: f32,
     pub next_scope: usize,
@@ -345,7 +341,9 @@ impl Context {
             frame.next_scope = 0;
             frame.id_stack.clear();
             frame.animating = false;
-            frame.scroll_y = frame.window.scroll_delta().1.round() as i32;
+            frame.scroll_y = frame.window.scroll_delta().1 as f32;
+            frame.state.scroll_events.clear();
+            frame.state.scroll_events.extend_from_slice(frame.window.scroll_events());
             frame.hovered_depth = None;
 
             if frame.window.mouse_pressed(Mouse::Left) {
@@ -474,7 +472,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         //            VIEWPORT |
         //  ====================
         let x = rect.x;
-        let y = rect.y - frame.scroll_y as i32;
+        let y = rect.y - frame.scroll_y;
         let clip_top = frame.clip.y;
         let clip_bottom = frame.clip.bottom();
 
@@ -1157,7 +1155,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         style: impl Into<Style>,
         flow: Flow,
         advance: bool,
-        scroll_y: usize,
+        scroll_y: i32,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> State {
         let parent_frame = self.current_frame();
@@ -1180,7 +1178,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let anchor_x = explicit_x.unwrap_or(parent_frame.cursor_x);
         let anchor_y = explicit_y.unwrap_or(if parent_scroll != 0 {
-            parent_frame.cursor_y - parent_scroll as i32
+            parent_frame.cursor_y - parent_scroll
         } else {
             parent_frame.cursor_y
         });
@@ -1379,49 +1377,56 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     pub fn scroll<R>(
         &mut self,
         style: impl Into<Style>,
-        scroll_y: &mut usize,
+        scroll: &mut Scroll,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> ScrollState {
-        self.flow_scroll(style, scroll_y, ui)
+        self.flow_scroll(style, scroll, ui)
     }
 
     pub fn flow_scroll<R>(
         &mut self,
         style: impl Into<Style>,
-        scroll_y: &mut usize,
+        scroll: &mut Scroll,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> ScrollState {
+        //TODO: It's not explicit to the user that this is always clipped.
         let style = style.into().clip(true);
-        self.flow(style, Flow::Down, false, *scroll_y, ui);
+        let elastic = style.elastic;
+        self.flow(style, Flow::Down, false, (scroll.offset + scroll.stretch).round() as i32, ui);
 
         let frame = self.end_layout();
         let bounds = frame.inner_bounds;
         let content_height = frame.max_child_height;
-
         let max_scroll = content_height.saturating_sub(bounds.height).max(0);
-        let mut state = ScrollState {
+
+        let hovered = self.mouse_position().intersects(bounds);
+        let state = ScrollState {
             max_scroll,
             content_height,
-            scrolled: false,
-            direction: self.scroll_y,
+            scrolled: hovered && !self.scroll_events.is_empty(),
+            direction: match self.scroll_events.last() {
+                Some(event) if hovered && event.delta.1 != 0.0 => event.delta.1.signum() as i32,
+                _ => 0,
+            },
         };
 
-        if self.scroll_y != 0 && self.mouse_position().intersects(bounds) {
-            #[cfg(target_os = "windows")]
-            const WHEEL_STEP: usize = 50;
-
-            #[cfg(target_os = "macos")]
-            const WHEEL_STEP: usize = 1;
-
-            if self.scroll_y > 0 {
-                *scroll_y = (*scroll_y).saturating_sub(self.scroll_y.unsigned_abs() as usize * WHEEL_STEP);
-            } else {
-                *scroll_y = (*scroll_y).saturating_add(self.scroll_y.unsigned_abs() as usize * WHEEL_STEP);
+        if elastic {
+            let dt = self.dt.min(1.0 / 30.0);
+            if scroll.elastic(&self.scroll_events, hovered, max_scroll as f32, dt) {
+                self.animating = true;
             }
-            state.scrolled = true;
+            return state;
         }
 
-        *scroll_y = (*scroll_y).clamp(0, max_scroll as usize);
+        // Trackpad deltas arrive pixel-accurate and land on every frame, so applying them
+        // straight through is already smooth. Only a wheel's notches need scaling up.
+        if hovered {
+            for event in &self.scroll_events {
+                scroll.offset -= event.delta.1 as f32 * if event.precise { 1.0 } else { WHEEL_STEP };
+            }
+        }
+        scroll.offset = scroll.offset.clamp(0.0, max_scroll as f32);
+        scroll.stretch = 0.0;
 
         state
     }

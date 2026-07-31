@@ -614,12 +614,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
-        self.resolve_style_size(size, flow, false)
+        self.resolve_style_size(size, flow, &Style::default())
     }
 
-    pub fn resolve_style_size(&self, size: Size, flow: Flow, fill_padding: bool) -> i32 {
+    pub fn resolve_style_size(&self, size: Size, flow: Flow, style: &Style) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
-        let bounds = if fill_padding {
+        let bounds = if style.bleed {
             frame.outer_bounds
         } else {
             frame.inner_bounds
@@ -908,14 +908,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
-            .map(|w| self.resolve_style_size(w, Flow::Right, style.bleed))
+            .map(|w| self.resolve_style_size(w, Flow::Right, &style))
             .unwrap_or(image.width as i32 + padding.left as i32 + padding.right as i32);
         let height = style
             .height
-            .map(|h| self.resolve_style_size(h, Flow::Down, style.bleed))
+            .map(|h| self.resolve_style_size(h, Flow::Down, &style))
             .unwrap_or(image.height as i32 + padding.top as i32 + padding.bottom as i32);
 
-        let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
+        let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, &style);
         if rect.is_empty() {
             return State::new(rect);
         }
@@ -925,7 +925,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let clip = frame.clip;
         let state = self.interact(rect, depth);
         let radius = style.radius.unwrap_or(0);
-        let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
         let bg = resolve_bg(&style, state.hovered);
 
@@ -992,14 +991,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
-            .map(|w| self.resolve_style_size(w, Flow::Right, style.bleed))
+            .map(|w| self.resolve_style_size(w, Flow::Right, &style))
             .unwrap_or(content_w + padding.left as i32 + padding.right as i32);
         let height = style
             .height
-            .map(|h| self.resolve_style_size(h, Flow::Down, style.bleed))
+            .map(|h| self.resolve_style_size(h, Flow::Down, &style))
             .unwrap_or(content_h + padding.top as i32 + padding.bottom as i32);
 
-        let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
+        let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, &style);
 
         if rect.is_empty() {
             return State::new(rect);
@@ -1009,7 +1008,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         let state = self.interact(rect, depth);
-        let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
         let bg = resolve_bg(&style, state.hovered);
 
@@ -1091,14 +1089,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
-            .map(|w| self.resolve_style_size(w, Flow::Right, style.bleed))
+            .map(|w| self.resolve_style_size(w, Flow::Right, &style))
             .unwrap_or(metrics.width + padding.left as i32 + padding.right as i32);
         let height = style
             .height
-            .map(|h| self.resolve_style_size(h, Flow::Down, style.bleed))
+            .map(|h| self.resolve_style_size(h, Flow::Down, &style))
             .unwrap_or(metrics.height + padding.top as i32 + padding.bottom as i32);
 
-        let (paint_x, paint_y, rect) = self.resolve_item_layout(width, height, &style);
+        let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, &style);
 
         if rect.is_empty() {
             return State::new(rect);
@@ -1108,7 +1106,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         let state = self.interact(rect, depth);
-        let paint_bounds = Rect::new(paint_x, paint_y, width, height);
 
         let bg = resolve_bg(&style, state.hovered);
 
@@ -1178,6 +1175,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let reverse_x = parent_frame.flow == Flow::Left && explicit_x.is_none();
         let reverse_y = parent_frame.flow == Flow::Up && explicit_y.is_none();
+
+        let margin = style.margin.unwrap_or_default();
 
         let anchor_x = explicit_x.unwrap_or(parent_frame.cursor_x);
         let anchor_y = explicit_y.unwrap_or(if parent_scroll != 0 {
@@ -1296,6 +1295,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             },
             fitted_w,
             fitted_h,
+        );
+        let fitted_bounds = Rect::new(
+            fitted_bounds.x - margin.left as i32,
+            fitted_bounds.y - margin.top as i32,
+            fitted_w + margin.axis(Flow::Right),
+            fitted_h + margin.axis(Flow::Down),
         );
 
         let state = self.interact(fitted_bounds, depth);
@@ -1425,7 +1430,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.layout_stack.last().as_ref().unwrap()
     }
 
-    pub fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Style) -> (i32, i32, Rect) {
+    pub fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Style) -> (i32, i32, Rect, Rect) {
         if style.bleed {
             self.layout_stack.last_mut().unwrap().bleed = true;
         }
@@ -1434,15 +1439,28 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             .gap
             .map(|gap| self.resolve_size(gap, frame.flow))
             .unwrap_or(frame.gap);
+        let clip = frame.clip;
         let layout = self.walk_layout(width, height, gap);
         let paint_x = style.x.map_or(layout.paint_x, |x| self.resolve_size(x, Flow::Right));
         let paint_y = style.y.map_or(layout.paint_y, |y| self.resolve_size(y, Flow::Down));
+
+        let margin = style.margin.unwrap_or_default();
+        let paint_bounds = Rect::new(
+            paint_x - margin.left as i32,
+            paint_y - margin.top as i32,
+            width + margin.axis(Flow::Right),
+            height + margin.axis(Flow::Down),
+        );
+
         let rect = if style.x.is_some() || style.y.is_some() {
-            Rect::new(paint_x, paint_y, width, height)
-        } else {
+            paint_bounds
+        } else if style.margin.is_none() || layout.size.is_empty() {
             layout.size
+        } else {
+            paint_bounds.intersection(clip)
         };
-        (paint_x, paint_y, rect)
+
+        (paint_x, paint_y, rect, paint_bounds)
     }
 
     pub fn current_frame_bounds(&self) -> Rect {

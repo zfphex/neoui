@@ -28,6 +28,16 @@ pub struct Padding {
     pub right: usize,
 }
 
+impl Padding {
+    pub fn axis(self, flow: Flow) -> i32 {
+        if flow.vertical() {
+            (self.top + self.bottom) as i32
+        } else {
+            (self.left + self.right) as i32
+        }
+    }
+}
+
 pub fn pad(p: usize) -> Padding {
     Padding {
         top: p,
@@ -75,6 +85,8 @@ pub struct Style {
     pub width: Option<Size>,
     pub height: Option<Size>,
     pub padding: Option<Padding>,
+    /// Grows the painted and interactable box outwards without reserving any layout space.
+    pub margin: Option<Padding>,
 
     pub depth: Option<usize>,
 
@@ -329,16 +341,16 @@ impl Into<Style> for Rect {
 }
 
 macro_rules! impl_pad_swizzle {
-    ($($name:ident => [$($edge:ident),+]);* $(;)?) => {
+    ($field:ident: $($name:ident => [$($edge:ident),+]);* $(;)?) => {
         impl Style {
             $(
-                #[doc = concat!("Set padding for (", stringify!($($edge)+), ")")]
+                #[doc = concat!("Set ", stringify!($field), " for (", stringify!($($edge)+), ")")]
                 pub fn $name(mut self, value: usize) -> Self {
-                    let mut p = self.padding.unwrap_or_default();
+                    let mut p = self.$field.unwrap_or_default();
                     $(
                         p.$edge = value;
                     )+
-                    self.padding = Some(p);
+                    self.$field = Some(p);
                     self
                 }
             )*
@@ -347,6 +359,7 @@ macro_rules! impl_pad_swizzle {
 }
 
 impl_pad_swizzle! {
+    padding:
     pad   => [top, bottom, left, right];
     padh  => [left, right];
     padv  => [top, bottom];
@@ -364,6 +377,27 @@ impl_pad_swizzle! {
     padtb => [top, bottom];
     padlr => [left, right];
     padrl => [right, left];
+}
+
+impl_pad_swizzle! {
+    margin:
+    mar   => [top, bottom, left, right];
+    marh  => [left, right];
+    marv  => [top, bottom];
+
+    mart  => [top];
+    marb  => [bottom];
+    marl  => [left];
+    marr  => [right];
+
+    martl => [top, left];
+    martr => [top, right];
+    marbl => [bottom, left];
+    marbr => [bottom, right];
+
+    martb => [top, bottom];
+    marlr => [left, right];
+    marrl => [right, left];
 }
 
 pub fn bg(color: u32) -> Style {

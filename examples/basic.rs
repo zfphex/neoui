@@ -105,7 +105,7 @@ fn main() {
                         if current_menu.is_some_and(|(cm, _)| cm == menu) {
                             current_menu = None;
                         } else {
-                            current_menu = Some((menu, state.rect));
+                            current_menu = Some((menu, state.bounds));
                         }
                     }
                 }

@@ -51,7 +51,7 @@ pub struct Scroll {
     pub wheel_start: f32,
     pub wheel_slope: f32,
     pub wheel_elapsed: f32,
-    pub last_event: Option<std::time::Instant>,
+    pub last_timestamp: Option<f64>,
 }
 
 impl Scroll {
@@ -61,7 +61,6 @@ impl Scroll {
         scroll
     }
 
-    /// Jump to `offset` with no animation.
     pub fn jump(&mut self, offset: f32) {
         self.offset = offset;
         self.stretch = 0.0;
@@ -83,6 +82,12 @@ impl Scroll {
                 continue;
             }
 
+            // Fingers back on the trackpad take over immediately.
+            // Whatever is left of the previous fling is stale.
+            if self.gesture == Gesture::Active && event.phase.momentum() {
+                continue;
+            }
+
             let mut delta = -event.delta.1 as f32;
             if !event.precise {
                 delta *= WHEEL_STEP;
@@ -90,15 +95,15 @@ impl Scroll {
 
             if !event.phase.ended() {
                 let gap = self
-                    .last_event
-                    .map(|last| event.time.duration_since(last).as_secs_f32())
+                    .last_timestamp
+                    .map(|last| (event.timestamp - last) as f32)
                     .unwrap_or(f32::MAX);
                 self.velocity = if gap > 0.0 && gap < VELOCITY_TIMEOUT {
                     delta / gap
                 } else {
                     0.0
                 };
-                self.last_event = Some(event.time);
+                self.last_timestamp = Some(event.timestamp);
             }
 
             match event.phase {
@@ -149,18 +154,15 @@ impl Scroll {
                 continue;
             }
 
-            // While stretched every bit of travel goes into the band, in either direction, until
-            // the band is fully unwound. Only what is left over moves the content.
-            if self.accumulated != 0.0 {
-                let before = self.accumulated;
-                self.accumulated += delta;
-                if before.signum() == self.accumulated.signum() {
-                    delta = 0.0;
-                } else {
-                    delta = self.accumulated;
-                    self.accumulated = 0.0;
-                }
-                self.stretch = self.accumulated / RUBBER_BAND_STIFFNESS;
+            // Scrolling back toward the content closes the gap one to one with the finger, and
+            // only what is left over moves the content. The gearing applies to pulling the band
+            // open, not to letting it go: a stretch left behind by a fling was never paid for in
+            // finger travel, so charging twenty times its size to undo it reads as a lock-up.
+            if self.stretch != 0.0 && delta.signum() != self.stretch.signum() {
+                let closed = delta.abs().min(self.stretch.abs()) * delta.signum();
+                self.stretch += closed;
+                self.accumulated = self.stretch * RUBBER_BAND_STIFFNESS;
+                delta -= closed;
             }
 
             let want = self.offset + delta;

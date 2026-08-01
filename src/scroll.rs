@@ -19,7 +19,7 @@ pub enum Gesture {
 }
 
 /// Pixels per unit of wheel notch.
-pub const WHEEL_STEP: f32 = 50.0;
+pub const WHEEL_STEP: f32 = 100.0;
 pub const RUBBER_BAND_STIFFNESS: f32 = 20.0;
 pub const RELEASE_AMPLITUDE: f32 = 0.31;
 pub const RELEASE_PERIOD: f32 = 1.6;

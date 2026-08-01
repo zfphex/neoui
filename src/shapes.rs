@@ -995,8 +995,8 @@ pub fn draw_text(
     let y_start = bounds.y as f32;
 
     let line_metrics = font.horizontal_line_metrics(size).unwrap();
-    let ascent = line_metrics.ascent;
     let line_step = line_height.map_or(line_metrics.new_line_size, |h| h as f32);
+    let baseline_offset = line_metrics.ascent + (line_step - line_metrics.ascent + line_metrics.descent) / 2.0;
     // A single line always spans the whole block, and flush-left lines never move.
     let align_lines =
         !matches!(alignment, Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft) && text.contains('\n');
@@ -1031,7 +1031,7 @@ pub fn draw_text(
                 _ => slack / 2.0,
             };
         }
-        let baseline_y = y_pos + ascent;
+        let baseline_y = y_pos + baseline_offset;
 
         for ch in line.chars() {
             let (metrics, bitmap) = glyph(cache, fonts, fallbacks, font_id, ch, font_size);

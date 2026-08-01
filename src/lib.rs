@@ -969,8 +969,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let default_size = self.default_font_size;
 
         let mut content_w = 0i32;
-        let mut content_h = 0i32;
-        let mut run_metrics: Vec<(Rect, Padding)> = Vec::with_capacity(parts.len());
+        let mut baseline = 0i32;
+        let mut run_metrics: Vec<(Rect, Padding, i32)> = Vec::with_capacity(parts.len());
         for part in &parts {
             let font_size = part.style.font_size.unwrap_or(default_size);
             let metrics = if part.content.is_empty() {
@@ -979,12 +979,19 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 self.measure_text(&part.content, part.style.font, font_size, part.style.line_height)
             };
             let run_pad = part.style.padding.unwrap_or_default();
-            let w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
-            let h = metrics.height + run_pad.top as i32 + run_pad.bottom as i32;
-            content_w += w;
-            content_h = content_h.max(h);
-            run_metrics.push((metrics, run_pad));
+            let line_metrics = self.state.fonts[part.style.font].horizontal_line_metrics(font_size as f32).unwrap();
+            let line_step = part.style.line_height.map_or(line_metrics.new_line_size, |h| h as f32);
+            let above = (line_metrics.ascent + (line_step - line_metrics.ascent + line_metrics.descent) / 2.0).round() as i32
+                + run_pad.top as i32;
+            content_w += metrics.width + run_pad.left as i32 + run_pad.right as i32;
+            baseline = baseline.max(above);
+            run_metrics.push((metrics, run_pad, above));
         }
+        let content_h = run_metrics
+            .iter()
+            .map(|(metrics, run_pad, above)| baseline - above + run_pad.top as i32 + metrics.height + run_pad.bottom as i32)
+            .max()
+            .unwrap_or(0);
 
         let padding = style.padding.unwrap_or_default();
         let width = style
@@ -1047,24 +1054,27 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             }
         };
 
+        let group_y = inner_y + (inner_h - content_h).max(0) / 2;
+
         let mut cursor_x = group_x;
-        for (part, (metrics, run_pad)) in parts.into_iter().zip(run_metrics) {
+        for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
             if part.content.is_empty() {
                 cursor_x += run_pad.left as i32 + run_pad.right as i32;
                 continue;
             }
             let font_size = part.style.font_size.unwrap_or(default_size);
             let run_w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
+            let run_y = group_y + baseline - above;
 
             self.paint_text_measured(
                 part.content,
                 metrics,
-                Rect::new(cursor_x, inner_y, run_w, inner_h),
+                Rect::new(cursor_x, run_y, run_w, (inner_y + inner_h - run_y).max(0)),
                 part.style.fg.unwrap_or(style.fg.unwrap_or(white())),
                 part.style.font,
                 font_size,
                 part.style.line_height,
-                Alignment::Left,
+                Alignment::TopLeft,
                 run_pad,
                 part.style.depth.unwrap_or(depth),
             );

@@ -211,6 +211,12 @@ fn resolve_border(style: &Style, hovered: bool) -> Option<u32> {
 
 pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
+pub fn family(id: usize) -> [[Option<usize>; 9]; 2] {
+    let mut faces = [[None; 9]; 2];
+    faces[false as usize][Weight::Regular as usize] = Some(id);
+    faces
+}
+
 pub fn ui(title: &str, width: usize, height: usize) -> Context {
     let window = create_window(title, None, width as i32, height as i32, false, WindowStyle::Standard);
 
@@ -219,6 +225,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
         state: UiState {
             fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
             fallbacks: Vec::new(),
+            families: vec![family(0)],
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
             font_metrics: FxHashMap::default(),
@@ -265,6 +272,8 @@ pub struct UiState {
     pub fonts: Vec<fontdue::Font>,
     /// Font IDs searched in order when the requested font has no glyph for a character.
     pub fallbacks: Vec<usize>,
+    /// Maps a (family, italic, weight) request onto the font ID holding that face.
+    pub families: Vec<[[Option<usize>; 9]; 2]>,
     pub font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     pub font_metrics: FxHashMap<(usize, char, usize), fontdue::Metrics>,
     pub image_cache: ImageCache,
@@ -289,16 +298,36 @@ pub struct UiState {
 }
 
 impl UiState {
-    /// Add a font then return a font ID to use.
-    pub fn add_font(&mut self, font: fontdue::Font) -> usize {
+    pub fn add_font(&mut self, font: fontdue::Font) -> Font {
         let id = self.fonts.len();
         self.fonts.push(font);
-        id
+        self.families.push(family(id));
+        Font {
+            id,
+            weight: Weight::Regular,
+            italic: false,
+        }
+    }
+
+    pub fn add_face(&mut self, family: usize, weight: Weight, italic: bool, font: fontdue::Font) {
+        let f = self.add_font(font);
+        self.families[family][italic as usize][weight as usize] = Some(f.id);
+    }
+
+    pub fn face(&self, font: Font) -> usize {
+        self.families[font.id][font.italic as usize][font.weight as usize].unwrap_or_else(|| {
+            panic!(
+                "font {} has no {:?}{} face",
+                font.id,
+                font.weight,
+                if font.italic { " italic" } else { "" }
+            )
+        })
     }
 
     pub fn add_font_fallback(&mut self, font: fontdue::Font) {
         let font = self.add_font(font);
-        self.fallbacks.push(font);
+        self.fallbacks.push(font.id);
     }
 }
 
@@ -343,7 +372,10 @@ impl Context {
             frame.animating = false;
             frame.scroll_y = frame.window.scroll_delta().1 as f32;
             frame.state.scroll_events.clear();
-            frame.state.scroll_events.extend_from_slice(frame.window.scroll_events());
+            frame
+                .state
+                .scroll_events
+                .extend_from_slice(frame.window.scroll_events());
             frame.hovered_depth = None;
 
             if frame.window.mouse_pressed(Mouse::Left) {
@@ -800,7 +832,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         metrics: Rect,
         rect: Rect,
         color: u32,
-        font_id: usize,
+        font: Font,
         font_size: usize,
         line_height: Option<usize>,
         alignment: Alignment,
@@ -834,7 +866,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             clip,
             bounds: Rect::new(x, y, metrics.width, metrics.height),
             color,
-            font_id,
+            font_id: self.face(font),
             size: font_size,
             line_height,
             alignment,
@@ -846,7 +878,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         text: impl Into<Cow<'text, str>>,
         rect: Rect,
         color: u32,
-        font_id: usize,
+        font: Font,
         font_size: usize,
         line_height: Option<usize>,
         alignment: Alignment,
@@ -857,13 +889,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         if text.is_empty() {
             return;
         }
-        let metrics = self.measure_text(&text, font_id, font_size, line_height);
+        let metrics = self.measure_text(&text, font, font_size, line_height);
         self.paint_text_measured(
             text,
             metrics,
             rect,
             color,
-            font_id,
+            font,
             font_size,
             line_height,
             alignment,
@@ -872,7 +904,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         );
     }
 
-    pub fn measure_text(&mut self, text: &str, font_id: usize, font_size: usize, line_height: Option<usize>) -> Rect {
+    pub fn measure_text(&mut self, text: &str, font: Font, font_size: usize, line_height: Option<usize>) -> Rect {
+        let font_id = self.face(font);
         let state = &mut *self.state;
         measure_text(
             text,
@@ -979,9 +1012,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 self.measure_text(&part.content, part.style.font, font_size, part.style.line_height)
             };
             let run_pad = part.style.padding.unwrap_or_default();
-            let line_metrics = self.state.fonts[part.style.font].horizontal_line_metrics(font_size as f32).unwrap();
+            let face = self.face(part.style.font);
+            let line_metrics = self.state.fonts[face]
+                .horizontal_line_metrics(font_size as f32)
+                .unwrap();
             let line_step = part.style.line_height.map_or(line_metrics.new_line_size, |h| h as f32);
-            let above = (line_metrics.ascent + (line_step - line_metrics.ascent + line_metrics.descent) / 2.0).round() as i32
+            let above = (line_metrics.ascent + (line_step - line_metrics.ascent + line_metrics.descent) / 2.0).round()
+                as i32
                 + run_pad.top as i32;
             content_w += metrics.width + run_pad.left as i32 + run_pad.right as i32;
             baseline = baseline.max(above);
@@ -989,7 +1026,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         }
         let content_h = run_metrics
             .iter()
-            .map(|(metrics, run_pad, above)| baseline - above + run_pad.top as i32 + metrics.height + run_pad.bottom as i32)
+            .map(|(metrics, run_pad, above)| {
+                baseline - above + run_pad.top as i32 + metrics.height + run_pad.bottom as i32
+            })
             .max()
             .unwrap_or(0);
 
@@ -1402,7 +1441,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         //TODO: It's not explicit to the user that this is always clipped.
         let style = style.into().clip(true);
         let elastic = style.elastic;
-        self.flow(style, Flow::Down, false, (scroll.offset + scroll.stretch).round() as i32, ui);
+        self.flow(
+            style,
+            Flow::Down,
+            false,
+            (scroll.offset + scroll.stretch).round() as i32,
+            ui,
+        );
 
         let frame = self.end_layout();
         let bounds = frame.inner_bounds;

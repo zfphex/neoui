@@ -59,6 +59,27 @@ pub mod border {
     pub const ALL:    u8 = 0b1111;
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Weight {
+    Thin,
+    ExtraLight,
+    Light,
+    SemiLight,
+    #[default]
+    Regular,
+    SemiBold,
+    Bold,
+    ExtraBold,
+    Black,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct Font {
+    pub id: usize,
+    pub weight: Weight,
+    pub italic: bool,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Style {
     pub fg: Option<u32>,
@@ -76,7 +97,7 @@ pub struct Style {
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
 
-    pub font: usize,
+    pub font: Font,
     pub font_size: Option<usize>,
     pub line_height: Option<usize>,
 
@@ -312,14 +333,23 @@ impl Style {
         self
     }
 
-    /// Add fonts to the library to get a font ID.
-    /// Fonts are all in a vector, so it's just the index...
-    /// ```ignore
-    /// let font_id = ui.add_font(new_font);
-    /// ui.text(":)", style().font(font_id));
-    /// ```
-    pub fn font(mut self, font_id: usize) -> Style {
-        self.font = font_id;
+    pub fn font(mut self, font: Font) -> Style {
+        self.font = font;
+        self
+    }
+
+    pub fn weight(mut self, weight: Weight) -> Style {
+        self.font.weight = weight;
+        self
+    }
+
+    pub fn bold(mut self) -> Style {
+        self.font.weight = Weight::Bold;
+        self
+    }
+
+    pub fn italic(mut self) -> Style {
+        self.font.italic = true;
         self
     }
 

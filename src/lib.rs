@@ -331,9 +331,9 @@ impl UiState {
     }
 }
 
-pub struct FrameContext<'frame, 'text> {
+pub struct FrameContext<'frame, 'a> {
     pub window: &'frame mut Window,
-    pub commands: [Vec<Command<'text>>; 16],
+    pub commands: [Vec<Command<'a>>; 16],
     state: &'frame mut UiState,
 }
 

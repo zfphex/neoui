@@ -1388,8 +1388,29 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             },
         };
 
+        //TODO: Allow for users to disable middle mouse scrolling.
+        let dt = self.dt.min(1.0 / 30.0);
+        if hovered && self.window.mouse_pressed(Mouse::Middle) {
+            scroll.anchor = Some(self.mouse_position().y);
+        }
+        let anchored = scroll.anchor.is_some();
+        if let Some(direction) = scroll.autoscroll(
+            self.mouse_position().y,
+            self.window.mouse_down(Mouse::Middle),
+            max_scroll as f32,
+            dt,
+        ) {
+            self.animating = true;
+            self.window.set_cursor_icon(match direction {
+                -1 => CursorIcon::AutoScrollUp,
+                1 => CursorIcon::AutoScrollDown,
+                _ => CursorIcon::AutoScroll,
+            });
+        } else if anchored {
+            self.window.set_cursor_icon(CursorIcon::Arrow);
+        }
+
         if elastic {
-            let dt = self.dt.min(1.0 / 30.0);
             if scroll.elastic(&self.scroll_events, hovered, max_scroll as f32, dt) {
                 self.animating = true;
             }

@@ -29,6 +29,10 @@ pub const VELOCITY_TIMEOUT: f32 = 0.1;
 /// Time a discrete wheel notch takes to animate, and the curve it follows.
 pub const WHEEL_DURATION: f32 = 9.0 / 60.0;
 pub const WHEEL_CURVE: (f32, f32, f32, f32) = (0.42, 0.0, 0.58, 1.0);
+/// Middle click autoscroll, speed of `distance ^ AUTOSCROLL_EXPONENT * AUTOSCROLL_SPEED`.
+pub const AUTOSCROLL_DEAD_ZONE: f32 = 15.0;
+pub const AUTOSCROLL_EXPONENT: f32 = 1.5;
+pub const AUTOSCROLL_SPEED: f32 = 1.44;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Scroll {
@@ -52,6 +56,8 @@ pub struct Scroll {
     pub wheel_slope: f32,
     pub wheel_elapsed: f32,
     pub last_timestamp: Option<f64>,
+    /// Where the middle button went down, while it is still held.
+    pub anchor: Option<i32>,
 }
 
 impl Scroll {
@@ -70,6 +76,31 @@ impl Scroll {
         self.pending = 0.0;
         self.wheel_target = offset;
         self.wheel_elapsed = f32::MAX;
+        self.anchor = None;
+    }
+
+    /// Holding the middle button scrolls at a speed based on distance from an anchor.
+    /// Returns which way it is travelling while held, zero inside the dead zone.
+    pub fn autoscroll(&mut self, mouse_y: i32, held: bool, max: f32, dt: f32) -> Option<i32> {
+        if !held {
+            self.anchor = None;
+            return None;
+        }
+
+        let anchor = self.anchor?;
+        let distance = (mouse_y - anchor) as f32;
+        if distance.abs() <= AUTOSCROLL_DEAD_ZONE {
+            return Some(0);
+        }
+
+        // Past the dead zone the whole distance counts, so speed steps up rather than easing in.
+        let speed = distance.abs().powf(AUTOSCROLL_EXPONENT) * AUTOSCROLL_SPEED;
+        self.offset = (self.offset + speed * distance.signum() * dt).clamp(0.0, max);
+        // The pointer owns the position now, so retire any wheel animation still running.
+        self.wheel_target = self.offset;
+        self.wheel_elapsed = f32::MAX;
+
+        Some(distance.signum() as i32)
     }
 
     /// Advances one frame of rubber-band overscroll. Returns whether anything is still moving,

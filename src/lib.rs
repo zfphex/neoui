@@ -209,7 +209,7 @@ fn resolve_border(style: &Style, hovered: bool) -> Option<u32> {
     }
 }
 
-pub const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
+const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub fn family(id: usize) -> [[Option<usize>; 9]; 2] {
     let mut faces = [[None; 9]; 2];

@@ -934,19 +934,26 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.item(text, style)
     }
 
-    #[cfg(feature = "image")]
-    pub fn image(&mut self, image: &'text Image, style: Style) -> State {
+    ///paint: (FrameContext, Rect, State, Depth)
+    pub fn widget(
+        &mut self,
+        content_width: i32,
+        content_height: i32,
+        style: Style,
+        paint: impl FnOnce(&mut Self, Rect, &State, usize),
+    ) -> State {
         let padding = style.padding.unwrap_or_default();
         let width = style
             .width
             .map(|w| self.resolve_style_size(w, Flow::Right, &style))
-            .unwrap_or(image.width as i32 + padding.left as i32 + padding.right as i32);
+            .unwrap_or(content_width + padding.left as i32 + padding.right as i32);
         let height = style
             .height
             .map(|h| self.resolve_style_size(h, Flow::Down, &style))
-            .unwrap_or(image.height as i32 + padding.top as i32 + padding.bottom as i32);
+            .unwrap_or(content_height + padding.top as i32 + padding.bottom as i32);
 
         let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, &style);
+
         if rect.is_empty() {
             return State::new(rect);
         }
@@ -955,46 +962,60 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         let state = self.interact(rect, depth);
-        let radius = style.radius.unwrap_or(0);
 
-        let bg = resolve_bg(&style, state.hovered);
-
-        if let Some(color) = bg {
+        if let Some(color) = resolve_bg(&style, state.hovered) {
             self.commands[depth].push(Command::Rect {
                 bounds: paint_bounds,
                 clip,
                 color,
-                radius,
+                radius: style.radius.unwrap_or(0),
                 gradient: style.gradient,
             });
         }
 
-        self.commands[depth].push(Command::Image {
-            image,
-            bounds: Rect::new(
-                paint_x + padding.left as i32,
-                paint_y + padding.top as i32,
-                width - (padding.left + padding.right) as i32,
-                height - (padding.top + padding.bottom) as i32,
-            ),
-            clip,
-            fit: style.fit.unwrap_or_default(),
-            opacity: style.opacity.unwrap_or(255),
-            radius,
-        });
+        let content = Rect::new(
+            paint_x + padding.left as i32,
+            paint_y + padding.top as i32,
+            (width - (padding.left + padding.right) as i32).max(0),
+            (height - (padding.top + padding.bottom) as i32).max(0),
+        );
 
-        if let Some(border) = style.border {
+        paint(self, content, &state, depth);
+
+        // TODO: Borders render inside of the bounding box
+        // for text which means they can overlap...
+        if let Some(color) = resolve_border(&style, state.hovered) {
             self.commands[depth].push(Command::RectStroke {
                 bounds: paint_bounds,
                 clip,
-                color: border,
-                radius,
+                color,
+                radius: style.radius.unwrap_or(0),
                 border_thickness: style.border_thickness.unwrap_or(1),
                 border_sides: style.border_side.unwrap_or(border::ALL),
             });
         }
 
         state
+    }
+
+    #[cfg(feature = "image")]
+    pub fn image(&mut self, image: &'text Image, style: Style) -> State {
+        self.widget(
+            image.width as i32,
+            image.height as i32,
+            style,
+            |ui, content, _, depth| {
+                let clip = ui.current_frame().clip;
+                ui.commands[depth].push(Command::Image {
+                    image,
+                    bounds: content,
+                    clip,
+                    fit: style.fit.unwrap_or_default(),
+                    opacity: style.opacity.unwrap_or(255),
+                    radius: style.radius.unwrap_or(0),
+                });
+            },
+        )
     }
 
     pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>, style: Style) -> State {
@@ -1032,96 +1053,45 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             .max()
             .unwrap_or(0);
 
-        let padding = style.padding.unwrap_or_default();
-        let width = style
-            .width
-            .map(|w| self.resolve_style_size(w, Flow::Right, &style))
-            .unwrap_or(content_w + padding.left as i32 + padding.right as i32);
-        let height = style
-            .height
-            .map(|h| self.resolve_style_size(h, Flow::Down, &style))
-            .unwrap_or(content_h + padding.top as i32 + padding.bottom as i32);
+        self.widget(content_w, content_h, style, |ui, inner, _, depth| {
+            let group_x = match style.align_item.unwrap_or(Alignment::Left) {
+                Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft => inner.x,
+                Alignment::Center | Alignment::TopCenter | Alignment::BottomCenter => {
+                    inner.x + (inner.width.saturating_sub(content_w)) / 2
+                }
+                Alignment::Right | Alignment::TopRight | Alignment::BottomRight => {
+                    inner.x + inner.width.saturating_sub(content_w)
+                }
+            };
 
-        let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, &style);
+            let group_y = inner.y + (inner.height - content_h).max(0) / 2;
 
-        if rect.is_empty() {
-            return State::new(rect);
-        }
+            let mut cursor_x = group_x;
+            for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
+                if part.content.is_empty() {
+                    cursor_x += run_pad.left as i32 + run_pad.right as i32;
+                    continue;
+                }
+                let font_size = part.style.font_size.unwrap_or(default_size);
+                let run_w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
+                let run_y = group_y + baseline - above;
 
-        let frame = self.current_frame();
-        let depth = style.depth.unwrap_or(frame.depth);
-        let clip = frame.clip;
-        let state = self.interact(rect, depth);
+                ui.paint_text_measured(
+                    part.content,
+                    metrics,
+                    Rect::new(cursor_x, run_y, run_w, (inner.bottom() - run_y).max(0)),
+                    part.style.fg.unwrap_or(style.fg.unwrap_or(white())),
+                    part.style.font,
+                    font_size,
+                    part.style.line_height,
+                    Alignment::TopLeft,
+                    run_pad,
+                    part.style.depth.unwrap_or(depth),
+                );
 
-        let bg = resolve_bg(&style, state.hovered);
-
-        if let Some(color) = bg {
-            self.commands[depth].push(Command::Rect {
-                bounds: paint_bounds,
-                clip,
-                color,
-                radius: style.radius.unwrap_or(0),
-                gradient: style.gradient,
-            });
-        }
-
-        let border = resolve_border(&style, state.hovered);
-
-        if let Some(border) = border {
-            self.commands[depth].push(Command::RectStroke {
-                bounds: paint_bounds,
-                clip,
-                color: border,
-                radius: style.radius.unwrap_or(0),
-                border_thickness: style.border_thickness.unwrap_or(1),
-                border_sides: style.border_side.unwrap_or(border::ALL),
-            });
-        }
-
-        let inner_x = paint_x + padding.left as i32;
-        let inner_y = paint_y + padding.top as i32;
-        let inner_w = (width - padding.left as i32 - padding.right as i32).max(0);
-        let inner_h = (height - padding.top as i32 - padding.bottom as i32).max(0);
-
-        let group_x = match style.align_item.unwrap_or(Alignment::Left) {
-            Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft => inner_x,
-            Alignment::Center | Alignment::TopCenter | Alignment::BottomCenter => {
-                inner_x + (inner_w.saturating_sub(content_w)) / 2
+                cursor_x += run_w;
             }
-            Alignment::Right | Alignment::TopRight | Alignment::BottomRight => {
-                inner_x + inner_w.saturating_sub(content_w)
-            }
-        };
-
-        let group_y = inner_y + (inner_h - content_h).max(0) / 2;
-
-        let mut cursor_x = group_x;
-        for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
-            if part.content.is_empty() {
-                cursor_x += run_pad.left as i32 + run_pad.right as i32;
-                continue;
-            }
-            let font_size = part.style.font_size.unwrap_or(default_size);
-            let run_w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
-            let run_y = group_y + baseline - above;
-
-            self.paint_text_measured(
-                part.content,
-                metrics,
-                Rect::new(cursor_x, run_y, run_w, (inner_y + inner_h - run_y).max(0)),
-                part.style.fg.unwrap_or(style.fg.unwrap_or(white())),
-                part.style.font,
-                font_size,
-                part.style.line_height,
-                Alignment::TopLeft,
-                run_pad,
-                part.style.depth.unwrap_or(depth),
-            );
-
-            cursor_x += run_w;
-        }
-
-        state
+        })
     }
 
     pub fn item(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
@@ -1133,70 +1103,23 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             self.measure_text(&text, style.font, font_size, style.line_height)
         };
 
-        let padding = style.padding.unwrap_or_default();
-        let width = style
-            .width
-            .map(|w| self.resolve_style_size(w, Flow::Right, &style))
-            .unwrap_or(metrics.width + padding.left as i32 + padding.right as i32);
-        let height = style
-            .height
-            .map(|h| self.resolve_style_size(h, Flow::Down, &style))
-            .unwrap_or(metrics.height + padding.top as i32 + padding.bottom as i32);
-
-        let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, &style);
-
-        if rect.is_empty() {
-            return State::new(rect);
-        }
-
-        let frame = self.current_frame();
-        let depth = style.depth.unwrap_or(frame.depth);
-        let clip = frame.clip;
-        let state = self.interact(rect, depth);
-
-        let bg = resolve_bg(&style, state.hovered);
-
-        if let Some(color) = bg {
-            self.commands[depth].push(Command::Rect {
-                bounds: paint_bounds,
-                clip,
-                color,
-                radius: style.radius.unwrap_or(0),
-                gradient: style.gradient,
-            });
-        }
-
-        let border = resolve_border(&style, state.hovered);
-
-        // TODO: Borders render inside of the bounding box
-        // for text which means they can overlap...
-        if let Some(border) = border {
-            self.commands[depth].push(Command::RectStroke {
-                bounds: paint_bounds,
-                clip,
-                color: border,
-                radius: style.radius.unwrap_or(0),
-                border_thickness: style.border_thickness.unwrap_or(1),
-                border_sides: style.border_side.unwrap_or(border::ALL),
-            });
-        }
-
-        if !text.is_empty() {
-            self.paint_text_measured(
+        self.widget(metrics.width, metrics.height, style, |ui, content, _, depth| {
+            if text.is_empty() {
+                return;
+            }
+            ui.paint_text_measured(
                 text,
                 metrics,
-                Rect::new(paint_x, paint_y, width, height),
+                content,
                 style.fg.unwrap_or(white()),
                 style.font,
                 font_size,
                 style.line_height,
                 style.align_item.unwrap_or(Alignment::Center),
-                style.padding.unwrap_or_default(),
+                Padding::default(),
                 depth,
             );
-        }
-
-        state
+        })
     }
 
     pub fn flow<R>(

@@ -110,7 +110,7 @@ impl ScrollBench {
         Self {
             cache,
             buffer: vec![0u32; FB_W * FB_H],
-            fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
+            fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
             bitmaps: FxHashMap::default(),
             image_cache: ImageCache::new(),
             frames,
@@ -195,7 +195,7 @@ fn scroll_path_six_steps_full(bencher: divan::Bencher) {
         .with_inputs(|| {
             let mut cache = RenderCache::default();
             let buffer = vec![0u32; FB_W * FB_H];
-            let fonts = vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()];
+            let fonts = vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()];
             let bitmaps = FxHashMap::default();
             let image_cache = ImageCache::new();
             cache.update(&sequence[0], 1.0, FB_W, FB_H, black());

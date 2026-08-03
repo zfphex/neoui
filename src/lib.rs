@@ -209,7 +209,7 @@ fn resolve_border(style: &Style, hovered: bool) -> Option<u32> {
     }
 }
 
-const FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
+pub const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub fn family(id: usize) -> [[Option<usize>; 9]; 2] {
     let mut faces = [[None; 9]; 2];
@@ -223,7 +223,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
     Context {
         window,
         state: UiState {
-            fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
+            fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
             fallbacks: Vec::new(),
             families: vec![family(0)],
             layout_stack: Vec::new(),

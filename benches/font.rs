@@ -16,7 +16,7 @@ struct BenchContext {
 fn bench_draw_text(bencher: divan::Bencher) {
     bencher
         .with_inputs(|| BenchContext {
-            fonts: vec![fontdue::Font::from_bytes(FONT, fontdue::FontSettings::default()).unwrap()],
+            fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
             buffer: vec![0u32; 1000usize * 1000 * 4],
             glyph: FxHashMap::default(),
             text: "abcdefghijklmnopqrstuvwxyz1234567890-=!@#$%^&*()_+".repeat(200),

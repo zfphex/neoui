@@ -1,4 +1,5 @@
 use crate::*;
+use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
 
 pub const TILE_SIZE: usize = 64;
@@ -8,61 +9,8 @@ const NO_DAMAGE: u16 = u16::MAX;
 pub const MAX_TILE_LOOKUP: usize = 8;
 pub const TILE_LOOKUP_MIN: usize = 12;
 
-/// Hash seed (FNV-1a 64-bit offset basis).
-const HASH_SEED: u64 = 0xcbf2_9ce4_8422_2325;
-/// Multiplier for mixing (2^64 / φ, truncated).
-const HASH_MIX: u64 = 0x9e37_79b9_7f4a_7c15;
-/// Separates byte slices of different lengths after word-at-a-time hashing.
-const BYTE_LEN_TAG: u64 = 0x6c62_79f5_aa2d_4f1b;
 /// Seed tag so clear-color hashes don't collide with empty tiles.
 const CLEAR_HASH_TAG: u64 = 0xff;
-
-struct MixHasher(u64);
-
-impl MixHasher {
-    fn new() -> Self {
-        Self(HASH_SEED)
-    }
-}
-
-impl Hasher for MixHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        let mut chunks = bytes.chunks_exact(8);
-        for chunk in chunks.by_ref() {
-            let v = u64::from_le_bytes(chunk.try_into().unwrap());
-            self.0 = mix(self.0, v);
-        }
-        for &b in chunks.remainder() {
-            self.0 = mix(self.0, b as u64);
-        }
-        self.0 = mix(self.0, BYTE_LEN_TAG ^ bytes.len() as u64);
-    }
-
-    fn write_u8(&mut self, i: u8) {
-        self.0 = mix(self.0, i as u64);
-    }
-
-    fn write_u32(&mut self, i: u32) {
-        self.0 = mix(self.0, i as u64);
-    }
-
-    fn write_u64(&mut self, i: u64) {
-        self.0 = mix(self.0, i);
-    }
-
-    fn write_usize(&mut self, i: usize) {
-        self.0 = mix(self.0, i as u64);
-    }
-
-    fn write_i32(&mut self, i: i32) {
-        // Match prior field hashing: reinterpret bits as unsigned, no sign-extend.
-        self.0 = mix(self.0, i as u32 as u64);
-    }
-
-    fn finish(&self) -> u64 {
-        self.0
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct PreparedCommand {
@@ -124,7 +72,7 @@ impl RenderCache {
                 if bounds.is_empty() || cols == 0 || rows == 0 {
                     continue;
                 }
-                let mut hasher = MixHasher::new();
+                let mut hasher = FxHasher::default();
                 layer.hash(&mut hasher);
                 command.hash(&mut hasher);
                 let hash = hasher.finish();
@@ -270,9 +218,12 @@ impl RenderCache {
 }
 
 /// Order-dependent fold used for both command hashing and per-tile accumulation.
-#[inline]
+#[inline(always)]
 fn mix(h: u64, v: u64) -> u64 {
-    h.wrapping_mul(HASH_MIX).wrapping_add(v).rotate_left(27)
+    let mut hasher = FxHasher::default();
+    hasher.write_u64(h);
+    hasher.write_u64(v);
+    hasher.finish()
 }
 
 #[inline]
@@ -375,5 +326,6 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
             }
         }
     };
-    b.intersection(command.clip().scale(scale_factor)).clamp_to_size(fb_w as i32, fb_h as i32)
+    b.intersection(command.clip().scale(scale_factor))
+        .clamp_to_size(fb_w as i32, fb_h as i32)
 }

@@ -590,6 +590,34 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         (top_rect, bottom_rect)
     }
 
+    pub fn split_cols<const N: usize>(&self, rect: Rect, weights: [f32; N]) -> [Rect; N] {
+        let total: f32 = weights.iter().sum();
+        let mut cols = [Rect::default(); N];
+        let mut acc = 0.0;
+        let mut x = rect.x;
+        for (col, weight) in cols.iter_mut().zip(weights) {
+            acc += weight;
+            let edge = rect.x + (rect.width as f32 * acc / total).round() as i32;
+            *col = Rect::new(x, rect.y, (edge - x).max(0), rect.height);
+            x = edge;
+        }
+        cols
+    }
+
+    pub fn split_rows<const N: usize>(&self, rect: Rect, weights: [f32; N]) -> [Rect; N] {
+        let total: f32 = weights.iter().sum();
+        let mut rows = [Rect::default(); N];
+        let mut acc = 0.0;
+        let mut y = rect.y;
+        for (row, weight) in rows.iter_mut().zip(weights) {
+            acc += weight;
+            let edge = rect.y + (rect.height as f32 * acc / total).round() as i32;
+            *row = Rect::new(rect.x, y, rect.width, (edge - y).max(0));
+            y = edge;
+        }
+        rows
+    }
+
     /// Splits the current frame's remaining space horizontally.
     pub fn split_h(&self, left_width: impl IntoSize) -> (Rect, Rect) {
         let left_width = self.resolve_size(left_width.into_size().unwrap_or_default(), Flow::Right);
@@ -1132,6 +1160,8 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     ) -> State {
         let parent_frame = self.current_frame();
         let parent_scroll = parent_frame.scroll_y;
+        let parent_align = parent_frame.align_flow;
+        let parent_vertical = parent_frame.flow.vertical();
 
         let style = style.into();
 
@@ -1177,6 +1207,20 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
         let x = if reverse_x { anchor_x - width } else { anchor_x };
         let y = if reverse_y { anchor_y - height } else { anchor_y };
+
+        // Cross-axis alignment, only when the size was stated up front.
+        let x = match parent_align {
+            _ if !parent_vertical || style.width.is_none() || explicit_x.is_some() => x,
+            AlignFlow::Start => x,
+            AlignFlow::Center => pb.x + (pb.width - width) / 2,
+            AlignFlow::End => pb.right() - width,
+        };
+        let y = match parent_align {
+            _ if parent_vertical || style.height.is_none() || explicit_y.is_some() => y,
+            AlignFlow::Start => y,
+            AlignFlow::Center => pb.y + (pb.height - height) / 2,
+            AlignFlow::End => pb.bottom() - height,
+        };
 
         let outer_bounds = Rect::new(x, y, width, height);
 

@@ -1147,17 +1147,12 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     #[inline]
     pub fn item(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
         let text = text.into();
+        if text.is_empty() {
+            return self.widget(0, 0, style, |_, _, _, _| {});
+        }
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let metrics = if text.is_empty() {
-            Rect::default()
-        } else {
-            self.measure_text(&text, style.font, font_size, style.line_height)
-        };
-
+        let metrics = self.measure_text(&text, style.font, font_size, style.line_height);
         self.widget(metrics.width, metrics.height, style, |ui, content, _, depth| {
-            if text.is_empty() {
-                return;
-            }
             ui.paint_text_measured(
                 text,
                 metrics,

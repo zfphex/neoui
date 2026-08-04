@@ -47,12 +47,25 @@ pub const fn const_sqrt(x: f32) -> f32 {
     guess
 }
 
-pub const fn scale(value: usize, factor: f32) -> usize {
-    (value as f32 * factor).round() as usize
+#[inline(always)]
+pub fn scale(value: usize, factor: f32) -> usize {
+    if factor == 1.0 {
+        return value;
+    }
+    (value as f32 * factor + 0.5) as usize
 }
 
-pub const fn scale_i32(value: i32, factor: f32) -> i32 {
-    (value as f32 * factor).round() as i32
+#[inline(always)]
+pub fn scale_i32(value: i32, factor: f32) -> i32 {
+    if factor == 1.0 {
+        return value;
+    }
+    let v = value as f32 * factor;
+    if v >= 0.0 {
+        (v + 0.5) as i32
+    } else {
+        (v - 0.5) as i32
+    }
 }
 
 /// Returns `None` if fully clipped.

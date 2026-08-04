@@ -229,6 +229,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
             font_metrics: FxHashMap::default(),
+            text_measure_cache: FxHashMap::default(),
             image_cache: ImageCache::new(),
             default_font_size: 32,
             clear_color: black(),
@@ -245,6 +246,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             animating: false,
             hovered_depth: None,
             render_cache: RenderCache::default(),
+            vsync: true,
         },
     }
 }
@@ -276,8 +278,10 @@ pub struct UiState {
     pub families: Vec<[[Option<usize>; 9]; 2]>,
     pub font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     pub font_metrics: FxHashMap<(usize, char, usize), fontdue::Metrics>,
+    pub text_measure_cache: FxHashMap<(u64, usize, usize, Option<usize>), Rect>,
     pub image_cache: ImageCache,
     pub default_font_size: usize,
+    pub vsync: bool,
     pub clear_color: u32,
     pub scroll_y: f32,
     pub scroll_events: Vec<ScrollEvent>,
@@ -416,7 +420,9 @@ impl Context {
             return;
         }
 
-        self.window.wait_for_vsync();
+        if self.vsync {
+            self.window.wait_for_vsync();
+        }
 
         if !self.state.animating {
             self.state.last_frame_time = std::time::Instant::now();
@@ -933,9 +939,22 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn measure_text(&mut self, text: &str, font: Font, font_size: usize, line_height: Option<usize>) -> Rect {
+        if text.is_empty() || font_size == 0 {
+            return Rect::default();
+        }
         let font_id = self.face(font);
         let state = &mut *self.state;
-        measure_text(
+
+        let mut hasher = rustc_hash::FxHasher::default();
+        text.hash(&mut hasher);
+        let text_hash = hasher.finish();
+        let key = (text_hash, font_id, font_size, line_height);
+
+        if let Some(&rect) = state.text_measure_cache.get(&key) {
+            return rect;
+        }
+
+        let rect = measure_text(
             text,
             &state.fonts,
             font_id,
@@ -943,7 +962,9 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             font_size,
             line_height,
             &mut state.font_metrics,
-        )
+        );
+        state.text_measure_cache.insert(key, rect);
+        rect
     }
 
     pub fn gap(&mut self, gap: impl IntoSize) {

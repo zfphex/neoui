@@ -247,6 +247,8 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             hovered_depth: None,
             render_cache: RenderCache::default(),
             vsync: true,
+            string_pool: Vec::with_capacity(128),
+            string_index: 0,
         },
     }
 }
@@ -299,6 +301,8 @@ pub struct UiState {
     pub hovered_depth: Option<usize>,
     pub layout_stack: Vec<Frame>,
     pub render_cache: RenderCache,
+    pub string_pool: Vec<String>,
+    pub string_index: usize,
 }
 
 impl UiState {
@@ -341,6 +345,27 @@ pub struct FrameContext<'frame, 'a> {
     state: &'frame mut UiState,
 }
 
+impl<'frame, 'a> FrameContext<'frame, 'a> {
+    #[inline]
+    //TODO: This can be improved a lot, just a quick draft.
+    //Probably want to use bump alloc chunks (bumpalo).
+    pub fn fmt(&mut self, args: std::fmt::Arguments<'_>) -> &'a str {
+        use std::fmt::Write;
+        let idx = self.state.string_index;
+        self.state.string_index += 1;
+        if idx >= self.state.string_pool.len() {
+            self.state.string_pool.push(String::with_capacity(64));
+        }
+        let buf = &mut self.state.string_pool[idx];
+        buf.clear();
+        let _ = buf.write_fmt(args);
+        unsafe {
+            let slice: &str = buf.as_str();
+            std::mem::transmute::<&str, &'a str>(slice)
+        }
+    }
+}
+
 impl Deref for FrameContext<'_, '_> {
     type Target = UiState;
 
@@ -351,7 +376,7 @@ impl Deref for FrameContext<'_, '_> {
 
 impl DerefMut for FrameContext<'_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.state
+        &mut self.state
     }
 }
 
@@ -360,6 +385,7 @@ impl Context {
     where
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'text>),
     {
+        self.state.string_index = 0;
         let state = &mut self.state;
 
         self.window.draw(|window| {

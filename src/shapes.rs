@@ -107,10 +107,11 @@ fn solid_fill_span(buffer: &mut [u32], window_width: usize, x0: i32, x1: i32, y0
     let x1 = x1 as usize;
     let len = x1 - x0;
     let src = color_linear(color);
+    let fill_color = color & 0x00FF_FFFF;
     for py in y0 as usize..y1 as usize {
         let start = py * window_width + x0;
         if let Some(slice) = buffer.get_mut(start..start + len) {
-            fill_span_color(slice, color, src);
+            fill_span_color(slice, fill_color, src);
         }
     }
 }
@@ -118,9 +119,9 @@ fn solid_fill_span(buffer: &mut [u32], window_width: usize, x0: i32, x1: i32, y0
 /// Fill a contiguous run with `color`, blending per-pixel when it is translucent.
 /// `src` must be `color_linear(color)`.
 #[inline]
-fn fill_span_color(slice: &mut [u32], color: u32, src: (f32, f32, f32, f32)) {
+fn fill_span_color(slice: &mut [u32], fill_color: u32, src: (f32, f32, f32, f32)) {
     if src.3 >= 0.999 {
-        slice.fill(color & 0x00FF_FFFF);
+        slice.fill(fill_color);
     } else if src.3 > 0.0 {
         for bg in slice {
             blend_gamma2(bg, src, src.3);

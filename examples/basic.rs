@@ -27,6 +27,7 @@ fn main() {
     defer_results!();
 
     let mut ui = ui("Basic", 1000, 700);
+    // ui.vsync = false;
     ui.default_font_size = 13;
 
     let mut current_menu: Option<(Menu, Rect)> = None;
@@ -86,6 +87,7 @@ fn main() {
         }
 
         ui.frame(|ui| {
+            profile!();
             let (top_nav_rect, body) = ui.split_v(30);
             let (sidebar_rect, track_rect) = ui.split_rect_h(body, 260);
 

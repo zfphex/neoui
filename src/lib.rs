@@ -1526,6 +1526,13 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         Rect::new(x, y, width.max(0), height.max(0))
     }
 
+    /// Restrict painting to a rectangle without reserving or advancing any layout space.
+    pub fn clipped(&mut self, clip: Rect, ui: impl FnOnce(&mut Self)) {
+        self.begin_layout(Flow::Down, Some(clip));
+        ui(self);
+        self.layout_stack.pop().expect("Layout underflow");
+    }
+
     pub fn begin_layout(&mut self, flow: Flow, bounds: Option<Rect>) {
         let bounds = if let Some(bounds) = bounds {
             bounds

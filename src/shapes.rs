@@ -1015,6 +1015,8 @@ pub fn draw_text(
         !matches!(alignment, Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft) && text.contains('\n');
 
     let (txt_r, txt_g, txt_b, txt_a) = split(color);
+    let is_opaque_text = txt_a >= 254;
+    let text_color_rgb = ((txt_r as u32) << 16) | ((txt_g as u32) << 8) | (txt_b as u32);
     let txt_r_lin = GAMMA_TO_LINEAR[txt_r as usize];
     let txt_g_lin = GAMMA_TO_LINEAR[txt_g as usize];
     let txt_b_lin = GAMMA_TO_LINEAR[txt_b as usize];
@@ -1091,6 +1093,11 @@ pub fn draw_text(
                         let m_b = bitmap_row[mask_idx + 2];
 
                         if m_r | m_g | m_b == 0 {
+                            continue;
+                        }
+
+                        if m_r & m_g & m_b == 255 && is_opaque_text {
+                            *bg = text_color_rgb;
                             continue;
                         }
 
@@ -1194,7 +1201,18 @@ pub fn measure_text(
     }
 }
 
+#[inline(always)]
+pub fn fill_u32_fast(slice: &mut [u32], color: u32) {
+    use std::simd::prelude::*;
+    let (prefix, vectors, suffix) = slice.as_simd_mut::<8>();
+    prefix.fill(color);
+    let vec_color = u32x8::splat(color);
+    vectors.fill(vec_color);
+    suffix.fill(color);
+}
+
 pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {
+    let fill_color = color & 0x00FF_FFFF;
     for rect in damage {
         if rect.is_empty() {
             continue;
@@ -1205,7 +1223,9 @@ pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect
         let width = rect.width.max(0) as usize;
         for y in y0..y1 {
             let start = y * framebuffer_width + x;
-            buffer[start..start + width].fill(color);
+            if let Some(slice) = buffer.get_mut(start..start + width) {
+                fill_u32_fast(slice, fill_color);
+            }
         }
     }
 }

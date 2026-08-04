@@ -1020,7 +1020,6 @@ pub fn draw_text(
     let txt_r_lin = GAMMA_TO_LINEAR[txt_r as usize];
     let txt_g_lin = GAMMA_TO_LINEAR[txt_g as usize];
     let txt_b_lin = GAMMA_TO_LINEAR[txt_b as usize];
-    // Fold the color's alpha into the per-channel coverage mask.
     let txt_a = txt_a as f32 / 255.0;
 
     let mut y_pos = y_start;
@@ -1084,8 +1083,6 @@ pub fn draw_text(
                     let bitmap_start = (bitmap_y * metrics.width + bitmap_offset_x) * 3;
                     let bitmap_row = &bitmap[bitmap_start..bitmap_start + draw_width * 3];
 
-                    const INV_255: f32 = 1.0 / 255.0;
-
                     for (i, bg) in buffer_row.iter_mut().enumerate() {
                         let mask_idx = i * 3;
                         let m_r = bitmap_row[mask_idx];
@@ -1101,6 +1098,7 @@ pub fn draw_text(
                             continue;
                         }
 
+                        const INV_255: f32 = 1.0 / 255.0;
                         let mask_r = m_r as f32 * INV_255 * txt_a;
                         let mask_g = m_g as f32 * INV_255 * txt_a;
                         let mask_b = m_b as f32 * INV_255 * txt_a;

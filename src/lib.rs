@@ -984,6 +984,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     ///paint: (FrameContext, Rect, State, Depth)
+    #[inline]
     pub fn widget(
         &mut self,
         content_width: i32,
@@ -1143,6 +1144,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         })
     }
 
+    #[inline]
     pub fn item(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
@@ -1639,7 +1641,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 &mut state.font_bitmaps,
                 &mut state.image_cache,
             );
-            window.present();
+            window.present_damage(state.render_cache.damage());
         }
 
         state.render_cache.finish();

@@ -277,7 +277,7 @@ fn mix(h: u64, v: u64) -> u64 {
 
 #[inline]
 pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_h: usize) -> Rect {
-    let (bounds, clip) = if scale_factor == 1.0 {
+    if scale_factor == 1.0 {
         let b = match command {
             Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } => *bounds,
             Command::Triangle { a, b, c, .. } => Rect::from_xyxy(
@@ -320,61 +320,60 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
                 }
             }
         };
-        (b, command.clip())
-    } else {
-        let b = match command {
-            Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } => bounds.scale(scale_factor),
-            Command::Triangle { a, b, c, .. } => {
-                let ax = scale_i32(a.0, scale_factor);
-                let ay = scale_i32(a.1, scale_factor);
-                let bx = scale_i32(b.0, scale_factor);
-                let by = scale_i32(b.1, scale_factor);
-                let cx = scale_i32(c.0, scale_factor);
-                let cy = scale_i32(c.1, scale_factor);
-                Rect::from_xyxy(
-                    ax.min(bx).min(cx).saturating_sub(1),
-                    ay.min(by).min(cy).saturating_sub(1),
-                    ax.max(bx).max(cx).saturating_add(2),
-                    ay.max(by).max(cy).saturating_add(2),
-                )
+        return b.intersection(command.clip()).clamp_to_size(fb_w as i32, fb_h as i32);
+    }
+
+    let b = match command {
+        Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } => bounds.scale(scale_factor),
+        Command::Triangle { a, b, c, .. } => {
+            let ax = scale_i32(a.0, scale_factor);
+            let ay = scale_i32(a.1, scale_factor);
+            let bx = scale_i32(b.0, scale_factor);
+            let by = scale_i32(b.1, scale_factor);
+            let cx = scale_i32(c.0, scale_factor);
+            let cy = scale_i32(c.1, scale_factor);
+            Rect::from_xyxy(
+                ax.min(bx).min(cx).saturating_sub(1),
+                ay.min(by).min(cy).saturating_sub(1),
+                ax.max(bx).max(cx).saturating_add(2),
+                ay.max(by).max(cy).saturating_add(2),
+            )
+        }
+        Command::Text { bounds, size, .. } => {
+            let pad = (scale(*size, scale_factor) / 2).max(4) as i32;
+            let b = bounds.scale(scale_factor);
+            Rect::new(
+                b.x.saturating_sub(pad),
+                b.y.saturating_sub(pad),
+                b.width.saturating_add(pad * 2),
+                b.height.saturating_add(pad * 2),
+            )
+        }
+        Command::Image {
+            image,
+            bounds,
+            fit,
+            radius,
+            ..
+        } => {
+            let fitted = if bounds.is_empty() {
+                *bounds
+            } else {
+                place(image.width, image.height, *bounds, *fit).1
             }
-            Command::Text { bounds, size, .. } => {
-                let pad = (scale(*size, scale_factor) / 2).max(4) as i32;
-                let b = bounds.scale(scale_factor);
+            .intersection(*bounds)
+            .scale(scale_factor);
+            if *radius == 0 {
+                fitted
+            } else {
                 Rect::new(
-                    b.x.saturating_sub(pad),
-                    b.y.saturating_sub(pad),
-                    b.width.saturating_add(pad * 2),
-                    b.height.saturating_add(pad * 2),
+                    fitted.x.saturating_sub(1),
+                    fitted.y.saturating_sub(1),
+                    fitted.width.saturating_add(2),
+                    fitted.height.saturating_add(2),
                 )
             }
-            Command::Image {
-                image,
-                bounds,
-                fit,
-                radius,
-                ..
-            } => {
-                let fitted = if bounds.is_empty() {
-                    *bounds
-                } else {
-                    place(image.width, image.height, *bounds, *fit).1
-                }
-                .intersection(*bounds)
-                .scale(scale_factor);
-                if *radius == 0 {
-                    fitted
-                } else {
-                    Rect::new(
-                        fitted.x.saturating_sub(1),
-                        fitted.y.saturating_sub(1),
-                        fitted.width.saturating_add(2),
-                        fitted.height.saturating_add(2),
-                    )
-                }
-            }
-        };
-        (b, command.clip().scale(scale_factor))
+        }
     };
-    bounds.intersection(clip).clamp_to_size(fb_w as i32, fb_h as i32)
+    b.intersection(command.clip().scale(scale_factor)).clamp_to_size(fb_w as i32, fb_h as i32)
 }

@@ -11,40 +11,9 @@ pub const GAMMA_TO_LINEAR: [f32; 256] = const {
     table
 };
 
-pub const LINEAR_RESOLUTION: usize = 4096;
-pub const LINEAR_INDEX: f32 = 4095.0;
-
-/// Maps a linear float back to an 8-bit sRGB value.
-/// Requires multiplying the float by (LINEAR_RESOLUTION - 1) to get the index.
-pub const LINEAR_TO_GAMMA: [u8; LINEAR_RESOLUTION] = const {
-    let mut table = [0; LINEAR_RESOLUTION];
-    let mut i = 0;
-    while i < LINEAR_RESOLUTION {
-        let v = i as f32 / (LINEAR_RESOLUTION - 1) as f32;
-        table[i] = (const_sqrt(v) * 255.0).round() as u8;
-        i += 1
-    }
-    table
-};
-
-pub const fn const_sqrt(x: f32) -> f32 {
-    if x < 0.0 {
-        panic!("Cannot calculate square root of a negative number");
-    }
-    if x == 0.0 || x == 1.0 {
-        return x;
-    }
-
-    let mut guess = x / 2.0;
-    let mut i = 0;
-
-    // Run loop a fixed number of times since dynamic convergence checks
-    // can be trickier in restricted const evaluations
-    while i < 100 {
-        guess = 0.5 * (guess + x / guess);
-        i += 1;
-    }
-    guess
+#[inline(always)]
+pub fn linear_to_gamma(v: f32) -> u8 {
+    (v.clamp(0.0, 1.0).sqrt() * 255.0 + 0.5) as u8
 }
 
 #[inline(always)]
@@ -154,7 +123,7 @@ fn fill_span_color(slice: &mut [u32], color: u32, src: (f32, f32, f32, f32)) {
         slice.fill(color & 0x00FF_FFFF);
     } else if src.3 > 0.0 {
         for bg in slice {
-            blend_srgb(bg, src, src.3);
+            blend_gamma2(bg, src, src.3);
         }
     }
 }
@@ -195,7 +164,7 @@ fn lerp_color(from: u32, to: u32, t: f32) -> u32 {
 }
 
 #[inline]
-fn blend_srgb(bg: &mut u32, src: (f32, f32, f32, f32), a: f32) {
+fn blend_gamma2(bg: &mut u32, src: (f32, f32, f32, f32), a: f32) {
     let a = a.clamp(0.0, 1.0);
     let bg_val = *bg;
     let inv = 1.0 - a;
@@ -204,9 +173,9 @@ fn blend_srgb(bg: &mut u32, src: (f32, f32, f32, f32), a: f32) {
     let out_g = src.1 * a + GAMMA_TO_LINEAR[((bg_val >> 8) & 0xFF) as usize] * inv;
     let out_b = src.2 * a + GAMMA_TO_LINEAR[(bg_val & 0xFF) as usize] * inv;
 
-    let r = LINEAR_TO_GAMMA[(out_r * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
-    let g = LINEAR_TO_GAMMA[(out_g * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
-    let b = LINEAR_TO_GAMMA[(out_b * LINEAR_INDEX).clamp(0.0, LINEAR_INDEX) as usize] as u32;
+    let r = linear_to_gamma(out_r) as u32;
+    let g = linear_to_gamma(out_g) as u32;
+    let b = linear_to_gamma(out_b) as u32;
     *bg = (r << 16) | (g << 8) | b;
 }
 
@@ -216,7 +185,7 @@ fn apply_coverage(bg: &mut u32, color: u32, src: (f32, f32, f32, f32), coverage:
     if a >= 0.999 {
         *bg = color & 0x00FF_FFFF;
     } else if a > 0.0 {
-        blend_srgb(bg, src, a);
+        blend_gamma2(bg, src, a);
     }
 }
 
@@ -928,7 +897,7 @@ pub fn draw_triangle_sdf(
                 if a > 0.0 {
                     let idx = y as usize * window_width + x;
                     if let Some(bg) = buffer.get_mut(idx) {
-                        blend_srgb(bg, src, a);
+                        blend_gamma2(bg, src, a);
                     }
                 }
             }
@@ -1113,9 +1082,9 @@ pub fn draw_text(
                         let out_g_lin = txt_g_lin * mask_g + bg_g_lin * (1.0 - mask_g);
                         let out_b_lin = txt_b_lin * mask_b + bg_b_lin * (1.0 - mask_b);
 
-                        let out_r = LINEAR_TO_GAMMA[(out_r_lin * LINEAR_INDEX) as usize] as u32;
-                        let out_g = LINEAR_TO_GAMMA[(out_g_lin * LINEAR_INDEX) as usize] as u32;
-                        let out_b = LINEAR_TO_GAMMA[(out_b_lin * LINEAR_INDEX) as usize] as u32;
+                        let out_r = linear_to_gamma(out_r_lin) as u32;
+                        let out_g = linear_to_gamma(out_g_lin) as u32;
+                        let out_b = linear_to_gamma(out_b_lin) as u32;
 
                         *bg = (out_r << 16) | (out_g << 8) | out_b;
                     }

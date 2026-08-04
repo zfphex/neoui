@@ -10,7 +10,7 @@ fn main() {
                 ui.window.close();
             }
 
-            let (w, h) = ui.window.size();
+            let (w, h) = ui.window.scaled_size();
             let (w, h) = (w as i32, h as i32);
 
             ui.rect(style().x(0).y(0).width(w).height(h).bg(rgb(24, 24, 30)));

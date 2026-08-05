@@ -41,7 +41,6 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
         clip: Rect::new(0, 0, FB_W as i32, FB_H as i32),
         color: rgb(18, 18, 18),
         radius: 0,
-        gradient: None,
     });
 
     for row in 0..ROW_COUNT {
@@ -57,7 +56,6 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
             clip,
             color,
             radius: 0,
-            gradient: None,
         });
         // Track title text (dominant cost when scrolling real UIs).
         cmds.push(Command::Text {

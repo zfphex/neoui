@@ -111,7 +111,6 @@ pub enum Command<'a> {
         clip: Rect,
         color: u32,
         radius: usize,
-        gradient: Option<(u32, u32)>,
     },
     RectStroke {
         bounds: Rect,
@@ -855,7 +854,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                gradient: style.gradient,
             });
         }
 
@@ -1060,7 +1058,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                gradient: style.gradient,
             });
         }
 
@@ -1306,7 +1303,6 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
                 clip,
                 color: style.bg.unwrap_or_default(),
                 radius: style.radius.unwrap_or(0),
-                gradient: style.gradient,
             });
             self.commands[depth].len() - 1
         });

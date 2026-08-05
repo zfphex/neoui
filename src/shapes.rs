@@ -542,6 +542,91 @@ pub fn draw_rect_fill(
     }
 }
 
+pub fn draw_linear_gradient(
+    buffer: &mut [u32],
+    bounds: Rect,
+    window_width: usize,
+    window_height: usize,
+    radius: usize,
+    stops: &[(f32, u32)],
+    angle: f32,
+    clip: Rect,
+) {
+    assert!(!stops.is_empty(), "gradient needs at least one stop");
+    assert!(stops.windows(2).all(|w| w[0].0 <= w[1].0), "gradient stops must be sorted");
+
+    if bounds.is_empty() || window_width == 0 {
+        return;
+    }
+
+    let radius = radius.min(bounds.width as usize / 2).min(bounds.height as usize / 2);
+    let Some(vis) = visible_rect(bounds, clip, window_width as i32, window_height as i32) else {
+        return;
+    };
+
+    let half_w = bounds.width as f32 / 2.0;
+    let half_h = bounds.height as f32 / 2.0;
+    let cx = bounds.x as f32 + half_w;
+    let cy = bounds.y as f32 + half_h;
+    let r_f32 = radius as f32;
+
+    let (sin, cos) = angle.to_radians().sin_cos();
+    let (dir_x, dir_y) = (sin, -cos);
+    let extent = (bounds.width as f32 * sin).abs() + (bounds.height as f32 * cos).abs();
+    let inv_extent = if extent > 0.0 { 1.0 / extent } else { 0.0 };
+
+    for py in vis.y as usize..vis.bottom() as usize {
+        let row_start = py * window_width;
+        let dy = rounded_axis(py as f32 + 0.5, cy, half_h - r_f32);
+        let row_t = 0.5 + (py as f32 + 0.5 - cy) * dir_y * inv_extent;
+
+        for px in vis.x as usize..vis.right() as usize {
+            let coverage = if radius == 0 {
+                1.0
+            } else {
+                rounded_coverage(rounded_axis(px as f32 + 0.5, cx, half_w - r_f32), dy, r_f32)
+            };
+            if coverage <= 0.0 {
+                continue;
+            }
+
+            let t = (row_t + (px as f32 + 0.5 - cx) * dir_x * inv_extent).clamp(0.0, 1.0);
+            let next = stops.partition_point(|&(position, _)| position <= t);
+            let (p0, c0) = stops[next.saturating_sub(1)];
+            let (p1, c1) = stops[next.min(stops.len() - 1)];
+            let local = if p1 > p0 { (t - p0) / (p1 - p0) } else { 0.0 };
+
+            let (r0, g0, b0, a0) = color_linear(c0);
+            let (r1, g1, b1, a1) = color_linear(c1);
+            let alpha = a0 + (a1 - a0) * local;
+            let a = coverage * alpha;
+            if a <= 0.0 {
+                continue;
+            }
+
+            // Premultiplied so fully transparent stops do not tint the ramp, matching CSS.
+            let red = coverage * (r0 * a0 + (r1 * a1 - r0 * a0) * local);
+            let green = coverage * (g0 * a0 + (g1 * a1 - g0 * a0) * local);
+            let blue = coverage * (b0 * a0 + (b1 * a1 - b0 * a0) * local);
+
+            let bg = &mut buffer[row_start + px];
+            if a >= 0.999 {
+                *bg = (linear_to_gamma(red) as u32) << 16
+                    | (linear_to_gamma(green) as u32) << 8
+                    | linear_to_gamma(blue) as u32;
+            } else {
+                let inv = 1.0 - a;
+                let out_r = red + GAMMA_TO_LINEAR[((*bg >> 16) & 0xFF) as usize] * inv;
+                let out_g = green + GAMMA_TO_LINEAR[((*bg >> 8) & 0xFF) as usize] * inv;
+                let out_b = blue + GAMMA_TO_LINEAR[(*bg & 0xFF) as usize] * inv;
+                *bg = (linear_to_gamma(out_r) as u32) << 16
+                    | (linear_to_gamma(out_g) as u32) << 8
+                    | linear_to_gamma(out_b) as u32;
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw_rect_stroke(
     buffer: &mut [u32],
@@ -1238,6 +1323,22 @@ pub fn draw_command(
             *color,
             clip,
         ),
+        Command::Gradient {
+            bounds,
+            radius,
+            gradient,
+            clip: _,
+        } if gradient.count > 0 => draw_linear_gradient(
+            buffer,
+            bounds.scale(display_scale),
+            framebuffer_width,
+            framebuffer_height,
+            scale(*radius, display_scale),
+            &gradient.stops[..gradient.count as usize],
+            gradient.angle,
+            clip,
+        ),
+        Command::Gradient { .. } => {}
         Command::Image {
             image,
             bounds,

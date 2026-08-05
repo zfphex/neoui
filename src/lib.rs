@@ -104,6 +104,25 @@ pub struct AnimationStateF32 {
     pub elapsed: f32,
 }
 
+pub const MAX_GRADIENT_STOPS: usize = 5;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Gradient {
+    pub stops: [(f32, u32); MAX_GRADIENT_STOPS],
+    pub count: u8,
+    pub angle: f32,
+}
+
+impl Hash for Gradient {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for (position, color) in &self.stops[..self.count as usize] {
+            position.to_bits().hash(state);
+            color.hash(state);
+        }
+        self.angle.to_bits().hash(state);
+    }
+}
+
 #[derive(Debug, std::hash::Hash)]
 pub enum Command<'a> {
     Rect {
@@ -145,6 +164,12 @@ pub enum Command<'a> {
         opacity: u8,
         radius: usize,
     },
+    Gradient {
+        bounds: Rect,
+        clip: Rect,
+        radius: usize,
+        gradient: Gradient,
+    },
 }
 
 impl<'a> Command<'a> {
@@ -154,7 +179,8 @@ impl<'a> Command<'a> {
             | Command::RectStroke { clip, .. }
             | Command::Triangle { clip, .. }
             | Command::Text { clip, .. }
-            | Command::Image { clip, .. } => *clip,
+            | Command::Image { clip, .. }
+            | Command::Gradient { clip, .. } => *clip,
         }
     }
 }
@@ -364,6 +390,36 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 }
 
+pub struct GradientStops<'ui, 'frame, 'text> {
+    pub slot: Option<(usize, usize)>,
+    ui: &'ui mut FrameContext<'frame, 'text>,
+    state: State,
+}
+
+impl GradientStops<'_, '_, '_> {
+    pub fn stop(self, position: f32, color: u32) -> Self {
+        if let Some((depth, index)) = self.slot
+            && let Command::Gradient { gradient, .. } = &mut self.ui.commands[depth][index]
+        {
+            assert!(
+                (gradient.count as usize) < MAX_GRADIENT_STOPS,
+                "a gradient holds at most {MAX_GRADIENT_STOPS} stops"
+            );
+            gradient.stops[gradient.count as usize] = (position, color);
+            gradient.count += 1;
+        }
+        self
+    }
+}
+
+impl Deref for GradientStops<'_, '_, '_> {
+    type Target = State;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
 impl Deref for FrameContext<'_, '_> {
     type Target = UiState;
 
@@ -379,9 +435,9 @@ impl DerefMut for FrameContext<'_, '_> {
 }
 
 impl Context {
-    pub fn frame<'text, F>(&mut self, mut ui: F)
+    pub fn frame<'a, F>(&mut self, mut ui: F)
     where
-        F: for<'frame> FnMut(&mut FrameContext<'frame, 'text>),
+        F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
     {
         self.state.string_index = 0;
         let state = &mut self.state;
@@ -414,7 +470,7 @@ impl Context {
                 frame.left_mouse_release = Some(frame.mouse_position());
             }
 
-            let (width, height) = frame.window.content_size();
+            let (width, height) = frame.window.size();
             let bounds = Rect::new(0, 0, width as i32, height as i32);
 
             frame.layout_stack.clear();
@@ -450,7 +506,7 @@ impl Context {
     }
 }
 
-impl<'frame, 'text> FrameContext<'frame, 'text> {
+impl<'frame, 'a> FrameContext<'frame, 'a> {
     /// Force the current frame to rebuild the complete framebuffer.
     pub fn invalidate_render_cache(&mut self) {
         self.state.render_cache.invalidate();
@@ -840,7 +896,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             return Rect::default();
         };
 
-        Rect::new(x.max(0.0) as i32, y.max(0.0) as i32, 1, 1)
+        Rect::new(x as i32, y as i32, 1, 1)
     }
 
     pub fn paint_rect(&mut self, rect: Rect, style: Style) {
@@ -879,7 +935,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     #[cfg(feature = "image")]
-    pub fn paint_image(&mut self, bounds: Rect, image: &'text Image, style: Style) {
+    pub fn paint_image(&mut self, bounds: Rect, image: &'a Image, style: Style) {
         if bounds.is_empty() {
             return;
         }
@@ -901,7 +957,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn paint_text_measured(
         &mut self,
-        text: impl Into<Cow<'text, str>>,
+        text: impl Into<Cow<'a, str>>,
         metrics: Rect,
         rect: Rect,
         color: u32,
@@ -948,7 +1004,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
 
     pub fn paint_text(
         &mut self,
-        text: impl Into<Cow<'text, str>>,
+        text: impl Into<Cow<'a, str>>,
         rect: Rect,
         color: u32,
         font: Font,
@@ -1018,7 +1074,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.item("", style)
     }
 
-    pub fn text(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
+    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         self.item(text, style)
     }
 
@@ -1087,7 +1143,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     #[cfg(feature = "image")]
-    pub fn image(&mut self, image: &'text Image, style: Style) -> State {
+    pub fn image(&mut self, image: &'a Image, style: Style) -> State {
         self.widget(
             image.width as i32,
             image.height as i32,
@@ -1106,8 +1162,30 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         )
     }
 
-    pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'text>>>, style: Style) -> State {
-        let parts: Vec<Line<'text>> = parts.into_iter().map(Into::into).collect();
+    /// `angle` follows CSS: 0 points up, 90 points right. Add up to [`MAX_GRADIENT_STOPS`] sorted
+    /// positions in `0..=1` with [`GradientStops::stop`].
+    pub fn gradient(&mut self, style: Style, angle: f32) -> GradientStops<'_, 'frame, 'a> {
+        let mut slot = None;
+        let state = self.widget(0, 0, style, |ui, content, _, depth| {
+            let clip = ui.current_frame().clip;
+            ui.commands[depth].push(Command::Gradient {
+                bounds: content,
+                clip,
+                radius: style.radius.unwrap_or(0),
+                gradient: Gradient {
+                    stops: [(0.0, 0); MAX_GRADIENT_STOPS],
+                    count: 0,
+                    angle,
+                },
+            });
+            slot = Some((depth, ui.commands[depth].len() - 1));
+        });
+
+        GradientStops { ui: self, slot, state }
+    }
+
+    pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'a>>>, style: Style) -> State {
+        let parts: Vec<Line<'a>> = parts.into_iter().map(Into::into).collect();
         let default_size = self.default_font_size;
 
         let mut content_w = 0i32;
@@ -1183,7 +1261,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     #[inline]
-    pub fn item(&mut self, text: impl Into<Cow<'text, str>>, style: Style) -> State {
+    pub fn item(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         let text = text.into();
         if text.is_empty() {
             return self.widget(0, 0, style, |_, _, _, _| {});
@@ -1648,7 +1726,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         let window = &mut *self.window;
         let state = &mut *self.state;
         let display_scale = window.scale_factor() as f32;
-        let (framebuffer_width, framebuffer_height) = window.framebuffer_size();
+        let (framebuffer_width, framebuffer_height) = window.scaled_size();
 
         let dirty = state.render_cache.update(
             &self.commands,

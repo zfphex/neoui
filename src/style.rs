@@ -478,7 +478,7 @@ pub const fn blue() -> u32 {
 }
 
 pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
-    (r as u32) << 16 | (g as u32) << 8 | (b as u32)
+    0xFF00_0000 | (r as u32) << 16 | (g as u32) << 8 | (b as u32)
 }
 
 pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
@@ -490,10 +490,7 @@ pub const fn with_alpha(color: u32, a: u8) -> u32 {
 }
 
 pub const fn alpha(color: u32) -> u8 {
-    match (color >> 24) & 0xFF {
-        0 => 255,
-        a => a as u8,
-    }
+    ((color >> 24) & 0xFF) as u8
 }
 
 pub const fn hex(color: &str) -> u32 {
@@ -508,7 +505,7 @@ pub const fn hex(color: &str) -> u32 {
 
     match s.len() {
         6 => match u32::from_str_radix(s, 16) {
-            Ok(hex) => hex,
+            Ok(hex) => 0xFF00_0000 | hex,
             Err(_) => panic!("Invalid hex color."),
         },
         8 => match u32::from_str_radix(s, 16) {

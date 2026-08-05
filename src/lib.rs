@@ -63,6 +63,7 @@ pub struct Frame {
     pub outer_width: Option<i32>,
     pub outer_height: Option<i32>,
     scope: usize,
+    child_index: usize,
     anim_slot: usize,
 }
 
@@ -238,7 +239,6 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             left_mouse_start: None,
             left_mouse_release: None,
             dt: 0.0,
-            next_scope: 0,
             id_stack: Vec::new(),
             anim_state_f32: FxHashMap::default(),
             anim_state_color: FxHashMap::default(),
@@ -289,7 +289,6 @@ pub struct UiState {
     pub scroll_events: Vec<ScrollEvent>,
 
     pub dt: f32,
-    pub next_scope: usize,
     pub id_stack: Vec<(usize, usize)>,
     pub anim_state_f32: FxHashMap<(usize, usize), AnimationStateF32>,
     pub anim_state_color: FxHashMap<(usize, usize), (f32, f32, f32)>,
@@ -397,7 +396,6 @@ impl Context {
             let now = std::time::Instant::now();
             frame.dt = (now - frame.last_frame_time).as_secs_f32();
             frame.last_frame_time = now;
-            frame.next_scope = 0;
             frame.id_stack.clear();
             frame.animating = false;
             frame.scroll_y = frame.window.scroll_delta().1 as f32;
@@ -421,14 +419,11 @@ impl Context {
             let bounds = Rect::new(0, 0, width as i32, height as i32);
 
             frame.layout_stack.clear();
-            let scope = frame.next_scope;
-            frame.next_scope += 1;
             frame.layout_stack.push(Frame {
                 inner_bounds: bounds,
                 outer_bounds: bounds,
                 clip: bounds,
                 flow: Flow::Down,
-                scope,
                 ..Default::default()
             });
 
@@ -460,6 +455,18 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     /// Force the current frame to rebuild the complete framebuffer.
     pub fn invalidate_render_cache(&mut self) {
         self.state.render_cache.invalidate();
+    }
+
+    pub fn next_scope(&mut self) -> usize {
+        let Some(parent) = self.layout_stack.last_mut() else {
+            return 0;
+        };
+        let index = parent.child_index;
+        parent.child_index += 1;
+        let mut hasher = rustc_hash::FxHasher::default();
+        parent.scope.hash(&mut hasher);
+        index.hash(&mut hasher);
+        hasher.finish() as usize
     }
 
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
@@ -722,9 +729,17 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
         self.resolve_size_in(bounds, size, flow, start_pos)
     }
 
+    #[inline]
+    pub fn hit(&self, rect: Rect) -> Rect {
+        match self.layout_stack.last() {
+            Some(frame) => rect.intersection(frame.clip),
+            None => rect,
+        }
+    }
+
     #[cfg(target_os = "windows")]
     pub fn clicked(&self, rect: Rect) -> bool {
-        self.window.mouse_clicked(Mouse::Left, rect)
+        self.window.mouse_clicked(Mouse::Left, self.hit(rect))
     }
 
     //Trackpads are really awful if you use standard click behaviour.
@@ -736,19 +751,19 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
     }
 
     pub fn double_clicked(&self, rect: Rect) -> bool {
-        self.window.mouse_double_clicked(Mouse::Left, rect)
+        self.window.mouse_double_clicked(Mouse::Left, self.hit(rect))
     }
 
     pub fn pressed(&self, rect: Rect) -> bool {
-        self.window.mouse_pressed(Mouse::Left) && self.mouse_position().intersects(rect)
+        self.window.mouse_pressed(Mouse::Left) && self.mouse_position().intersects(self.hit(rect))
     }
 
     pub fn released(&self, rect: Rect) -> bool {
-        self.window.mouse_released(Mouse::Left) && self.mouse_position().intersects(rect)
+        self.window.mouse_released(Mouse::Left) && self.mouse_position().intersects(self.hit(rect))
     }
 
     pub fn hovered(&self, rect: Rect) -> bool {
-        self.mouse_position().intersects(rect)
+        self.mouse_position().intersects(self.hit(rect))
     }
 
     pub fn interact(&mut self, rect: Rect, depth: usize) -> State {
@@ -781,7 +796,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             return false;
         };
 
-        self.window.mouse_down(Mouse::Left) && initial.intersects(rect)
+        self.window.mouse_down(Mouse::Left) && initial.intersects(self.hit(rect))
     }
 
     /// Return what percentage of the rectangle has been dragged on the x-axis.
@@ -1272,13 +1287,19 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             self.layout_stack.last_mut().unwrap().bleed = true;
         }
 
+        let scope = self.next_scope();
         let frame = self.current_frame();
         let depth = style.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         let padding = style.padding.unwrap_or_default();
         let align_flow = style.align_flow.unwrap_or_default();
 
-        let paints_bg = style.bg.is_some() || style.hover.is_some() || style.selected.is_some();
+        let culled = !style.skip_cull
+            && style.width.is_some()
+            && style.height.is_some()
+            && clip.intersection(outer_bounds).is_empty();
+
+        let paints_bg = !culled && (style.bg.is_some() || style.hover.is_some() || style.selected.is_some());
         let bg_index = paints_bg.then(|| {
             self.commands[depth].push(Command::Rect {
                 bounds: outer_bounds,
@@ -1328,16 +1349,14 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             gap,
             outer_width: style.width.map(|_| width),
             outer_height: style.height.map(|_| height),
-            scope: {
-                let s = self.next_scope;
-                self.next_scope += 1;
-                s
-            },
+            scope,
             ..Default::default()
         };
 
         self.layout_stack.push(new_frame);
-        ui(self);
+        if !culled {
+            ui(self);
+        }
 
         let (fitted_w, fitted_h) = self.current_frame().fitted_size();
         let fitted_bounds = Rect::new(
@@ -1361,7 +1380,11 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             fitted_h + margin.axis(Flow::Down),
         );
 
-        let state = self.interact(fitted_bounds, depth);
+        let state = if culled {
+            State::new(fitted_bounds)
+        } else {
+            self.interact(fitted_bounds, depth)
+        };
 
         if let Some(index) = bg_index {
             let bg = resolve_bg(&style, state.hovered);
@@ -1376,7 +1399,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             }
         }
 
-        if let Some(color) = resolve_border(&style, state.hovered) {
+        if !culled && let Some(color) = resolve_border(&style, state.hovered) {
             self.commands[depth].push(Command::RectStroke {
                 bounds: fitted_bounds,
                 clip,
@@ -1584,6 +1607,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             self.current_frame_bounds()
         };
 
+        let scope = self.next_scope();
         let parent = self.layout_stack.last().expect("Layout stack empty");
         let new_frame = Frame {
             inner_bounds: bounds,
@@ -1593,11 +1617,7 @@ impl<'frame, 'text> FrameContext<'frame, 'text> {
             depth: parent.depth,
             cursor_x: if flow == Flow::Left { bounds.right() } else { bounds.x },
             cursor_y: if flow == Flow::Up { bounds.bottom() } else { bounds.y },
-            scope: {
-                let s = self.next_scope;
-                self.next_scope += 1;
-                s
-            },
+            scope,
             ..Default::default()
         };
 

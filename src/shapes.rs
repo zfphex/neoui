@@ -30,11 +30,7 @@ pub fn scale_i32(value: i32, factor: f32) -> i32 {
         return value;
     }
     let v = value as f32 * factor;
-    if v >= 0.0 {
-        (v + 0.5) as i32
-    } else {
-        (v - 0.5) as i32
-    }
+    if v >= 0.0 { (v + 0.5) as i32 } else { (v - 0.5) as i32 }
 }
 
 /// Returns `None` if fully clipped.
@@ -553,7 +549,10 @@ pub fn draw_linear_gradient(
     clip: Rect,
 ) {
     assert!(!stops.is_empty(), "gradient needs at least one stop");
-    assert!(stops.windows(2).all(|w| w[0].0 <= w[1].0), "gradient stops must be sorted");
+    assert!(
+        stops.windows(2).all(|w| w[0].0 <= w[1].0),
+        "gradient stops must be sorted"
+    );
 
     if bounds.is_empty() || window_width == 0 {
         return;
@@ -1199,30 +1198,45 @@ pub fn measure_text(
     }
 }
 
-#[inline(always)]
-pub fn fill_u32_fast(slice: &mut [u32], color: u32) {
-    use std::simd::prelude::*;
-    let (prefix, vectors, suffix) = slice.as_simd_mut::<8>();
-    prefix.fill(color);
-    let vec_color = u32x8::splat(color);
-    vectors.fill(vec_color);
-    suffix.fill(color);
-}
-
 pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {
+    if framebuffer_width == 0 || buffer.is_empty() || damage.is_empty() {
+        return;
+    }
     let fill_color = color & 0x00FF_FFFF;
+    let framebuffer_height = buffer.len() / framebuffer_width;
+
+    if damage.len() == 1 {
+        let r = damage[0];
+        if r.x <= 0 && r.y <= 0 && r.width >= framebuffer_width as i32 && r.height >= framebuffer_height as i32 {
+            buffer.fill(fill_color);
+            return;
+        }
+    }
+
     for rect in damage {
         if rect.is_empty() {
             continue;
         }
-        let x = rect.x.max(0) as usize;
+        let x0 = rect.x.max(0) as usize;
         let y0 = rect.y.max(0) as usize;
-        let y1 = rect.bottom().max(0) as usize;
-        let width = rect.width.max(0) as usize;
-        for y in y0..y1 {
-            let start = y * framebuffer_width + x;
-            if let Some(slice) = buffer.get_mut(start..start + width) {
-                fill_u32_fast(slice, fill_color);
+        let x1 = (rect.right().max(0) as usize).min(framebuffer_width);
+        let y1 = (rect.bottom().max(0) as usize).min(framebuffer_height);
+
+        if x0 >= x1 || y0 >= y1 {
+            continue;
+        }
+
+        let start = y0 * framebuffer_width;
+        let end = y1 * framebuffer_width;
+
+        if let Some(target_rows) = buffer.get_mut(start..end) {
+            let width = x1 - x0;
+            if x0 == 0 && width == framebuffer_width {
+                target_rows.fill(fill_color);
+            } else {
+                for row in target_rows.chunks_exact_mut(framebuffer_width) {
+                    row[x0..x1].fill(fill_color);
+                }
             }
         }
     }

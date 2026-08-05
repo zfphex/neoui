@@ -3,7 +3,8 @@ use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
 
 pub const TILE_SIZE: usize = 64;
-const FULL_REDRAW_PERCENT: usize = 60;
+//TODO: Test different percentages and the performance difference.
+const FULL_REDRAW_PERCENT: usize = 60; 
 const MAX_DAMAGE_RECTS: usize = 128;
 const NO_DAMAGE: u16 = u16::MAX;
 pub const MAX_TILE_LOOKUP: usize = 8;

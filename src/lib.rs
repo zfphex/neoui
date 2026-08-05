@@ -106,6 +106,8 @@ pub struct AnimationStateF32 {
 
 pub const MAX_GRADIENT_STOPS: usize = 5;
 
+pub const SCOPE_SEED: u64 = 0x9e3779b97f4a7c15;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Gradient {
     pub stops: [(f32, u32); MAX_GRADIENT_STOPS],
@@ -519,6 +521,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let index = parent.child_index;
         parent.child_index += 1;
         let mut hasher = rustc_hash::FxHasher::default();
+        SCOPE_SEED.hash(&mut hasher);
         parent.scope.hash(&mut hasher);
         index.hash(&mut hasher);
         hasher.finish() as usize

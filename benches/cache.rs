@@ -1,9 +1,5 @@
-use divan::black_box;
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use neoui::*;
-
-fn main() {
-    divan::main();
-}
 
 const WIDTH: i32 = 1920;
 const HEIGHT: i32 = 1080;
@@ -40,58 +36,9 @@ impl CacheBench {
     }
 }
 
-#[divan::bench]
-fn full_initial(bencher: divan::Bencher) {
-    let cmds = layers(vec![rect(0, 0, WIDTH, HEIGHT, 1)]);
-    bencher
-        .with_inputs(CacheBench::default)
-        .bench_refs(|cache| black_box(cache.frame(&cmds, true)));
-}
-
-#[divan::bench]
-fn identical_frame(bencher: divan::Bencher) {
-    let cmds = layers(vec![rect(100, 100, 400, 300, 1)]);
-    bencher
-        .with_inputs(|| {
-            let mut cache = CacheBench::default();
-            cache.frame(&cmds, false);
-            cache
-        })
-        .bench_refs(|cache| black_box(cache.frame(&cmds, false)));
-}
-
 struct Alternating {
     cache: CacheBench,
     state: u32,
-}
-
-#[divan::bench]
-fn one_small_change(bencher: divan::Bencher) {
-    bencher
-        .with_inputs(|| Alternating {
-            cache: CacheBench::default(),
-            state: 0,
-        })
-        .bench_refs(|ctx| {
-            ctx.state ^= 1;
-            let cmds = layers(vec![rect(300, 300, 40, 24, ctx.state)]);
-            black_box(ctx.cache.frame(&cmds, false))
-        });
-}
-
-#[divan::bench]
-fn moving_control(bencher: divan::Bencher) {
-    bencher
-        .with_inputs(|| Alternating {
-            cache: CacheBench::default(),
-            state: 0,
-        })
-        .bench_refs(|ctx| {
-            ctx.state ^= 1;
-            let x = if ctx.state == 0 { 300 } else { 700 };
-            let cmds = layers(vec![rect(x, 300, 40, 24, 1)]);
-            black_box(ctx.cache.frame(&cmds, false))
-        });
 }
 
 struct Scrolling {
@@ -100,39 +47,110 @@ struct Scrolling {
     state: usize,
 }
 
-#[divan::bench]
-fn scrolling_list(bencher: divan::Bencher) {
-    bencher
-        .with_inputs(|| {
-            let make = |offset: i32| {
-                layers(
-                    (0..100)
-                        .map(|row| rect(200, row * 28 + offset, 900, 26, row as u32))
-                        .collect(),
-                )
-            };
-            Scrolling {
+fn bench_cache(c: &mut Criterion) {
+    let cmds_full = layers(vec![rect(0, 0, WIDTH, HEIGHT, 1)]);
+    c.bench_function("full_initial", |b| {
+        b.iter_batched_ref(
+            CacheBench::default,
+            |cache| black_box(cache.frame(&cmds_full, true)),
+            BatchSize::SmallInput,
+        );
+    });
+
+    let cmds_ident = layers(vec![rect(100, 100, 400, 300, 1)]);
+    c.bench_function("identical_frame", |b| {
+        b.iter_batched_ref(
+            || {
+                let mut cache = CacheBench::default();
+                cache.frame(&cmds_ident, false);
+                cache
+            },
+            |cache| black_box(cache.frame(&cmds_ident, false)),
+            BatchSize::SmallInput,
+        );
+    });
+
+    c.bench_function("one_small_change", |b| {
+        b.iter_batched_ref(
+            || Alternating {
                 cache: CacheBench::default(),
-                states: [make(0), make(12)],
                 state: 0,
-            }
-        })
-        .bench_refs(|ctx| {
-            ctx.state ^= 1;
-            black_box(ctx.cache.frame(&ctx.states[ctx.state], false))
-        });
+            },
+            |ctx| {
+                ctx.state ^= 1;
+                let cmds = layers(vec![rect(300, 300, 40, 24, ctx.state)]);
+                black_box(ctx.cache.frame(&cmds, false))
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    c.bench_function("moving_control", |b| {
+        b.iter_batched_ref(
+            || Alternating {
+                cache: CacheBench::default(),
+                state: 0,
+            },
+            |ctx| {
+                ctx.state ^= 1;
+                let x = if ctx.state == 0 { 300 } else { 700 };
+                let cmds = layers(vec![rect(x, 300, 40, 24, 1)]);
+                black_box(ctx.cache.frame(&cmds, false))
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    c.bench_function("scrolling_list", |b| {
+        b.iter_batched_ref(
+            || {
+                let make = |offset: i32| {
+                    layers(
+                        (0..100)
+                            .map(|row| rect(200, row * 28 + offset, 900, 26, row as u32))
+                            .collect(),
+                    )
+                };
+                Scrolling {
+                    cache: CacheBench::default(),
+                    states: [make(0), make(12)],
+                    state: 0,
+                }
+            },
+            |ctx| {
+                ctx.state ^= 1;
+                black_box(ctx.cache.frame(&ctx.states[ctx.state], false))
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    c.bench_function("full_screen_change", |b| {
+        b.iter_batched_ref(
+            || Alternating {
+                cache: CacheBench::default(),
+                state: 0,
+            },
+            |ctx| {
+                ctx.state ^= 1;
+                let cmds = layers(vec![rect(0, 0, WIDTH, HEIGHT, ctx.state)]);
+                black_box(ctx.cache.frame(&cmds, false))
+            },
+            BatchSize::SmallInput,
+        );
+    });
 }
 
-#[divan::bench]
-fn full_screen_change(bencher: divan::Bencher) {
-    bencher
-        .with_inputs(|| Alternating {
-            cache: CacheBench::default(),
-            state: 0,
-        })
-        .bench_refs(|ctx| {
-            ctx.state ^= 1;
-            let cmds = layers(vec![rect(0, 0, WIDTH, HEIGHT, ctx.state)]);
-            black_box(ctx.cache.frame(&cmds, false))
-        });
+fn fast_criterion() -> Criterion {
+    Criterion::default()
+        .warm_up_time(std::time::Duration::from_millis(100))
+        .measurement_time(std::time::Duration::from_millis(300))
+        .sample_size(100)
 }
+
+criterion_group! {
+    name = benches;
+    config = fast_criterion();
+    targets = bench_cache
+}
+criterion_main!(benches);

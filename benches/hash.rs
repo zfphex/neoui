@@ -1,12 +1,8 @@
-use divan::black_box;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 const HASH_SEED: u64 = 0xcbf2_9ce4_8422_2325;
 const HASH_MIX: u64 = 0x9e37_79b9_7f4a_7c15;
 const BYTE_LEN_TAG: u64 = 0x6c62_79f5_aa2d_4f1b;
-
-fn main() {
-    divan::main();
-}
 
 #[inline]
 fn mix(h: u64, v: u64) -> u64 {
@@ -33,26 +29,46 @@ fn chunked(bytes: &[u8]) -> u64 {
     mix(hash, BYTE_LEN_TAG ^ bytes.len() as u64)
 }
 
-#[divan::bench(args = [1, 4, 7, 8, 12, 16, 24, 32, 48, 64, 128, 256])]
-fn normal_scalar(bencher: divan::Bencher, len: usize) {
-    let bytes = vec![0x5a; len];
-    bencher.bench(|| black_box(scalar(black_box(&bytes))));
+fn bench_hash(c: &mut Criterion) {
+    let sizes = [1, 4, 7, 8, 12, 16, 24, 32, 48, 64, 128, 256];
+
+    let mut group = c.benchmark_group("normal_scalar");
+    for &len in &sizes {
+        let bytes = vec![0x5a; len];
+        group.bench_with_input(BenchmarkId::from_parameter(len), &bytes, |b, bytes| {
+            b.iter(|| black_box(scalar(black_box(bytes))));
+        });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("normal_chunked");
+    for &len in &sizes {
+        let bytes = vec![0x5a; len];
+        group.bench_with_input(BenchmarkId::from_parameter(len), &bytes, |b, bytes| {
+            b.iter(|| black_box(chunked(black_box(bytes))));
+        });
+    }
+    group.finish();
+
+    let bytes = vec![0x5a; 65536];
+    c.bench_function("bad_case_scalar/65536", |b| {
+        b.iter(|| black_box(scalar(black_box(&bytes))));
+    });
+    c.bench_function("bad_case_chunked/65536", |b| {
+        b.iter(|| black_box(chunked(black_box(&bytes))));
+    });
 }
 
-#[divan::bench(args = [1, 4, 7, 8, 12, 16, 24, 32, 48, 64, 128, 256])]
-fn normal_chunked(bencher: divan::Bencher, len: usize) {
-    let bytes = vec![0x5a; len];
-    bencher.bench(|| black_box(chunked(black_box(&bytes))));
+fn fast_criterion() -> Criterion {
+    Criterion::default()
+        .warm_up_time(std::time::Duration::from_millis(100))
+        .measurement_time(std::time::Duration::from_millis(300))
+        .sample_size(100)
 }
 
-#[divan::bench(args = [65536])]
-fn bad_case_scalar(bencher: divan::Bencher, len: usize) {
-    let bytes = vec![0x5a; len];
-    bencher.bench(|| black_box(scalar(black_box(&bytes))));
+criterion_group! {
+    name = benches;
+    config = fast_criterion();
+    targets = bench_hash
 }
-
-#[divan::bench(args = [65536])]
-fn bad_case_chunked(bencher: divan::Bencher, len: usize) {
-    let bytes = vec![0x5a; len];
-    bencher.bench(|| black_box(chunked(black_box(&bytes))));
-}
+criterion_main!(benches);

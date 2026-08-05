@@ -1,10 +1,6 @@
-use divan::black_box;
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use neoui::*;
 use rustc_hash::FxHashMap;
-
-fn main() {
-    divan::main();
-}
 
 const FB_W: usize = 1920;
 const FB_H: usize = 1080;
@@ -64,122 +60,134 @@ impl Bed {
     }
 }
 
-mod warm {
-    use super::*;
+fn bench_warm(c: &mut Criterion) {
+    let mut group = c.benchmark_group("warm");
 
-    fn bench(bencher: divan::Bencher, src: (usize, usize), dst: i32, fit: ImageFit, opacity: u8, radius: usize) {
+    let bench_warm_case = |group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
+                           name: &str,
+                           src: (usize, usize),
+                           dst: i32,
+                           fit: ImageFit,
+                           opacity: u8,
+                           radius: usize| {
         let img = image(src.0, src.1, 255);
         let bounds = Rect::new(0, 0, dst, dst);
-        bencher
-            .with_inputs(|| {
+        group.bench_function(name, |b| {
+            b.iter_batched_ref(
+                || {
+                    let mut bed = Bed::new();
+                    bed.draw(&img, bounds, fit, opacity, radius);
+                    bed
+                },
+                |bed| bed.draw(&img, bounds, fit, opacity, radius),
+                BatchSize::SmallInput,
+            );
+        });
+    };
+
+    bench_warm_case(&mut group, "blit_1to1", (512, 512), 512, ImageFit::Stretch, 255, 0);
+
+    let img_alpha = image(512, 512, 128);
+    let bounds_512 = Rect::new(0, 0, 512, 512);
+    group.bench_function("blit_1to1_alpha", |b| {
+        b.iter_batched_ref(
+            || {
                 let mut bed = Bed::new();
-                bed.draw(&img, bounds, fit, opacity, radius);
+                bed.draw(&img_alpha, bounds_512, ImageFit::Stretch, 255, 0);
                 bed
-            })
-            .bench_local_refs(|bed| bed.draw(&img, bounds, fit, opacity, radius));
-    }
+            },
+            |bed| bed.draw(&img_alpha, bounds_512, ImageFit::Stretch, 255, 0),
+            BatchSize::SmallInput,
+        );
+    });
 
-    #[divan::bench]
-    fn blit_1to1(bencher: divan::Bencher) {
-        bench(bencher, (512, 512), 512, ImageFit::Stretch, 255, 0);
-    }
+    bench_warm_case(&mut group, "blit_1to1_opacity", (512, 512), 512, ImageFit::Stretch, 128, 0);
+    bench_warm_case(&mut group, "blit_1to1_radius", (512, 512), 512, ImageFit::Stretch, 255, 16);
+    bench_warm_case(&mut group, "downscale_4x", (2048, 2048), 512, ImageFit::Stretch, 255, 0);
+    bench_warm_case(&mut group, "upscale_4x", (128, 128), 512, ImageFit::Stretch, 255, 0);
 
-    #[divan::bench]
-    fn blit_1to1_alpha(bencher: divan::Bencher) {
-        let img = image(512, 512, 128);
-        let bounds = Rect::new(0, 0, 512, 512);
-        bencher
-            .with_inputs(|| {
-                let mut bed = Bed::new();
-                bed.draw(&img, bounds, ImageFit::Stretch, 255, 0);
-                bed
-            })
-            .bench_local_refs(|bed| bed.draw(&img, bounds, ImageFit::Stretch, 255, 0));
-    }
-
-    #[divan::bench]
-    fn blit_1to1_opacity(bencher: divan::Bencher) {
-        bench(bencher, (512, 512), 512, ImageFit::Stretch, 128, 0);
-    }
-
-    #[divan::bench]
-    fn blit_1to1_radius(bencher: divan::Bencher) {
-        bench(bencher, (512, 512), 512, ImageFit::Stretch, 255, 16);
-    }
-
-    #[divan::bench]
-    fn downscale_4x(bencher: divan::Bencher) {
-        bench(bencher, (2048, 2048), 512, ImageFit::Stretch, 255, 0);
-    }
-
-    #[divan::bench]
-    fn upscale_4x(bencher: divan::Bencher) {
-        bench(bencher, (128, 128), 512, ImageFit::Stretch, 255, 0);
-    }
+    group.finish();
 }
 
-mod cold {
-    use super::*;
+fn bench_cold(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cold");
 
-    fn bench(bencher: divan::Bencher, src: (usize, usize), dst: i32, fit: ImageFit, radius: usize) {
+    let bench_cold_case = |group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
+                           name: &str,
+                           src: (usize, usize),
+                           dst: i32,
+                           fit: ImageFit,
+                           radius: usize| {
         let img = image(src.0, src.1, 255);
         let bounds = Rect::new(0, 0, dst, dst);
-        bencher.with_inputs(Bed::new).bench_local_refs(|bed| {
-            bed.cache.entries.clear();
-            bed.cache.bytes = 0;
-            bed.draw(&img, bounds, fit, 255, radius);
+        group.bench_function(name, |b| {
+            b.iter_batched_ref(
+                Bed::new,
+                |bed| {
+                    bed.cache.entries.clear();
+                    bed.cache.bytes = 0;
+                    bed.draw(&img, bounds, fit, 255, radius);
+                },
+                BatchSize::SmallInput,
+            );
         });
-    }
+    };
 
-    #[divan::bench]
-    fn blit_1to1(bencher: divan::Bencher) {
-        bench(bencher, (512, 512), 512, ImageFit::Stretch, 0);
-    }
+    bench_cold_case(&mut group, "blit_1to1", (512, 512), 512, ImageFit::Stretch, 0);
+    bench_cold_case(&mut group, "downscale_4x", (2048, 2048), 512, ImageFit::Stretch, 0);
+    bench_cold_case(&mut group, "downscale_4x_radius", (2048, 2048), 512, ImageFit::Stretch, 16);
+    bench_cold_case(&mut group, "upscale_4x", (128, 128), 512, ImageFit::Stretch, 0);
+    bench_cold_case(&mut group, "cover_crop", (2048, 1024), 512, ImageFit::Cover, 0);
 
-    #[divan::bench]
-    fn downscale_4x(bencher: divan::Bencher) {
-        bench(bencher, (2048, 2048), 512, ImageFit::Stretch, 0);
-    }
-
-    #[divan::bench]
-    fn downscale_4x_radius(bencher: divan::Bencher) {
-        bench(bencher, (2048, 2048), 512, ImageFit::Stretch, 16);
-    }
-
-    #[divan::bench]
-    fn upscale_4x(bencher: divan::Bencher) {
-        bench(bencher, (128, 128), 512, ImageFit::Stretch, 0);
-    }
-
-    #[divan::bench]
-    fn cover_crop(bencher: divan::Bencher) {
-        bench(bencher, (2048, 1024), 512, ImageFit::Cover, 0);
-    }
+    group.finish();
 }
 
-mod animated {
-    use super::*;
+fn bench_animated(c: &mut Criterion) {
+    let mut group = c.benchmark_group("animated");
 
-    #[divan::bench]
-    fn fade(bencher: divan::Bencher) {
-        let img = image(512, 512, 255);
-        let bounds = Rect::new(0, 0, 512, 512);
-        let mut frame = 0u32;
-        bencher.with_inputs(Bed::new).bench_local_refs(|bed| {
-            frame = frame.wrapping_add(1);
-            let opacity = (frame % 255) as u8 + 1;
-            bed.draw(&img, bounds, ImageFit::Stretch, opacity, 0);
-        });
-    }
+    let img = image(512, 512, 255);
+    let bounds = Rect::new(0, 0, 512, 512);
 
-    #[divan::bench]
-    fn resize(bencher: divan::Bencher) {
-        let img = image(1024, 1024, 255);
+    group.bench_function("fade", |b| {
         let mut frame = 0u32;
-        bencher.with_inputs(Bed::new).bench_local_refs(|bed| {
-            frame = frame.wrapping_add(1);
-            let side = 256 + (frame % 256) as i32;
-            bed.draw(&img, Rect::new(0, 0, side, side), ImageFit::Stretch, 255, 0);
-        });
-    }
+        b.iter_batched_ref(
+            Bed::new,
+            |bed| {
+                frame = frame.wrapping_add(1);
+                let opacity = (frame % 255) as u8 + 1;
+                bed.draw(&img, bounds, ImageFit::Stretch, opacity, 0);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    let img_1024 = image(1024, 1024, 255);
+    group.bench_function("resize", |b| {
+        let mut frame = 0u32;
+        b.iter_batched_ref(
+            Bed::new,
+            |bed| {
+                frame = frame.wrapping_add(1);
+                let side = 256 + (frame % 256) as i32;
+                bed.draw(&img_1024, Rect::new(0, 0, side, side), ImageFit::Stretch, 255, 0);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    group.finish();
 }
+
+fn fast_criterion() -> Criterion {
+    Criterion::default()
+        .warm_up_time(std::time::Duration::from_millis(100))
+        .measurement_time(std::time::Duration::from_millis(300))
+        .sample_size(100)
+}
+
+criterion_group! {
+    name = benches;
+    config = fast_criterion();
+    targets = bench_warm, bench_cold, bench_animated
+}
+criterion_main!(benches);

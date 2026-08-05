@@ -7,20 +7,19 @@ edition = "2024"
 debug = true
 
 [dependencies]
-fontdue = { git = "https://github.com/zfphex/fontdue", default-features = false, features = ["simd"] }
-mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = ["profile"] }
-rustc-hash = "2.1.2"
-divan = { version = "0.1.21", optional = true }
-criterion = { version = "0.5", features = ["html_reports"], optional = true  }
-# minwin = { git = "https://github.com/zfphex/minwin", version = "0.1.0" }
 minwin = { version = "0.1.0", path = "../minwin" }
+# minwin = { git = "https://github.com/zfphex/minwin", version = "0.1.0" }
+fontdue = { git = "https://github.com/zfphex/fontdue", default-features = false, features = ["simd"] }
+rustc-hash = "2.1.2"
 zune-core = { version = "0.5.1", optional = true }
 zune-jpeg = { version = "0.5.15", optional = true }
 zune-png = { version = "0.5.2", optional = true }
+criterion = { version = "0.5", features = ["html_reports"], optional = true  }
+mini = { git = "https://github.com/zfphex/mini", version = "0.1.0", features = ["profile"] }
 
 [features]
 profile = ["mini/profile"]
-bench = ["divan", "criterion"]
+bench = ["criterion"]
 jpeg = ["dep:zune-jpeg", "dep:zune-core"]
 png = ["dep:zune-png", "dep:zune-core"]
 image = ["jpeg", "png"]

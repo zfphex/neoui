@@ -3,9 +3,9 @@ use neoui::*;
 
 fn bench_draw_rect_fill_sizes(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_rect_fill_sizes");
-    group.sample_size(1000);
-    group.warm_up_time(std::time::Duration::from_millis(300));
-    group.measurement_time(std::time::Duration::from_millis(700));
+    group.sample_size(100);
+    group.warm_up_time(std::time::Duration::from_millis(100));
+    group.measurement_time(std::time::Duration::from_millis(300));
 
     const WIN_W: usize = 1920;
     const WIN_H: usize = 1080;
@@ -33,7 +33,6 @@ fn bench_draw_rect_fill_sizes(c: &mut Criterion) {
                     WIN_H,
                     black_box(0),
                     black_box(color),
-                    None,
                     black_box(clip),
                 );
             });
@@ -44,9 +43,9 @@ fn bench_draw_rect_fill_sizes(c: &mut Criterion) {
 
 fn bench_draw_rect_fill_aspect_ratios(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_rect_fill_aspect_ratios");
-    group.sample_size(1000);
-    group.warm_up_time(std::time::Duration::from_millis(300));
-    group.measurement_time(std::time::Duration::from_millis(700));
+    group.sample_size(100);
+    group.warm_up_time(std::time::Duration::from_millis(100));
+    group.measurement_time(std::time::Duration::from_millis(300));
 
     const WIN_W: usize = 1920;
     const WIN_H: usize = 1080;
@@ -73,7 +72,6 @@ fn bench_draw_rect_fill_aspect_ratios(c: &mut Criterion) {
                     WIN_H,
                     black_box(8),
                     black_box(color),
-                    None,
                     black_box(clip),
                 );
             });
@@ -84,9 +82,9 @@ fn bench_draw_rect_fill_aspect_ratios(c: &mut Criterion) {
 
 fn bench_draw_rect_fill_radii(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_rect_fill_radii");
-    group.sample_size(1000);
-    group.warm_up_time(std::time::Duration::from_millis(300));
-    group.measurement_time(std::time::Duration::from_millis(700));
+    group.sample_size(100);
+    group.warm_up_time(std::time::Duration::from_millis(100));
+    group.measurement_time(std::time::Duration::from_millis(300));
 
     const WIN_W: usize = 1920;
     const WIN_H: usize = 1080;
@@ -113,7 +111,6 @@ fn bench_draw_rect_fill_radii(c: &mut Criterion) {
                     WIN_H,
                     black_box(radius),
                     black_box(color),
-                    None,
                     black_box(clip),
                 );
             });
@@ -124,9 +121,9 @@ fn bench_draw_rect_fill_radii(c: &mut Criterion) {
 
 fn bench_draw_rect_fill_clipping(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_rect_fill_clipping");
-    group.sample_size(1000);
-    group.warm_up_time(std::time::Duration::from_millis(300));
-    group.measurement_time(std::time::Duration::from_millis(700));
+    group.sample_size(100);
+    group.warm_up_time(std::time::Duration::from_millis(100));
+    group.measurement_time(std::time::Duration::from_millis(300));
 
     const WIN_W: usize = 1920;
     const WIN_H: usize = 1080;
@@ -176,7 +173,6 @@ fn bench_draw_rect_fill_clipping(c: &mut Criterion) {
                     WIN_H,
                     black_box(16),
                     black_box(color),
-                    None,
                     black_box(clip),
                 );
             });
@@ -187,9 +183,9 @@ fn bench_draw_rect_fill_clipping(c: &mut Criterion) {
 
 fn bench_draw_rect_fill_colors(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_rect_fill_colors");
-    group.sample_size(1000);
-    group.warm_up_time(std::time::Duration::from_millis(300));
-    group.measurement_time(std::time::Duration::from_millis(700));
+    group.sample_size(100);
+    group.warm_up_time(std::time::Duration::from_millis(100));
+    group.measurement_time(std::time::Duration::from_millis(300));
 
     const WIN_W: usize = 1920;
     const WIN_H: usize = 1080;
@@ -213,7 +209,6 @@ fn bench_draw_rect_fill_colors(c: &mut Criterion) {
                     WIN_H,
                     black_box(12),
                     black_box(color),
-                    None,
                     black_box(clip),
                 );
             });
@@ -224,9 +219,9 @@ fn bench_draw_rect_fill_colors(c: &mut Criterion) {
 
 fn bench_draw_rect_fill_simd_vs_scalar(c: &mut Criterion) {
     let mut group = c.benchmark_group("draw_rect_fill_simd_vs_scalar");
-    group.sample_size(1000);
-    group.warm_up_time(std::time::Duration::from_millis(300));
-    group.measurement_time(std::time::Duration::from_millis(700));
+    group.sample_size(100);
+    group.warm_up_time(std::time::Duration::from_millis(100));
+    group.measurement_time(std::time::Duration::from_millis(300));
 
     const WIN_W: usize = 1920;
     const WIN_H: usize = 1080;
@@ -278,7 +273,6 @@ fn bench_draw_rect_fill_simd_vs_scalar(c: &mut Criterion) {
                     WIN_H,
                     black_box(16),
                     black_box(color),
-                    None,
                     black_box(clip),
                 );
             });
@@ -287,13 +281,22 @@ fn bench_draw_rect_fill_simd_vs_scalar(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_draw_rect_fill_sizes,
-    bench_draw_rect_fill_aspect_ratios,
-    bench_draw_rect_fill_radii,
-    bench_draw_rect_fill_clipping,
-    bench_draw_rect_fill_colors,
-    bench_draw_rect_fill_simd_vs_scalar
-);
+fn fast_criterion() -> Criterion {
+    Criterion::default()
+        .warm_up_time(std::time::Duration::from_millis(100))
+        .measurement_time(std::time::Duration::from_millis(300))
+        .sample_size(100)
+}
+
+criterion_group! {
+    name = benches;
+    config = fast_criterion();
+    targets =
+        bench_draw_rect_fill_sizes,
+        bench_draw_rect_fill_aspect_ratios,
+        bench_draw_rect_fill_radii,
+        bench_draw_rect_fill_clipping,
+        bench_draw_rect_fill_colors,
+        bench_draw_rect_fill_simd_vs_scalar
+}
 criterion_main!(benches);

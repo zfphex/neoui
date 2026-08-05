@@ -1,11 +1,7 @@
-use divan::black_box;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use neoui::*;
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-
-fn main() {
-    divan::main();
-}
 
 const WIDTH: i32 = 1920;
 const HEIGHT: i32 = 1080;
@@ -117,14 +113,36 @@ const CASES: [(usize, usize); 8] = [
     (300, 8),
 ];
 
-#[divan::bench(args = CASES)]
-fn old(bencher: divan::Bencher, arg: (usize, usize)) {
-    let s = RefCell::new(scene(arg.0, arg.1));
-    bencher.bench_local(|| black_box(old_path(&mut s.borrow_mut())));
+fn bench_raster(c: &mut Criterion) {
+    let mut group = c.benchmark_group("raster");
+
+    for &(statics, spots) in &CASES {
+        let param = format!("{statics}x{spots}");
+
+        group.bench_with_input(BenchmarkId::new("old", &param), &(statics, spots), |b, &(st, sp)| {
+            let s = RefCell::new(scene(st, sp));
+            b.iter(|| black_box(old_path(&mut s.borrow_mut())));
+        });
+
+        group.bench_with_input(BenchmarkId::new("new", &param), &(statics, spots), |b, &(st, sp)| {
+            let s = RefCell::new(scene(st, sp));
+            b.iter(|| black_box(new_path(&mut s.borrow_mut())));
+        });
+    }
+
+    group.finish();
 }
 
-#[divan::bench(args = CASES)]
-fn new(bencher: divan::Bencher, arg: (usize, usize)) {
-    let s = RefCell::new(scene(arg.0, arg.1));
-    bencher.bench_local(|| black_box(new_path(&mut s.borrow_mut())));
+fn fast_criterion() -> Criterion {
+    Criterion::default()
+        .warm_up_time(std::time::Duration::from_millis(100))
+        .measurement_time(std::time::Duration::from_millis(300))
+        .sample_size(100)
 }
+
+criterion_group! {
+    name = benches;
+    config = fast_criterion();
+    targets = bench_raster
+}
+criterion_main!(benches);

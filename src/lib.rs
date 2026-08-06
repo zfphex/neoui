@@ -441,10 +441,10 @@ impl Context {
     where
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
     {
-        self.state.string_index = 0;
         let state = &mut self.state;
 
         self.window.draw(|window| {
+            state.string_index = 0;
             let mut frame = FrameContext {
                 window,
                 state,

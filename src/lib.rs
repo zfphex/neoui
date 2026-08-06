@@ -661,15 +661,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             Size::Pixel(px) => px,
             Size::Percentage(pct) => (total as f32 * pct) as i32,
             Size::Fill => total,
-            Size::FillMinus(sub) => total.saturating_sub(sub.abs()),
+            Size::FillMinus(sub) => total.saturating_sub(sub.abs()).max(0),
         }
     }
 
     pub fn split_rect_h(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
         let left_width = self.resolve_rect(rect, Flow::Right, size.into_size().unwrap_or_default());
-        let total_w = rect.width;
-        let total_h = rect.height;
-        let left_w = left_width.min(total_w);
+        let total_w = rect.width.max(0);
+        let total_h = rect.height.max(0);
+        let left_w = left_width.clamp(0, total_w);
         let right_w = total_w.saturating_sub(left_w);
         let left_rect = Rect::new(rect.x, rect.y, left_w, total_h);
         let right_rect = Rect::new(rect.x + left_w, rect.y, right_w, total_h);
@@ -678,9 +678,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn split_rect_v(&self, rect: Rect, size: impl IntoSize) -> (Rect, Rect) {
         let top_height = self.resolve_rect(rect, Flow::Down, size.into_size().unwrap_or_default());
-        let total_w = rect.width;
-        let total_h = rect.height;
-        let top_h = top_height.min(total_h);
+        let total_w = rect.width.max(0);
+        let total_h = rect.height.max(0);
+        let top_h = top_height.clamp(0, total_h);
         let bottom_h = total_h.saturating_sub(top_h);
         let top_rect = Rect::new(rect.x, rect.y, total_w, top_h);
         let bottom_rect = Rect::new(rect.x, rect.y + top_h, total_w, bottom_h);
@@ -1575,6 +1575,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 _ => 0,
             },
         };
+
+        if bounds.width <= 0 || bounds.height <= 0 {
+            return state;
+        }
 
         //TODO: Allow for users to disable middle mouse scrolling.
         let dt = self.dt.min(1.0 / 30.0);

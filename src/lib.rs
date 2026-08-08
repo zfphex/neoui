@@ -375,7 +375,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     #[inline]
     //TODO: This can be improved a lot, just a quick draft.
     //Probably want to use bump alloc chunks (bumpalo).
-    pub fn fmt(&mut self, args: std::fmt::Arguments<'_>) -> &'a str {
+    pub fn fmt(&mut self, format_args: std::fmt::Arguments<'_>) -> &'a str {
         use std::fmt::Write;
         let idx = self.state.string_index;
         self.state.string_index += 1;
@@ -384,7 +384,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
         let buf = &mut self.state.string_pool[idx];
         buf.clear();
-        let _ = buf.write_fmt(args);
+        let _ = buf.write_fmt(format_args);
         unsafe {
             let slice: &str = buf.as_str();
             std::mem::transmute::<&str, &'a str>(slice)
@@ -1187,7 +1187,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         GradientStops { ui: self, slot, state }
     }
 
-    pub fn line(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'a>>>, style: Style) -> State {
+    pub fn lines(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'a>>>, style: Style) -> State {
         let parts: Vec<Line<'a>> = parts.into_iter().map(Into::into).collect();
         let default_size = self.default_font_size;
 

@@ -63,12 +63,11 @@ fn main() {
 
                         ui.flow_right(card, |ui| {
                             built += 1;
-                            let layout = ui.walk_layout(COVER, COVER, 0);
-                            let cover = Rect::new(layout.paint_x, layout.paint_y, COVER, COVER);
-                            ui.paint_rect(cover, style().bg(rgb(58, 58, 66)).radius(8));
-                            if ui.clicked(cover) {
+
+                            if ui.rect(style().wh(COVER).bg(rgb(58, 58, 66)).radius(8)).clicked {
                                 clicked = format!("cover of album {index}");
                             }
+
                             ui.gap(16);
 
                             ui.flow_down(body, |ui| {

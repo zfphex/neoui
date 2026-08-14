@@ -95,7 +95,11 @@ impl Image {
         }
         let square = Rect::new(0, 0, size as i32, size as i32);
         let (source, _) = place(self.width, self.height, square, ImageFit::Cover);
-        Self::packed(size, size, resample(self, source, size, size).pixels)
+        Self::packed(
+            size,
+            size,
+            resample(&self.pixels, self.width, self.height, self.opaque, source, size, size).pixels,
+        )
     }
 }
 
@@ -246,6 +250,7 @@ pub struct ImageCache {
     pub frame: u32,
     pub bytes: usize,
     pub budget: usize,
+    pub uncached: Option<Scaled>,
 }
 
 impl ImageCache {
@@ -255,10 +260,12 @@ impl ImageCache {
             frame: 0,
             bytes: 0,
             budget: CACHE_BUDGET,
+            uncached: None,
         }
     }
 
     pub fn tick(&mut self) {
+        self.uncached = None;
         self.frame = self.frame.wrapping_add(1);
         if self.bytes <= self.budget {
             return;
@@ -275,9 +282,37 @@ impl ImageCache {
         }
     }
 
-    pub fn scaled(&mut self, image: &Image, source: Source, width: usize, height: usize) -> Pixels<'_> {
+    pub fn scaled(
+        &mut self,
+        id: u64,
+        pixels: &[u32],
+        image_width: usize,
+        image_height: usize,
+        opaque: bool,
+        source: Source,
+        width: usize,
+        height: usize,
+    ) -> Pixels<'_> {
+        if id == 0 {
+            self.uncached = Some(resample(
+                pixels,
+                image_width,
+                image_height,
+                opaque,
+                source,
+                width,
+                height,
+            ));
+            let entry = self.uncached.as_ref().unwrap();
+            return Pixels {
+                data: &entry.pixels,
+                width: entry.width,
+                height: entry.height,
+                opaque: entry.opaque,
+            };
+        }
         let key = ScaleKey {
-            image: image.id,
+            image: id,
             source: [
                 (source.x * 16.0).round() as i32,
                 (source.y * 16.0).round() as i32,
@@ -290,7 +325,7 @@ impl ImageCache {
         let frame = self.frame;
         let bytes = &mut self.bytes;
         let entry = self.entries.entry(key).or_insert_with(|| {
-            let scaled = resample(image, source, width, height);
+            let scaled = resample(pixels, image_width, image_height, opaque, source, width, height);
             *bytes += scaled.pixels.len() * 4;
             scaled
         });
@@ -308,7 +343,11 @@ pub fn draw_image(
     buffer: &mut [u32],
     framebuffer_width: usize,
     framebuffer_height: usize,
-    image: &Image,
+    id: u64,
+    image_width: usize,
+    image_height: usize,
+    opaque: bool,
+    pixels: &[u32],
     bounds: Rect,
     clip: Rect,
     fit: ImageFit,
@@ -321,7 +360,7 @@ pub fn draw_image(
         return;
     }
 
-    let (source, placed) = place(image.width, image.height, bounds, fit);
+    let (source, placed) = place(image_width, image_height, bounds, fit);
     let dest = placed.scale(scale_factor);
     let draw = dest
         .intersection(bounds.scale(scale_factor))
@@ -336,21 +375,21 @@ pub fn draw_image(
     let radius = crate::scale(radius, scale_factor).min(width.min(height) / 2);
     let whole_source = source.x == 0.0
         && source.y == 0.0
-        && source.width == image.width as f32
-        && source.height == image.height as f32;
+        && source.width == image_width as f32
+        && source.height == image_height as f32;
 
-    if width == image.width && height == image.height && whole_source {
+    if width == image_width && height == image_height && whole_source {
         let pixels = Pixels {
-            data: &image.pixels,
-            width: image.width,
-            height: image.height,
-            opaque: image.opaque,
+            data: pixels,
+            width: image_width,
+            height: image_height,
+            opaque,
         };
         composite(buffer, framebuffer_width, pixels, dest, draw, opacity, radius);
         return;
     }
 
-    let pixels = cache.scaled(image, source, width, height);
+    let pixels = cache.scaled(id, pixels, image_width, image_height, opaque, source, width, height);
     composite(buffer, framebuffer_width, pixels, dest, draw, opacity, radius);
 }
 
@@ -441,9 +480,17 @@ fn halve(source: &[u32], width: usize, height: usize, dest: &mut [u32], dest_wid
     }
 }
 
-fn resample(image: &Image, source: Source, width: usize, height: usize) -> Scaled {
+fn resample(
+    pixels: &[u32],
+    image_width: usize,
+    image_height: usize,
+    opaque: bool,
+    source: Source,
+    width: usize,
+    height: usize,
+) -> Scaled {
     let mut reduced: Vec<u32> = Vec::new();
-    let (mut source_width, mut source_height) = (image.width, image.height);
+    let (mut source_width, mut source_height) = (image_width, image_height);
     let mut rect = source;
     while source_width >= 2
         && source_height >= 2
@@ -452,7 +499,7 @@ fn resample(image: &Image, source: Source, width: usize, height: usize) -> Scale
     {
         let (half_width, half_height) = (source_width.div_ceil(2), source_height.div_ceil(2));
         let mut next = vec![0u32; half_width * half_height];
-        let current: &[u32] = if reduced.is_empty() { &image.pixels } else { &reduced };
+        let current: &[u32] = if reduced.is_empty() { pixels } else { &reduced };
         halve(current, source_width, source_height, &mut next, half_width, half_height);
         reduced = next;
         source_width = half_width;
@@ -470,12 +517,12 @@ fn resample(image: &Image, source: Source, width: usize, height: usize) -> Scale
         return Scaled {
             width,
             height,
-            opaque: image.opaque,
+            opaque,
             last_used: 0,
             pixels: reduced.into_boxed_slice(),
         };
     }
-    let pixels_in: &[u32] = if reduced.is_empty() { &image.pixels } else { &reduced };
+    let pixels_in: &[u32] = if reduced.is_empty() { pixels } else { &reduced };
 
     let horizontal = axis(rect.x, rect.width, source_width, width);
     let vertical = axis(rect.y, rect.height, source_height, height);
@@ -494,11 +541,11 @@ fn resample(image: &Image, source: Source, width: usize, height: usize) -> Scale
         }
     }
 
-    let mut pixels = vec![0u32; width * height].into_boxed_slice();
+    let mut out_pixels = vec![0u32; width * height].into_boxed_slice();
     for y in 0..height {
         let weights = &vertical.weights[y * vertical.taps..][..vertical.taps];
         let top = vertical.first[y] - row_start;
-        let dest_row = &mut pixels[y * width..][..width];
+        let dest_row = &mut out_pixels[y * width..][..width];
         for (x, out) in dest_row.iter_mut().enumerate() {
             *out = gather(&scratch[top * width + x..], weights, width);
         }
@@ -507,9 +554,9 @@ fn resample(image: &Image, source: Source, width: usize, height: usize) -> Scale
     Scaled {
         width,
         height,
-        opaque: image.opaque,
+        opaque,
         last_used: 0,
-        pixels,
+        pixels: out_pixels,
     }
 }
 

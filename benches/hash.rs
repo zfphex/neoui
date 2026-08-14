@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 const HASH_SEED: u64 = 0xcbf2_9ce4_8422_2325;
 const HASH_MIX: u64 = 0x9e37_79b9_7f4a_7c15;

@@ -8,9 +8,17 @@ const FACES: [(Weight, bool, &[u8]); 11] = [
     (Weight::Black, false, include_bytes!("../fonts/Aptos-Black.ttf")),
     (Weight::Light, true, include_bytes!("../fonts/Aptos-Light-Italic.ttf")),
     (Weight::Regular, true, include_bytes!("../fonts/Aptos-Italic.ttf")),
-    (Weight::SemiBold, true, include_bytes!("../fonts/Aptos-SemiBold-Italic.ttf")),
+    (
+        Weight::SemiBold,
+        true,
+        include_bytes!("../fonts/Aptos-SemiBold-Italic.ttf"),
+    ),
     (Weight::Bold, true, include_bytes!("../fonts/Aptos-Bold-Italic.ttf")),
-    (Weight::ExtraBold, true, include_bytes!("../fonts/Aptos-ExtraBold-Italic.ttf")),
+    (
+        Weight::ExtraBold,
+        true,
+        include_bytes!("../fonts/Aptos-ExtraBold-Italic.ttf"),
+    ),
     (Weight::Black, true, include_bytes!("../fonts/Aptos-Black-Italic.ttf")),
 ];
 
@@ -38,7 +46,13 @@ fn main() {
                 for italic in [false, true] {
                     ui.flow_down(style().w(550).fill_height(), |ui| {
                         for weight in WEIGHTS {
-                            let mut s = style().weight(weight).font_size(28).fg(black()).align_left().w(550).h(96);
+                            let mut s = style()
+                                .weight(weight)
+                                .font_size(28)
+                                .fg(black())
+                                .align_left()
+                                .w(550)
+                                .h(96);
                             if italic {
                                 s = s.italic();
                             }

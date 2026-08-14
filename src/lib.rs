@@ -159,7 +159,13 @@ pub enum Command<'a> {
         alignment: Alignment,
     },
     Image {
-        image: &'a Image,
+        //TODO: Really the user should be caching the decompressed pixels.
+        //I shouldn't have my own psudo-garbage collection system for images.
+        id: u64,
+        width: usize,
+        height: usize,
+        opaque: bool,
+        pixels: &'a [u32],
         bounds: Rect,
         clip: Rect,
         fit: ImageFit,
@@ -937,7 +943,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
     }
 
-    #[cfg(feature = "image")]
     pub fn paint_image(&mut self, bounds: Rect, image: &'a Image, style: Style) {
         if bounds.is_empty() {
             return;
@@ -949,7 +954,35 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let fit = style.fit.unwrap_or_default();
         let radius = style.radius.unwrap_or(0);
         self.commands[depth].push(Command::Image {
-            image,
+            id: image.id,
+            width: image.width,
+            height: image.height,
+            opaque: image.opaque,
+            pixels: &image.pixels,
+            bounds,
+            clip,
+            fit,
+            opacity,
+            radius,
+        });
+    }
+
+    pub fn paint_image_bytes(&mut self, bounds: Rect, pixels: &'a [u32], width: usize, height: usize, style: Style) {
+        if bounds.is_empty() {
+            return;
+        }
+        let frame = self.current_frame();
+        let depth = style.depth.unwrap_or(frame.depth);
+        let clip = frame.clip;
+        let opacity = style.opacity.unwrap_or(255);
+        let fit = style.fit.unwrap_or_default();
+        let radius = style.radius.unwrap_or(0);
+        self.commands[depth].push(Command::Image {
+            id: 0,
+            width,
+            height,
+            opaque: false,
+            pixels,
             bounds,
             clip,
             fit,
@@ -1145,7 +1178,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         state
     }
 
-    #[cfg(feature = "image")]
     pub fn image(&mut self, image: &'a Image, style: Style) -> State {
         self.widget(
             image.width as i32,
@@ -1154,7 +1186,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             |ui, content, _, depth| {
                 let clip = ui.current_frame().clip;
                 ui.commands[depth].push(Command::Image {
-                    image,
+                    id: image.id,
+                    width: image.width,
+                    height: image.height,
+                    opaque: image.opaque,
+                    pixels: &image.pixels,
                     bounds: content,
                     clip,
                     fit: style.fit.unwrap_or_default(),
@@ -1163,6 +1199,24 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 });
             },
         )
+    }
+
+    pub fn image_bytes(&mut self, pixels: &'a [u32], width: usize, height: usize, style: Style) -> State {
+        self.widget(width as i32, height as i32, style, |ui, content, _, depth| {
+            let clip = ui.current_frame().clip;
+            ui.commands[depth].push(Command::Image {
+                id: 0,
+                width,
+                height,
+                opaque: false,
+                pixels,
+                bounds: content,
+                clip,
+                fit: style.fit.unwrap_or_default(),
+                opacity: style.opacity.unwrap_or(255),
+                radius: style.radius.unwrap_or(0),
+            });
+        })
     }
 
     /// `angle` follows CSS: 0 points up, 90 points right. Add up to [`MAX_GRADIENT_STOPS`] sorted

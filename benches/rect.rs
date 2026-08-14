@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neoui::*;
 
 fn bench_draw_rect_no_radius(c: &mut Criterion) {

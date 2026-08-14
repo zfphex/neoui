@@ -122,8 +122,6 @@ pub struct Style {
     pub bleed: bool,
 
     pub opacity: Option<u8>,
-
-    #[cfg(feature = "image")]
     pub fit: Option<ImageFit>,
 }
 
@@ -353,7 +351,6 @@ impl Style {
         self
     }
 
-    #[cfg(feature = "image")]
     pub fn image_fit(mut self, fit: ImageFit) -> Self {
         self.fit = Some(fit);
         self

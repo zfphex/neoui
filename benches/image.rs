@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use neoui::*;
 use rustc_hash::FxHashMap;
 
@@ -38,7 +38,11 @@ impl Bed {
 
     fn draw(&mut self, image: &Image, bounds: Rect, fit: ImageFit, opacity: u8, radius: usize) {
         let command = Command::Image {
-            image,
+            id: image.id,
+            width: image.width,
+            height: image.height,
+            opaque: image.opaque,
+            pixels: &image.pixels,
             bounds,
             clip: full(),
             fit,
@@ -101,8 +105,24 @@ fn bench_warm(c: &mut Criterion) {
         );
     });
 
-    bench_warm_case(&mut group, "blit_1to1_opacity", (512, 512), 512, ImageFit::Stretch, 128, 0);
-    bench_warm_case(&mut group, "blit_1to1_radius", (512, 512), 512, ImageFit::Stretch, 255, 16);
+    bench_warm_case(
+        &mut group,
+        "blit_1to1_opacity",
+        (512, 512),
+        512,
+        ImageFit::Stretch,
+        128,
+        0,
+    );
+    bench_warm_case(
+        &mut group,
+        "blit_1to1_radius",
+        (512, 512),
+        512,
+        ImageFit::Stretch,
+        255,
+        16,
+    );
     bench_warm_case(&mut group, "downscale_4x", (2048, 2048), 512, ImageFit::Stretch, 255, 0);
     bench_warm_case(&mut group, "upscale_4x", (128, 128), 512, ImageFit::Stretch, 255, 0);
 
@@ -135,7 +155,14 @@ fn bench_cold(c: &mut Criterion) {
 
     bench_cold_case(&mut group, "blit_1to1", (512, 512), 512, ImageFit::Stretch, 0);
     bench_cold_case(&mut group, "downscale_4x", (2048, 2048), 512, ImageFit::Stretch, 0);
-    bench_cold_case(&mut group, "downscale_4x_radius", (2048, 2048), 512, ImageFit::Stretch, 16);
+    bench_cold_case(
+        &mut group,
+        "downscale_4x_radius",
+        (2048, 2048),
+        512,
+        ImageFit::Stretch,
+        16,
+    );
     bench_cold_case(&mut group, "upscale_4x", (128, 128), 512, ImageFit::Stretch, 0);
     bench_cold_case(&mut group, "cover_crop", (2048, 1024), 512, ImageFit::Cover, 0);
 

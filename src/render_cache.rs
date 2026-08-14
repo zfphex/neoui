@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 
 pub const TILE_SIZE: usize = 64;
 //TODO: Test different percentages and the performance difference.
-const FULL_REDRAW_PERCENT: usize = 60; 
+const FULL_REDRAW_PERCENT: usize = 60;
 const MAX_DAMAGE_RECTS: usize = 128;
 const NO_DAMAGE: u16 = u16::MAX;
 pub const MAX_TILE_LOOKUP: usize = 8;
@@ -231,9 +231,9 @@ fn mix(h: u64, v: u64) -> u64 {
 pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_h: usize) -> Rect {
     if scale_factor == 1.0 {
         let b = match command {
-            Command::Rect { bounds, .. }
-            | Command::RectStroke { bounds, .. }
-            | Command::Gradient { bounds, .. } => *bounds,
+            Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } | Command::Gradient { bounds, .. } => {
+                *bounds
+            }
             Command::Triangle { a, b, c, .. } => Rect::from_xyxy(
                 a.0.min(b.0).min(c.0).saturating_sub(1),
                 a.1.min(b.1).min(c.1).saturating_sub(1),
@@ -250,7 +250,8 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
                 )
             }
             Command::Image {
-                image,
+                width,
+                height,
                 bounds,
                 fit,
                 radius,
@@ -259,7 +260,7 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
                 let fitted = if bounds.is_empty() {
                     *bounds
                 } else {
-                    place(image.width, image.height, *bounds, *fit).1
+                    place(*width, *height, *bounds, *fit).1
                 }
                 .intersection(*bounds);
                 if *radius == 0 {
@@ -278,9 +279,9 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
     }
 
     let b = match command {
-        Command::Rect { bounds, .. }
-        | Command::RectStroke { bounds, .. }
-        | Command::Gradient { bounds, .. } => bounds.scale(scale_factor),
+        Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } | Command::Gradient { bounds, .. } => {
+            bounds.scale(scale_factor)
+        }
         Command::Triangle { a, b, c, .. } => {
             let ax = scale_i32(a.0, scale_factor);
             let ay = scale_i32(a.1, scale_factor);
@@ -306,7 +307,8 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
             )
         }
         Command::Image {
-            image,
+            width,
+            height,
             bounds,
             fit,
             radius,
@@ -315,7 +317,7 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
             let fitted = if bounds.is_empty() {
                 *bounds
             } else {
-                place(image.width, image.height, *bounds, *fit).1
+                place(*width, *height, *bounds, *fit).1
             }
             .intersection(*bounds)
             .scale(scale_factor);

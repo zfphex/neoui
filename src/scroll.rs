@@ -19,7 +19,7 @@ pub enum Gesture {
 }
 
 //TODO: There are many hardcoded constants that the user may want to change.
-//Some of these are derived from browser implementations. 
+//Some of these are derived from browser implementations.
 //There should be reasonable defaults, but also configuable.
 
 /// Pixels per unit of wheel notch.
@@ -172,6 +172,7 @@ impl Scroll {
             }
 
             // A discrete wheel has no gesture to end, so it never stretches.
+            // Similar to chrome://flags/#smooth-scrolling which feels pretty bad imo...
             if event.phase == ScrollPhase::None {
                 let travelled = (self.wheel_elapsed / WHEEL_DURATION).min(1.0);
                 let span = self.wheel_target - self.wheel_start;

@@ -108,6 +108,8 @@ pub const MAX_GRADIENT_STOPS: usize = 5;
 
 pub const SCOPE_SEED: u64 = 0x9e3779b97f4a7c15;
 
+static DEBUG_DAMAGE_SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(SCOPE_SEED);
+
 #[derive(Debug, Clone, Copy)]
 pub struct Gradient {
     pub stops: [(f32, u32); MAX_GRADIENT_STOPS],
@@ -256,6 +258,9 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
             image_columns: Vec::new(),
+            debug_damage: false,
+            debug_damage_fade: 1.5,
+            debug_damage_cache: Vec::new(),
             font_metrics: FxHashMap::default(),
             text_measure_cache: FxHashMap::default(),
             default_font_size: 32,
@@ -307,6 +312,9 @@ pub struct UiState {
     pub font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     /// Scratch buffer of source columns reused by every image blit.
     pub image_columns: Vec<u32>,
+    pub debug_damage: bool,
+    pub debug_damage_fade: f32,
+    pub debug_damage_cache: Vec<(Rect, u32, std::time::Instant)>,
     pub font_metrics: FxHashMap<(usize, char, usize), fontdue::Metrics>,
     pub text_measure_cache: FxHashMap<(u64, usize, usize, Option<usize>), Rect>,
     pub default_font_size: usize,
@@ -1736,7 +1744,69 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             state.clear_color,
         );
 
-        if dirty {
+        if state.debug_damage {
+            let now = std::time::Instant::now();
+            state
+                .debug_damage_cache
+                .retain(|fade| (now - fade.2).as_secs_f32() < state.debug_damage_fade);
+            if dirty {
+                for rect in state.render_cache.damage() {
+                    let seed = DEBUG_DAMAGE_SEED.fetch_add(SCOPE_SEED, std::sync::atomic::Ordering::Relaxed);
+                    let hash = (seed ^ (seed >> 29)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+                    state.debug_damage_cache.push((*rect, (hash >> 32) as u32, now));
+                }
+            }
+
+            let repaint: Vec<Rect> = state
+                .debug_damage_cache
+                .iter()
+                .map(|fade| {
+                    fade.0
+                        .clamp_to_size(framebuffer_width as i32, framebuffer_height as i32)
+                })
+                .collect();
+
+            if !repaint.is_empty() {
+                let buffer = window.framebuffer();
+                clear_damage(buffer, framebuffer_width, &repaint, state.clear_color);
+                for prepared in state.render_cache.prepared() {
+                    let command = &self.commands[prepared.layer][prepared.index];
+                    for region in &repaint {
+                        if prepared.bounds.intersects(*region) {
+                            draw_command(
+                                command,
+                                *region,
+                                buffer,
+                                framebuffer_width,
+                                framebuffer_height,
+                                display_scale,
+                                &state.fonts,
+                                &state.fallbacks,
+                                &mut state.font_bitmaps,
+                                &mut state.image_columns,
+                            );
+                        }
+                    }
+                }
+                for ((_, tint, start), rect) in state.debug_damage_cache.iter().zip(&repaint) {
+                    let strength = 0.4 - (now - *start).as_secs_f32() / state.debug_damage_fade;
+                    let alpha = (strength.clamp(0.0, 0.4) * 255.0) as u32;
+                    if rect.is_empty() {
+                        continue;
+                    }
+                    for y in rect.y as usize..rect.bottom() as usize {
+                        let row = y * framebuffer_width;
+                        for pixel in &mut buffer[row + rect.x as usize..row + rect.right() as usize] {
+                            let mix = |shift: u32| {
+                                (((*pixel >> shift) & 0xFF) * (255 - alpha) + ((tint >> shift) & 0xFF) * alpha) / 255
+                            };
+                            *pixel = mix(16) << 16 | mix(8) << 8 | mix(0);
+                        }
+                    }
+                }
+                window.present_damage(&repaint);
+            }
+        } else if dirty {
             let buffer = window.framebuffer();
             clear_damage(
                 buffer,

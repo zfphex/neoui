@@ -74,7 +74,6 @@ struct ScrollBench {
     buffer: Vec<u32>,
     fonts: Vec<fontdue::Font>,
     bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
-    image_cache: ImageCache,
     frames: [[Vec<Command<'static>>; 16]; 2],
     step: usize,
     last_damage_rects: usize,
@@ -92,7 +91,6 @@ impl ScrollBench {
             buffer: vec![0u32; FB_W * FB_H],
             fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
             bitmaps: FxHashMap::default(),
-            image_cache: ImageCache::new(),
             frames,
             step: 0,
             last_damage_rects: 0,
@@ -125,7 +123,6 @@ impl ScrollBench {
                 &self.fonts,
                 &[],
                 &mut self.bitmaps,
-                &mut self.image_cache,
             );
         }
         self.cache.finish();
@@ -176,12 +173,11 @@ fn bench_scroll(c: &mut Criterion) {
                 let buffer = vec![0u32; FB_W * FB_H];
                 let fonts = vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()];
                 let bitmaps = FxHashMap::default();
-                let image_cache = ImageCache::new();
                 cache.update(&sequence[0], 1.0, FB_W, FB_H, black());
                 cache.finish();
-                (cache, buffer, fonts, bitmaps, image_cache, 0usize)
+                (cache, buffer, fonts, bitmaps, 0usize)
             },
-            |(cache, buffer, fonts, bitmaps, image_cache, idx)| {
+            |(cache, buffer, fonts, bitmaps, idx)| {
                 *idx = (*idx + 1) % sequence.len();
                 let commands = &sequence[*idx];
                 if cache.update(commands, 1.0, FB_W, FB_H, black()) {
@@ -196,7 +192,6 @@ fn bench_scroll(c: &mut Criterion) {
                         fonts,
                         &[],
                         bitmaps,
-                        image_cache,
                     );
                 }
                 cache.finish();

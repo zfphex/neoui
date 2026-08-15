@@ -264,7 +264,6 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             font_bitmaps: FxHashMap::default(),
             font_metrics: FxHashMap::default(),
             text_measure_cache: FxHashMap::default(),
-            image_cache: ImageCache::new(),
             default_font_size: 32,
             clear_color: black(),
             scroll_y: 0.0,
@@ -314,7 +313,6 @@ pub struct UiState {
     pub font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     pub font_metrics: FxHashMap<(usize, char, usize), fontdue::Metrics>,
     pub text_measure_cache: FxHashMap<(u64, usize, usize, Option<usize>), Rect>,
-    pub image_cache: ImageCache,
     pub default_font_size: usize,
     pub vsync: bool,
     pub clear_color: u32,
@@ -1815,13 +1813,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 &state.fonts,
                 &state.fallbacks,
                 &mut state.font_bitmaps,
-                &mut state.image_cache,
             );
             window.present_damage(state.render_cache.damage());
         }
 
         state.render_cache.finish();
-        state.image_cache.tick();
     }
 
     pub fn with_id<R>(&mut self, id: impl Hash, ui: impl FnOnce(&mut Self) -> R) -> R {

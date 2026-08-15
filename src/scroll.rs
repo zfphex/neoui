@@ -18,8 +18,12 @@ pub enum Gesture {
     Bouncing,
 }
 
+//TODO: There are many hardcoded constants that the user may want to change.
+//Some of these are derived from browser implementations. 
+//There should be reasonable defaults, but also configuable.
+
 /// Pixels per unit of wheel notch.
-pub const WHEEL_STEP: f32 = 100.0;
+// pub const WHEEL_STEP: f32 = 100.0;
 pub const RUBBER_BAND_STIFFNESS: f32 = 20.0;
 pub const RELEASE_AMPLITUDE: f32 = 0.31;
 pub const RELEASE_PERIOD: f32 = 1.6;
@@ -34,7 +38,7 @@ pub const AUTOSCROLL_DEAD_ZONE: f32 = 15.0;
 pub const AUTOSCROLL_EXPONENT: f32 = 1.5;
 pub const AUTOSCROLL_SPEED: f32 = 1.44;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct Scroll {
     /// Position within the content, always inside `0..=max_scroll`.
     pub offset: f32,
@@ -58,13 +62,29 @@ pub struct Scroll {
     pub last_timestamp: Option<f64>,
     /// Where the middle button went down, while it is still held.
     pub anchor: Option<i32>,
+    pub wheel_step: f32,
 }
 
 impl Scroll {
-    pub fn new() -> Self {
-        let mut scroll = Self::default();
-        scroll.wheel_elapsed = f32::MAX;
-        scroll
+    pub const fn new() -> Self {
+        Self {
+            wheel_elapsed: f32::MAX,
+            offset: 0.0,
+            stretch: 0.0,
+            velocity: 0.0,
+            gesture: Gesture::Idle,
+            accumulated: 0.0,
+            pending: 0.0,
+            elapsed: 0.0,
+            initial_stretch: 0.0,
+            initial_velocity: 0.0,
+            wheel_target: 0.0,
+            wheel_start: 0.0,
+            wheel_slope: 0.0,
+            last_timestamp: None,
+            anchor: None,
+            wheel_step: 100.0,
+        }
     }
 
     pub fn jump(&mut self, offset: f32) {
@@ -121,7 +141,7 @@ impl Scroll {
 
             let mut delta = -event.delta.1 as f32;
             if !event.precise {
-                delta *= WHEEL_STEP;
+                delta *= self.wheel_step;
             }
 
             if !event.phase.ended() {

@@ -1667,7 +1667,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         // straight through is already smooth. Only a wheel's notches need scaling up.
         if hovered {
             for event in &self.scroll_events {
-                scroll.offset -= event.delta.1 as f32 * if event.precise { 1.0 } else { WHEEL_STEP };
+                scroll.offset -= event.delta.1 as f32 * if event.precise { 1.0 } else { scroll.wheel_step };
             }
         }
         scroll.offset = scroll.offset.clamp(0.0, max_scroll as f32);

@@ -249,31 +249,7 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
                     bounds.height.saturating_add(pad * 2),
                 )
             }
-            Command::Image {
-                width,
-                height,
-                bounds,
-                fit,
-                radius,
-                ..
-            } => {
-                let fitted = if bounds.is_empty() {
-                    *bounds
-                } else {
-                    place(*width, *height, *bounds, *fit).1
-                }
-                .intersection(*bounds);
-                if *radius == 0 {
-                    fitted
-                } else {
-                    Rect::new(
-                        fitted.x.saturating_sub(1),
-                        fitted.y.saturating_sub(1),
-                        fitted.width.saturating_add(2),
-                        fitted.height.saturating_add(2),
-                    )
-                }
-            }
+            Command::Image { bounds, .. } => *bounds,
         };
         return b.intersection(command.clip()).clamp_to_size(fb_w as i32, fb_h as i32);
     }
@@ -306,32 +282,7 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
                 b.height.saturating_add(pad * 2),
             )
         }
-        Command::Image {
-            width,
-            height,
-            bounds,
-            fit,
-            radius,
-            ..
-        } => {
-            let fitted = if bounds.is_empty() {
-                *bounds
-            } else {
-                place(*width, *height, *bounds, *fit).1
-            }
-            .intersection(*bounds)
-            .scale(scale_factor);
-            if *radius == 0 {
-                fitted
-            } else {
-                Rect::new(
-                    fitted.x.saturating_sub(1),
-                    fitted.y.saturating_sub(1),
-                    fitted.width.saturating_add(2),
-                    fitted.height.saturating_add(2),
-                )
-            }
-        }
+        Command::Image { bounds, .. } => bounds.scale(scale_factor),
     };
     b.intersection(command.clip().scale(scale_factor))
         .clamp_to_size(fb_w as i32, fb_h as i32)

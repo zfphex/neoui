@@ -1252,6 +1252,7 @@ pub fn draw_command(
     fonts: &[fontdue::Font],
     fallbacks: &[usize],
     font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
+    columns: &mut Vec<u32>,
 ) {
     let clip = command.clip().scale(display_scale).intersection(damage);
     if clip.is_empty() {
@@ -1353,32 +1354,28 @@ pub fn draw_command(
         ),
         Command::Gradient { .. } => {}
         Command::Image {
-            id,
-            width,
-            height,
-            opaque,
-            pixels,
+            image,
             bounds,
             clip: _,
-            fit,
             opacity,
             radius,
-        } => draw_image(
-            buffer,
-            framebuffer_width,
-            framebuffer_height,
-            *id,
-            *width,
-            *height,
-            *opaque,
-            pixels,
-            *bounds,
-            clip,
-            *fit,
-            *opacity,
-            *radius,
-            display_scale,
-        ),
+        } => {
+            let bounds = bounds.scale(display_scale);
+            draw_image(
+                buffer,
+                framebuffer_width,
+                framebuffer_height,
+                *image,
+                bounds.x,
+                bounds.y,
+                bounds.width as usize,
+                bounds.height as usize,
+                clip,
+                *opacity,
+                scale(*radius, display_scale),
+                columns,
+            )
+        }
     }
 }
 
@@ -1392,6 +1389,7 @@ pub fn raster_damage(
     fonts: &[fontdue::Font],
     fallbacks: &[usize],
     font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
+    columns: &mut Vec<u32>,
 ) {
     let damage = cache.damage();
 
@@ -1410,6 +1408,7 @@ pub fn raster_damage(
                         fonts,
                         fallbacks,
                         font_bitmaps,
+                        columns,
                     );
                 }
             }
@@ -1433,6 +1432,7 @@ pub fn raster_damage(
                         fonts,
                         fallbacks,
                         font_bitmaps,
+                        columns,
                     );
                 }
             }
@@ -1449,6 +1449,7 @@ pub fn raster_damage(
                             fonts,
                             fallbacks,
                             font_bitmaps,
+                            columns,
                         );
                     }
                 }

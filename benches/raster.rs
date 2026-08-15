@@ -27,6 +27,7 @@ struct Scene {
     buffer: Vec<u32>,
     fonts: Vec<fontdue::Font>,
     font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
+    columns: Vec<u32>,
 }
 
 fn scene(static_count: usize, spots: usize) -> Scene {
@@ -60,6 +61,7 @@ fn scene(static_count: usize, spots: usize) -> Scene {
         buffer: vec![0; (WIDTH * HEIGHT) as usize],
         fonts: Vec::new(),
         font_bitmaps: FxHashMap::default(),
+        columns: Vec::new(),
     }
 }
 
@@ -78,6 +80,7 @@ fn old_path(s: &mut Scene) {
                     &s.fonts,
                     &[],
                     &mut s.font_bitmaps,
+                    &mut s.columns,
                 );
             }
         }
@@ -95,6 +98,7 @@ fn new_path(s: &mut Scene) {
         &s.fonts,
         &[],
         &mut s.font_bitmaps,
+        &mut s.columns,
     );
 }
 

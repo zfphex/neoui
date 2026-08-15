@@ -74,6 +74,7 @@ struct ScrollBench {
     buffer: Vec<u32>,
     fonts: Vec<fontdue::Font>,
     bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
+    columns: Vec<u32>,
     frames: [[Vec<Command<'static>>; 16]; 2],
     step: usize,
     last_damage_rects: usize,
@@ -91,6 +92,7 @@ impl ScrollBench {
             buffer: vec![0u32; FB_W * FB_H],
             fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
             bitmaps: FxHashMap::default(),
+            columns: Vec::new(),
             frames,
             step: 0,
             last_damage_rects: 0,
@@ -123,6 +125,7 @@ impl ScrollBench {
                 &self.fonts,
                 &[],
                 &mut self.bitmaps,
+                &mut self.columns,
             );
         }
         self.cache.finish();
@@ -173,26 +176,17 @@ fn bench_scroll(c: &mut Criterion) {
                 let buffer = vec![0u32; FB_W * FB_H];
                 let fonts = vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()];
                 let bitmaps = FxHashMap::default();
+                let columns = Vec::new();
                 cache.update(&sequence[0], 1.0, FB_W, FB_H, black());
                 cache.finish();
-                (cache, buffer, fonts, bitmaps, 0usize)
+                (cache, buffer, fonts, bitmaps, columns, 0usize)
             },
-            |(cache, buffer, fonts, bitmaps, idx)| {
+            |(cache, buffer, fonts, bitmaps, columns, idx)| {
                 *idx = (*idx + 1) % sequence.len();
                 let commands = &sequence[*idx];
                 if cache.update(commands, 1.0, FB_W, FB_H, black()) {
                     clear_damage(buffer, FB_W, cache.damage(), black());
-                    raster_damage(
-                        commands,
-                        cache,
-                        buffer,
-                        FB_W,
-                        FB_H,
-                        1.0,
-                        fonts,
-                        &[],
-                        bitmaps,
-                    );
+                    raster_damage(commands, cache, buffer, FB_W, FB_H, 1.0, fonts, &[], bitmaps, columns);
                 }
                 cache.finish();
                 black_box(*idx);

@@ -159,16 +159,9 @@ pub enum Command<'a> {
         alignment: Alignment,
     },
     Image {
-        //TODO: Really the user should be caching the decompressed pixels.
-        //I shouldn't have my own psudo-garbage collection system for images.
-        id: u64,
-        width: usize,
-        height: usize,
-        opaque: bool,
-        pixels: &'a [u32],
+        image: Image<'a>,
         bounds: Rect,
         clip: Rect,
-        fit: ImageFit,
         opacity: u8,
         radius: usize,
     },
@@ -262,6 +255,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             families: vec![family(0)],
             layout_stack: Vec::new(),
             font_bitmaps: FxHashMap::default(),
+            image_columns: Vec::new(),
             font_metrics: FxHashMap::default(),
             text_measure_cache: FxHashMap::default(),
             default_font_size: 32,
@@ -311,6 +305,8 @@ pub struct UiState {
     /// Maps a (family, italic, weight) request onto the font ID holding that face.
     pub families: Vec<[[Option<usize>; 9]; 2]>,
     pub font_bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
+    /// Scratch buffer of source columns reused by every image blit.
+    pub image_columns: Vec<u32>,
     pub font_metrics: FxHashMap<(usize, char, usize), fontdue::Metrics>,
     pub text_measure_cache: FxHashMap<(u64, usize, usize, Option<usize>), Rect>,
     pub default_font_size: usize,
@@ -941,54 +937,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
     }
 
-    pub fn paint_image(&mut self, bounds: Rect, image: &'a Image, style: Style) {
-        if bounds.is_empty() {
-            return;
-        }
-        let frame = self.current_frame();
-        let depth = style.depth.unwrap_or(frame.depth);
-        let clip = frame.clip;
-        let opacity = style.opacity.unwrap_or(255);
-        let fit = style.fit.unwrap_or_default();
-        let radius = style.radius.unwrap_or(0);
-        self.commands[depth].push(Command::Image {
-            id: image.id,
-            width: image.width,
-            height: image.height,
-            opaque: image.opaque,
-            pixels: &image.pixels,
-            bounds,
-            clip,
-            fit,
-            opacity,
-            radius,
-        });
-    }
-
-    pub fn paint_image_bytes(&mut self, bounds: Rect, pixels: &'a [u32], width: usize, height: usize, style: Style) {
-        if bounds.is_empty() {
-            return;
-        }
-        let frame = self.current_frame();
-        let depth = style.depth.unwrap_or(frame.depth);
-        let clip = frame.clip;
-        let opacity = style.opacity.unwrap_or(255);
-        let fit = style.fit.unwrap_or_default();
-        let radius = style.radius.unwrap_or(0);
-        self.commands[depth].push(Command::Image {
-            id: 0,
-            width,
-            height,
-            opaque: false,
-            pixels,
-            bounds,
-            clip,
-            fit,
-            opacity,
-            radius,
-        });
-    }
-
     pub fn paint_text_measured(
         &mut self,
         text: impl Into<Cow<'a, str>>,
@@ -1176,7 +1124,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         state
     }
 
-    pub fn image(&mut self, image: &'a Image, style: Style) -> State {
+    pub fn image(&mut self, image: Image<'a>, style: Style) -> State {
         self.widget(
             image.width as i32,
             image.height as i32,
@@ -1184,14 +1132,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             |ui, content, _, depth| {
                 let clip = ui.current_frame().clip;
                 ui.commands[depth].push(Command::Image {
-                    id: image.id,
-                    width: image.width,
-                    height: image.height,
-                    opaque: image.opaque,
-                    pixels: &image.pixels,
+                    image,
                     bounds: content,
                     clip,
-                    fit: style.fit.unwrap_or_default(),
                     opacity: style.opacity.unwrap_or(255),
                     radius: style.radius.unwrap_or(0),
                 });
@@ -1199,22 +1142,20 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         )
     }
 
-    pub fn image_bytes(&mut self, pixels: &'a [u32], width: usize, height: usize, style: Style) -> State {
-        self.widget(width as i32, height as i32, style, |ui, content, _, depth| {
-            let clip = ui.current_frame().clip;
-            ui.commands[depth].push(Command::Image {
-                id: 0,
-                width,
-                height,
-                opaque: false,
-                pixels,
-                bounds: content,
-                clip,
-                fit: style.fit.unwrap_or_default(),
-                opacity: style.opacity.unwrap_or(255),
-                radius: style.radius.unwrap_or(0),
-            });
-        })
+    pub fn paint_image(&mut self, bounds: Rect, image: Image<'a>, style: Style) {
+        if bounds.is_empty() {
+            return;
+        }
+        let frame = self.current_frame();
+        let depth = style.depth.unwrap_or(frame.depth);
+        let clip = frame.clip;
+        self.commands[depth].push(Command::Image {
+            image,
+            bounds,
+            clip,
+            opacity: style.opacity.unwrap_or(255),
+            radius: style.radius.unwrap_or(0),
+        });
     }
 
     /// `angle` follows CSS: 0 points up, 90 points right. Add up to [`MAX_GRADIENT_STOPS`] sorted
@@ -1813,6 +1754,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 &state.fonts,
                 &state.fallbacks,
                 &mut state.font_bitmaps,
+                &mut state.image_columns,
             );
             window.present_damage(state.render_cache.damage());
         }

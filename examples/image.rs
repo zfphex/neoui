@@ -1,22 +1,20 @@
 use neoui::*;
 
 fn main() {
-    let wide = Image::open("target/img/wide.jpg").unwrap();
-    let tall = Image::open("target/img/tall.jpg").unwrap();
-    let small = Image::open("target/img/small.jpg").unwrap();
-    let logo = Image::open("target/img/logo.png").unwrap();
-    let thumb = wide.thumbnail(96);
+    let (wide_pixels, ww, wh) = decode(&std::fs::read("target/img/photo.jpg").unwrap()).unwrap();
+    let wide = Image::new(ww, wh, &wide_pixels);
 
-    let fits = [
-        ("Stretch", ImageFit::Stretch),
-        ("Contain", ImageFit::Contain),
-        ("Cover", ImageFit::Cover),
-        ("Fixed", ImageFit::Fixed),
-    ];
+    let (tall_pixels, tw, th) = decode(&std::fs::read("target/img/gradient.png").unwrap()).unwrap();
+    let tall = Image::new(tw, th, &tall_pixels);
+
+    let (logo_pixels, lw, lh) = decode(&std::fs::read("target/img/rings.png").unwrap()).unwrap();
+    let logo = Image::new(lw, lh, &logo_pixels);
+
     let radii = [0, 12, 32, 75];
     let opacities = [48u8, 112, 176, 255];
+    let sizes = [48, 96, 150, 220];
 
-    let mut app = ui("Image", 714, 940);
+    let mut app = ui("Image", 800, 800);
 
     while app.window.open() {
         app.frame(|ui| {
@@ -29,22 +27,10 @@ fn main() {
             let heading = style().font_size(17).padt(16).padb(8);
 
             ui.flow_down(style().pad(20), |ui| {
-                ui.text("ImageFit", heading);
-                ui.flow_right(style().height(150), |ui| {
-                    for (_, fit) in fits {
-                        ui.image(&wide, cell.image_fit(fit).bg(rgb(26, 26, 30)));
-                    }
-                });
-                ui.flow_right(style().height(20), |ui| {
-                    for (name, _) in fits {
-                        ui.text(name, caption);
-                    }
-                });
-
                 ui.text("radius", heading);
                 ui.flow_right(style().height(150), |ui| {
                     for radius in radii {
-                        ui.image(&wide, cell.image_fit(ImageFit::Cover).radius(radius));
+                        ui.image(wide, cell.radius(radius));
                     }
                 });
                 ui.flow_right(style().height(20), |ui| {
@@ -56,13 +42,7 @@ fn main() {
                 ui.text("opacity over background", heading);
                 ui.flow_right(style().height(150), |ui| {
                     for opacity in opacities {
-                        ui.image(
-                            &tall,
-                            cell.image_fit(ImageFit::Cover)
-                                .radius(8)
-                                .opacity(opacity)
-                                .bg(rgb(190, 80, 30)),
-                        );
+                        ui.image(tall, cell.radius(8).opacity(opacity).bg(rgb(190, 80, 30)));
                     }
                 });
                 ui.flow_right(style().height(20), |ui| {
@@ -71,17 +51,15 @@ fn main() {
                     }
                 });
 
-                ui.text("alpha, thumbnail, upscale", heading);
-                ui.flow_right(style().height(150), |ui| {
-                    let panel = cell.bg(rgb(40, 70, 110));
-                    ui.image(&logo, panel.image_fit(ImageFit::Contain));
-                    ui.image(&thumb, panel.image_fit(ImageFit::Fixed));
-                    ui.image(&small, panel.image_fit(ImageFit::Cover));
-                    ui.image(&small, panel.image_fit(ImageFit::Fixed));
+                ui.text("scaling, alpha", heading);
+                ui.flow_right(style().height(220), |ui| {
+                    for size in sizes {
+                        ui.image(logo, style().width(size).height(size).gap(22).bg(rgb(40, 70, 110)));
+                    }
                 });
                 ui.flow_right(style().height(20), |ui| {
-                    for name in ["logo.png alpha", "thumbnail(96)", "48px upscaled", "48px at 1:1"] {
-                        ui.text(name, caption);
+                    for size in sizes {
+                        ui.text(format!("{size}px"), caption);
                     }
                 });
             });

@@ -122,7 +122,6 @@ pub struct Style {
     pub bleed: bool,
 
     pub opacity: Option<u8>,
-    pub fit: Option<ImageFit>,
 }
 
 impl Style {
@@ -348,11 +347,6 @@ impl Style {
 
     pub fn italic(mut self) -> Style {
         self.font.italic = true;
-        self
-    }
-
-    pub fn image_fit(mut self, fit: ImageFit) -> Self {
-        self.fit = Some(fit);
         self
     }
 

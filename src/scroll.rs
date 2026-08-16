@@ -83,7 +83,7 @@ impl Scroll {
             wheel_slope: 0.0,
             last_timestamp: None,
             anchor: None,
-            wheel_step: 100.0,
+            wheel_step: 150.0,
         }
     }
 

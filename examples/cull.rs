@@ -71,12 +71,13 @@ fn main() {
                             ui.gap(16);
 
                             ui.flow_down(body, |ui| {
-                                let title = ui.fmt(format_args!("Album {index}"));
-                                ui.text(title, style().fg(white()).font_size(18).padb(6).fill_width());
+                                ui.text(
+                                    ui.fmt(format_args!("Album {index}")),
+                                    style().fg(white()).font_size(18).padb(6).fill_width(),
+                                );
                                 for track in 0..tracks(index) {
-                                    let label = ui.fmt(format_args!("{}.  Track title {index}-{track}", track + 1));
                                     let row = ui.item(
-                                        label,
+                                        ui.fmt(format_args!("{}.  Track title {index}-{track}", track + 1)),
                                         style()
                                             .fg(dim)
                                             .padlr(6)
@@ -104,13 +105,14 @@ fn main() {
                 );
                 ui.rect(style().fill_width().height(1).bg(line));
                 ui.place_right(style().padl(16).padt(8).fill_width().height(28), |ui| {
-                    let stats = ui.fmt(format_args!(
-                        "cull {} · built {built}/{CARDS} in {build_ms:.2}ms · max_scroll {max_scroll} · frame {frame_ms:.2}ms",
-                        if cull { "on" } else { "off" }
-                    ));
-                    ui.text(stats, style().fg(white()).padr(24));
-                    let last = ui.fmt(format_args!("last click: {clicked}"));
-                    ui.text(last, style().fg(accent));
+                    ui.text(
+                        ui.fmt(format_args!(
+                            "cull {} · built {built}/{CARDS} in {build_ms:.2}ms · max_scroll {max_scroll} · frame {frame_ms:.2}ms",
+                            if cull { "on" } else { "off" }
+                        )),
+                        style().fg(white()).padr(24),
+                    );
+                    ui.text(ui.fmt(format_args!("last click: {clicked}")), style().fg(accent));
                 });
             });
         });

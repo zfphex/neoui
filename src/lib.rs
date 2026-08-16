@@ -19,6 +19,7 @@ pub use minwin::*;
 
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
+use std::cell::{Cell, UnsafeCell};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 
@@ -278,8 +279,8 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             hovered_depth: None,
             render_cache: RenderCache::default(),
             vsync: true,
-            string_pool: Vec::with_capacity(128),
-            string_index: 0,
+            string_pool: UnsafeCell::new(Vec::with_capacity(128)),
+            string_index: Cell::new(0),
         },
     }
 }
@@ -335,8 +336,8 @@ pub struct UiState {
     pub hovered_depth: Option<usize>,
     pub layout_stack: Vec<Frame>,
     pub render_cache: RenderCache,
-    pub string_pool: Vec<String>,
-    pub string_index: usize,
+    pub string_pool: UnsafeCell<Vec<Box<String>>>,
+    pub string_index: Cell<usize>,
 }
 
 impl UiState {
@@ -380,23 +381,20 @@ pub struct FrameContext<'frame, 'a> {
 }
 
 impl<'frame, 'a> FrameContext<'frame, 'a> {
-    #[inline]
-    //TODO: This can be improved a lot, just a quick draft.
-    //Probably want to use bump alloc chunks (bumpalo).
-    pub fn fmt(&mut self, format_args: std::fmt::Arguments<'_>) -> &'a str {
+    pub fn fmt(&self, format_args: std::fmt::Arguments<'_>) -> &'a str {
         use std::fmt::Write;
-        let idx = self.state.string_index;
-        self.state.string_index += 1;
-        if idx >= self.state.string_pool.len() {
-            self.state.string_pool.push(String::with_capacity(64));
-        }
-        let buf = &mut self.state.string_pool[idx];
-        buf.clear();
-        let _ = buf.write_fmt(format_args);
-        unsafe {
-            let slice: &str = buf.as_str();
-            std::mem::transmute::<&str, &'a str>(slice)
-        }
+        let index = self.state.string_index.get();
+        self.state.string_index.set(index + 1);
+        let buffer = unsafe {
+            let pool = &mut *self.state.string_pool.get();
+            if index >= pool.len() {
+                pool.push(Box::new(String::with_capacity(64)));
+            }
+            &mut *(&raw mut *pool[index])
+        };
+        buffer.clear();
+        let _ = buffer.write_fmt(format_args);
+        unsafe { std::mem::transmute::<&str, &'a str>(buffer.as_str()) }
     }
 }
 
@@ -452,7 +450,7 @@ impl Context {
         let state = &mut self.state;
 
         self.window.draw(|window| {
-            state.string_index = 0;
+            state.string_index.set(0);
             let mut frame = FrameContext {
                 window,
                 state,

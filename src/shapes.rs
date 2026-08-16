@@ -1253,6 +1253,7 @@ pub fn draw_command(
     fallbacks: &[usize],
     font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     columns: &mut Vec<u32>,
+    strings: &[String],
 ) {
     let clip = command.clip().scale(display_scale).intersection(damage);
     if clip.is_empty() {
@@ -1303,7 +1304,7 @@ pub fn draw_command(
             clip: _,
         } => {
             draw_text(
-                text,
+                text.as_str(strings),
                 fonts,
                 *font_id,
                 fallbacks,
@@ -1390,6 +1391,7 @@ pub fn raster_damage(
     fallbacks: &[usize],
     font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     columns: &mut Vec<u32>,
+    strings: &[String],
 ) {
     let damage = cache.damage();
 
@@ -1409,6 +1411,7 @@ pub fn raster_damage(
                         fallbacks,
                         font_bitmaps,
                         columns,
+                        strings,
                     );
                 }
             }
@@ -1433,6 +1436,7 @@ pub fn raster_damage(
                         fallbacks,
                         font_bitmaps,
                         columns,
+                        strings,
                     );
                 }
             }
@@ -1450,6 +1454,7 @@ pub fn raster_damage(
                             fallbacks,
                             font_bitmaps,
                             columns,
+                            strings,
                         );
                     }
                 }

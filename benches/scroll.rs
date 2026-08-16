@@ -45,7 +45,7 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
             radius: 0,
         });
         cmds.push(Command::Text {
-            text: std::borrow::Cow::Owned(format!("{row:03}. Song title example row for scroll bench")),
+            text: Text::String(format!("{row:03}. Song title example row for scroll bench")),
             font_id: 0,
             clip,
             bounds: Rect::new(bounds.x + 8, bounds.y, bounds.width - 16, bounds.height),
@@ -126,6 +126,7 @@ impl ScrollBench {
                 &[],
                 &mut self.bitmaps,
                 &mut self.columns,
+                &[],
             );
         }
         self.cache.finish();
@@ -186,7 +187,7 @@ fn bench_scroll(c: &mut Criterion) {
                 let commands = &sequence[*idx];
                 if cache.update(commands, 1.0, FB_W, FB_H, black()) {
                     clear_damage(buffer, FB_W, cache.damage(), black());
-                    raster_damage(commands, cache, buffer, FB_W, FB_H, 1.0, fonts, &[], bitmaps, columns);
+                    raster_damage(commands, cache, buffer, FB_W, FB_H, 1.0, fonts, &[], bitmaps, columns, &[]);
                 }
                 cache.finish();
                 black_box(*idx);

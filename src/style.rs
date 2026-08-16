@@ -571,7 +571,7 @@ impl IntoSize for usize {
     }
 }
 
-pub fn text<'a>(content: impl Into<Text<'a>>, style: Style) -> Line<'a> {
+pub fn text<'a>(content: impl Into<Cow<'a, str>>, style: Style) -> Line<'a> {
     Line {
         content: content.into(),
         style,
@@ -580,33 +580,33 @@ pub fn text<'a>(content: impl Into<Text<'a>>, style: Style) -> Line<'a> {
 
 #[derive(Clone, Debug)]
 pub struct Line<'a> {
-    pub content: Text<'a>,
+    pub content: Cow<'a, str>,
     pub style: Style,
 }
 
-impl<'a> From<Text<'a>> for Line<'a> {
-    fn from(content: Text<'a>) -> Self {
+impl<'a> From<&'a str> for Line<'a> {
+    fn from(content: &'a str) -> Self {
         Line {
-            content,
+            content: Cow::Borrowed(content),
             style: Style::default(),
         }
     }
 }
 
-impl<'a> From<&'a str> for Line<'a> {
-    fn from(content: &'a str) -> Self {
-        Line::from(Text::Str(content))
-    }
-}
-
-impl From<String> for Line<'_> {
+impl From<String> for Line<'static> {
     fn from(content: String) -> Self {
-        Line::from(Text::String(content))
+        Line {
+            content: Cow::Owned(content),
+            style: Style::default(),
+        }
     }
 }
 
 impl<'a> From<Cow<'a, str>> for Line<'a> {
     fn from(content: Cow<'a, str>) -> Self {
-        Line::from(Text::from(content))
+        Line {
+            content,
+            style: Style::default(),
+        }
     }
 }

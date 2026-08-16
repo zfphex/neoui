@@ -81,7 +81,6 @@ fn old_path(s: &mut Scene) {
                     &[],
                     &mut s.font_bitmaps,
                     &mut s.columns,
-                    &[],
                 );
             }
         }
@@ -100,7 +99,6 @@ fn new_path(s: &mut Scene) {
         &[],
         &mut s.font_bitmaps,
         &mut s.columns,
-        &[],
     );
 }
 

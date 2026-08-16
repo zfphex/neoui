@@ -19,7 +19,7 @@ pub use minwin::*;
 
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
-use std::cell::Cell;
+use std::cell::{Cell, UnsafeCell};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 
@@ -128,68 +128,6 @@ impl Hash for Gradient {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Text<'a> {
-    Str(&'a str),
-    String(String),
-    Pooled { index: u32, len: u32, hash: u64 },
-}
-
-impl<'a> Text<'a> {
-    pub fn as_str<'s>(&'s self, pool: &'s [String]) -> &'s str {
-        match self {
-            Text::Str(text) => text,
-            Text::String(text) => text,
-            Text::Pooled { index, .. } => &pool[*index as usize],
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Text::Str(text) => text.is_empty(),
-            Text::String(text) => text.is_empty(),
-            Text::Pooled { len, .. } => *len == 0,
-        }
-    }
-}
-
-impl Hash for Text<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Text::Str(text) => text.hash(state),
-            Text::String(text) => text.hash(state),
-            Text::Pooled { hash, .. } => state.write_u64(*hash),
-        }
-    }
-}
-
-impl<'a> From<&'a str> for Text<'a> {
-    fn from(text: &'a str) -> Self {
-        Text::Str(text)
-    }
-}
-
-impl From<String> for Text<'_> {
-    fn from(text: String) -> Self {
-        Text::String(text)
-    }
-}
-
-impl<'a> From<&'a String> for Text<'a> {
-    fn from(text: &'a String) -> Self {
-        Text::Str(text.as_str())
-    }
-}
-
-impl<'a> From<Cow<'a, str>> for Text<'a> {
-    fn from(text: Cow<'a, str>) -> Self {
-        match text {
-            Cow::Borrowed(text) => Text::Str(text),
-            Cow::Owned(text) => Text::String(text),
-        }
-    }
-}
-
 #[derive(Debug, std::hash::Hash)]
 pub enum Command<'a> {
     Rect {
@@ -214,7 +152,7 @@ pub enum Command<'a> {
         color: u32,
     },
     Text {
-        text: Text<'a>,
+        text: Cow<'a, str>,
         font_id: usize,
         clip: Rect,
         bounds: Rect,
@@ -314,8 +252,6 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
 
     Context {
         window,
-        string_pool: Cell::new(Vec::with_capacity(128)),
-        string_index: Cell::new(0),
         state: UiState {
             fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
             fallbacks: Vec::new(),
@@ -343,14 +279,14 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             hovered_depth: None,
             render_cache: RenderCache::default(),
             vsync: true,
+            string_pool: UnsafeCell::new(Vec::with_capacity(128)),
+            string_index: Cell::new(0),
         },
     }
 }
 
 pub struct Context {
     pub window: std::pin::Pin<Box<Window>>,
-    pub string_pool: Cell<Vec<String>>,
-    pub string_index: Cell<usize>,
     state: UiState,
 }
 
@@ -400,6 +336,8 @@ pub struct UiState {
     pub hovered_depth: Option<usize>,
     pub layout_stack: Vec<Frame>,
     pub render_cache: RenderCache,
+    pub string_pool: UnsafeCell<Vec<Box<String>>>,
+    pub string_index: Cell<usize>,
 }
 
 impl UiState {
@@ -439,32 +377,24 @@ impl UiState {
 pub struct FrameContext<'frame, 'a> {
     pub window: &'frame mut Window,
     pub commands: [Vec<Command<'a>>; 16],
-    pub string_pool: &'frame Cell<Vec<String>>,
-    pub string_index: &'frame Cell<usize>,
     state: &'frame mut UiState,
 }
 
 impl<'frame, 'a> FrameContext<'frame, 'a> {
-    pub fn fmt(&self, format_args: std::fmt::Arguments<'_>) -> Text<'a> {
+    pub fn fmt(&self, format_args: std::fmt::Arguments<'_>) -> &'a str {
         use std::fmt::Write;
-        let index = self.string_index.get();
-        self.string_index.set(index + 1);
-        let mut pool = self.string_pool.take();
-        if index >= pool.len() {
-            pool.push(String::with_capacity(64));
-        }
-        let buffer = &mut pool[index];
+        let index = self.state.string_index.get();
+        self.state.string_index.set(index + 1);
+        let buffer = unsafe {
+            let pool = &mut *self.state.string_pool.get();
+            if index >= pool.len() {
+                pool.push(Box::new(String::with_capacity(64)));
+            }
+            &mut *(&raw mut *pool[index])
+        };
         buffer.clear();
         let _ = buffer.write_fmt(format_args);
-        let mut hasher = rustc_hash::FxHasher::default();
-        buffer.as_str().hash(&mut hasher);
-        let text = Text::Pooled {
-            index: index as u32,
-            len: buffer.len() as u32,
-            hash: hasher.finish(),
-        };
-        self.string_pool.set(pool);
-        text
+        unsafe { std::mem::transmute::<&str, &'a str>(buffer.as_str()) }
     }
 }
 
@@ -513,21 +443,17 @@ impl DerefMut for FrameContext<'_, '_> {
 }
 
 impl Context {
-    pub fn frame<'a, F>(&mut self, mut ui: F)
+    pub fn frame<'a, F>(&'a mut self, mut ui: F)
     where
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
     {
         let state = &mut self.state;
-        let string_pool = &self.string_pool;
-        let string_index = &self.string_index;
 
         self.window.draw(|window| {
-            string_index.set(0);
+            state.string_index.set(0);
             let mut frame = FrameContext {
                 window,
                 state,
-                string_pool,
-                string_index,
                 commands: [const { Vec::new() }; 16],
             };
             let now = std::time::Instant::now();
@@ -1019,7 +945,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn paint_text_measured(
         &mut self,
-        text: impl Into<Text<'a>>,
+        text: impl Into<Cow<'a, str>>,
         metrics: Rect,
         rect: Rect,
         color: u32,
@@ -1066,7 +992,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn paint_text(
         &mut self,
-        text: impl Into<Text<'a>>,
+        text: impl Into<Cow<'a, str>>,
         rect: Rect,
         color: u32,
         font: Font,
@@ -1080,9 +1006,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         if text.is_empty() {
             return;
         }
-        let pool = self.string_pool.take();
-        let metrics = self.measure_text(text.as_str(&pool), font, font_size, line_height);
-        self.string_pool.set(pool);
+        let metrics = self.measure_text(&text, font, font_size, line_height);
         self.paint_text_measured(
             text,
             metrics,
@@ -1138,7 +1062,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         self.item("", style)
     }
 
-    pub fn text(&mut self, text: impl Into<Text<'a>>, style: Style) -> State {
+    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         self.item(text, style)
     }
 
@@ -1269,18 +1193,12 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let mut content_w = 0i32;
         let mut baseline = 0i32;
         let mut run_metrics: Vec<(Rect, Padding, i32)> = Vec::with_capacity(parts.len());
-        let pool = self.string_pool.take();
         for part in &parts {
             let font_size = part.style.font_size.unwrap_or(default_size);
             let metrics = if part.content.is_empty() {
                 Rect::default()
             } else {
-                self.measure_text(
-                    part.content.as_str(&pool),
-                    part.style.font,
-                    font_size,
-                    part.style.line_height,
-                )
+                self.measure_text(&part.content, part.style.font, font_size, part.style.line_height)
             };
             let run_pad = part.style.padding.unwrap_or_default();
             let face = self.face(part.style.font);
@@ -1295,7 +1213,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             baseline = baseline.max(above);
             run_metrics.push((metrics, run_pad, above));
         }
-        self.string_pool.set(pool);
         let content_h = run_metrics
             .iter()
             .map(|(metrics, run_pad, above)| {
@@ -1346,15 +1263,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     #[inline]
-    pub fn item(&mut self, text: impl Into<Text<'a>>, style: Style) -> State {
+    pub fn item(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         let text = text.into();
         if text.is_empty() {
             return self.widget(0, 0, style, |_, _, _, _| {});
         }
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let pool = self.string_pool.take();
-        let metrics = self.measure_text(text.as_str(&pool), style.font, font_size, style.line_height);
-        self.string_pool.set(pool);
+        let metrics = self.measure_text(&text, style.font, font_size, style.line_height);
         self.widget(metrics.width, metrics.height, style, |ui, content, _, depth| {
             ui.paint_text_measured(
                 text,
@@ -1816,7 +1731,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     fn draw_frame(&mut self) {
         let window = &mut *self.window;
         let state = &mut *self.state;
-        let pool = self.string_pool.take();
         let display_scale = window.scale_factor() as f32;
         let (framebuffer_width, framebuffer_height) = window.scaled_size();
 
@@ -1868,7 +1782,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                                 &state.fallbacks,
                                 &mut state.font_bitmaps,
                                 &mut state.image_columns,
-                                &pool,
                             );
                         }
                     }
@@ -1910,13 +1823,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 &state.fallbacks,
                 &mut state.font_bitmaps,
                 &mut state.image_columns,
-                &pool,
             );
             window.present_damage(state.render_cache.damage());
         }
 
         state.render_cache.finish();
-        self.string_pool.set(pool);
     }
 
     pub fn with_id<R>(&mut self, id: impl Hash, ui: impl FnOnce(&mut Self) -> R) -> R {

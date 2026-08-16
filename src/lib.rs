@@ -175,6 +175,12 @@ impl From<String> for Text<'_> {
     }
 }
 
+impl<'a> From<&'a String> for Text<'a> {
+    fn from(text: &'a String) -> Self {
+        Text::Str(text.as_str())
+    }
+}
+
 impl<'a> From<Cow<'a, str>> for Text<'a> {
     fn from(text: Cow<'a, str>) -> Self {
         match text {

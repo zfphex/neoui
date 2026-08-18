@@ -943,6 +943,63 @@ pub fn draw_triangle_sdf(
     }
 }
 
+#[inline(always)]
+pub fn circle_sdf(dx: f32, dy: f32, radius: f32) -> f32 {
+    (dx * dx + dy * dy).sqrt() - radius
+}
+
+pub fn draw_circle_sdf(
+    buffer: &mut [u32],
+    bounds: Rect,
+    window_width: usize,
+    window_height: usize,
+    color: u32,
+    clip: Rect,
+) {
+    if bounds.is_empty() || window_width == 0 {
+        return;
+    }
+
+    let Some(vis) = visible_rect(bounds, clip, window_width as i32, window_height as i32) else {
+        return;
+    };
+
+    let min_x = vis.x as usize;
+    let max_x = vis.right() as usize;
+    let min_y = vis.y as usize;
+    let max_y = vis.bottom() as usize;
+
+    let width = bounds.width as f32;
+    let height = bounds.height as f32;
+    let radius = width.min(height) / 2.0;
+    if radius <= 0.0 {
+        return;
+    }
+
+    let cx = bounds.x as f32 + width / 2.0;
+    let cy = bounds.y as f32 + height / 2.0;
+    let src = color_linear(color);
+    let r_outer_sq = (radius + 0.5) * (radius + 0.5);
+
+    for py in min_y..max_y {
+        let dy = py as f32 + 0.5 - cy;
+        let dy2 = dy * dy;
+        if dy2 > r_outer_sq {
+            continue;
+        }
+
+        let row_start = py * window_width;
+        if let Some(row_slice) = buffer.get_mut(row_start + min_x..row_start + max_x) {
+            for (i, bg) in row_slice.iter_mut().enumerate() {
+                let px = min_x + i;
+                let dx = px as f32 + 0.5 - cx;
+                let dist = (dx * dx + dy2).sqrt() - radius;
+                apply_coverage(bg, color, src, 0.5 - dist);
+            }
+        }
+    }
+}
+
 pub fn apply_lcd_filter(bitmap: &mut [u8], width: usize, height: usize) {
     let stride = width * 3;
     for row in 0..height {
@@ -1318,6 +1375,18 @@ pub fn draw_command(
                 clip,
             );
         }
+        Command::Circle {
+            bounds,
+            color,
+            clip: _,
+        } => draw_circle_sdf(
+            buffer,
+            bounds.scale(display_scale),
+            framebuffer_width,
+            framebuffer_height,
+            *color,
+            clip,
+        ),
         Command::Triangle {
             a,
             b,

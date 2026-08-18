@@ -127,6 +127,12 @@ fn main() {
             assert_eq!(ui.rect(style().w(10).h(30)).bounds, Rect::new(0, 30, 10, 30));
         });
 
+        // Circles
+        ui.place_down(bounds(Rect::new(0, 0, 100, 100)), |ui| {
+            assert_eq!(ui.circle(style().wh(20)).bounds, Rect::new(0, 0, 20, 20));
+            assert_eq!(ui.circle(style().radius(15)).bounds, Rect::new(0, 20, 30, 30));
+        });
+
         ui.window.close();
     });
 }

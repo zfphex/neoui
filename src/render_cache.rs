@@ -231,9 +231,10 @@ fn mix(h: u64, v: u64) -> u64 {
 pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_h: usize) -> Rect {
     if scale_factor == 1.0 {
         let b = match command {
-            Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } | Command::Gradient { bounds, .. } => {
-                *bounds
-            }
+            Command::Rect { bounds, .. }
+            | Command::RectStroke { bounds, .. }
+            | Command::Circle { bounds, .. }
+            | Command::Gradient { bounds, .. } => *bounds,
             Command::Triangle { a, b, c, .. } => Rect::from_xyxy(
                 a.0.min(b.0).min(c.0).saturating_sub(1),
                 a.1.min(b.1).min(c.1).saturating_sub(1),
@@ -255,9 +256,10 @@ pub fn command_bounds(command: &Command<'_>, scale_factor: f32, fb_w: usize, fb_
     }
 
     let b = match command {
-        Command::Rect { bounds, .. } | Command::RectStroke { bounds, .. } | Command::Gradient { bounds, .. } => {
-            bounds.scale(scale_factor)
-        }
+        Command::Rect { bounds, .. }
+        | Command::RectStroke { bounds, .. }
+        | Command::Circle { bounds, .. }
+        | Command::Gradient { bounds, .. } => bounds.scale(scale_factor),
         Command::Triangle { a, b, c, .. } => {
             let ax = scale_i32(a.0, scale_factor);
             let ay = scale_i32(a.1, scale_factor);

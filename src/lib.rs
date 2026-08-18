@@ -144,6 +144,11 @@ pub enum Command<'a> {
         border_thickness: usize,
         border_sides: u8,
     },
+    Circle {
+        bounds: Rect,
+        clip: Rect,
+        color: u32,
+    },
     Triangle {
         a: (i32, i32),
         b: (i32, i32),
@@ -181,6 +186,7 @@ impl<'a> Command<'a> {
         match self {
             Command::Rect { clip, .. }
             | Command::RectStroke { clip, .. }
+            | Command::Circle { clip, .. }
             | Command::Triangle { clip, .. }
             | Command::Text { clip, .. }
             | Command::Image { clip, .. }
@@ -693,7 +699,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         (top_rect, bottom_rect)
     }
 
-    pub fn split_cols<const N: usize>(&self, rect: Rect, weights: [f32; N]) -> [Rect; N] {
+    pub fn split_hs<const N: usize>(&self, rect: Rect, weights: [f32; N]) -> [Rect; N] {
         let total: f32 = weights.iter().sum();
         let mut cols = [Rect::default(); N];
         let mut acc = 0.0;
@@ -707,7 +713,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         cols
     }
 
-    pub fn split_rows<const N: usize>(&self, rect: Rect, weights: [f32; N]) -> [Rect; N] {
+    pub fn split_vs<const N: usize>(&self, rect: Rect, weights: [f32; N]) -> [Rect; N] {
         let total: f32 = weights.iter().sum();
         let mut rows = [Rect::default(); N];
         let mut acc = 0.0;
@@ -943,6 +949,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
     }
 
+    pub fn paint_circle(&mut self, bounds: Rect, style: Style) {
+        let frame = self.current_frame();
+        let clip = frame.clip;
+        let depth = style.depth.unwrap_or(frame.depth);
+        if let Some(color) = style.bg.or(style.fg) {
+            self.commands[depth].push(Command::Circle { bounds, clip, color });
+        }
+    }
+
     pub fn paint_text_measured(
         &mut self,
         text: impl Into<Cow<'a, str>>,
@@ -1060,6 +1075,36 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn rect(&mut self, style: Style) -> State {
         self.item("", style)
+    }
+
+    pub fn circle(&mut self, mut style: Style) -> State {
+        if style.width.is_none() && style.height.is_none() {
+            if let Some(r) = style.radius {
+                let diameter = (r * 2) as i32;
+                style.width = Some(Size::Pixel(diameter));
+                style.height = Some(Size::Pixel(diameter));
+            }
+        }
+        let bg = style.bg;
+        let fg = style.fg;
+        style.bg = None;
+        self.widget(0, 0, style, |ui, content, state, depth| {
+            let color = if style.is_selected && style.selected.is_some() {
+                style.selected
+            } else if state.hovered && style.hover.is_some() {
+                style.hover
+            } else {
+                bg.or(fg)
+            };
+            if let Some(color) = color {
+                let clip = ui.current_frame().clip;
+                ui.commands[depth].push(Command::Circle {
+                    bounds: content,
+                    clip,
+                    color,
+                });
+            }
+        })
     }
 
     pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {

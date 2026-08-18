@@ -305,6 +305,8 @@ impl Style {
         self
     }
 
+    /// Since the layout system is a single pass.
+    /// AlignFlow::Center must have a fixed height.
     pub fn align_flow(mut self, align_flow: AlignFlow) -> Self {
         self.align_flow = Some(align_flow);
         self
@@ -434,6 +436,10 @@ pub fn bg(color: u32) -> Style {
 
 pub fn fg(color: u32) -> Style {
     style().fg(color)
+}
+
+pub fn font_size(font_size: usize) -> Style {
+    style().font_size(font_size)
 }
 
 pub fn bounds(bounds: Rect) -> Style {

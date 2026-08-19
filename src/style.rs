@@ -735,49 +735,49 @@ pub const trait Painted: Sized {
     }
 }
 
-impl const Boxed for FlowStyle {
+const impl Boxed for FlowStyle {
     fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
 }
 
-impl const Boxed for RectStyle {
+const impl Boxed for RectStyle {
     fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
 }
 
-impl const Boxed for TextStyle {
+const impl Boxed for TextStyle {
     fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
 }
 
-impl const Boxed for ImageStyle {
+const impl Boxed for ImageStyle {
     fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
 }
 
-impl const Painted for FlowStyle {
+const impl Painted for FlowStyle {
     fn paint_mut(&mut self) -> &mut Paint {
         &mut self.paint
     }
 }
 
-impl const Painted for RectStyle {
+const impl Painted for RectStyle {
     fn paint_mut(&mut self) -> &mut Paint {
         &mut self.paint
     }
 }
 
-impl const Painted for TextStyle {
+const impl Painted for TextStyle {
     fn paint_mut(&mut self) -> &mut Paint {
         &mut self.paint
     }
 }
 
-impl const Painted for ImageStyle {
+const impl Painted for ImageStyle {
     fn paint_mut(&mut self) -> &mut Paint {
         &mut self.paint
     }
@@ -887,13 +887,13 @@ pub const trait IntoColor {
     fn into_color(self) -> Option<u32>;
 }
 
-impl const IntoColor for u32 {
+const impl IntoColor for u32 {
     fn into_color(self) -> Option<u32> {
         Some(self)
     }
 }
 
-impl const IntoColor for Option<u32> {
+const impl IntoColor for Option<u32> {
     fn into_color(self) -> Option<u32> {
         self
     }
@@ -905,20 +905,20 @@ pub const trait IntoSize {
     fn into_size(self) -> Option<Size>;
 }
 
-impl const IntoSize for Size {
+const impl IntoSize for Size {
     fn into_size(self) -> Option<Size> {
         Some(self)
     }
 }
 
-impl const IntoSize for f32 {
+const impl IntoSize for f32 {
     fn into_size(self) -> Option<Size> {
         Some(Size::Percentage(self))
     }
 }
 
 //Yeah keep it for now, I'll think about it later...
-impl const IntoSize for i32 {
+const impl IntoSize for i32 {
     fn into_size(self) -> Option<Size> {
         if self < 0 {
             Some(Size::FillMinus(self))
@@ -928,7 +928,7 @@ impl const IntoSize for i32 {
     }
 }
 
-impl const IntoSize for usize {
+const impl IntoSize for usize {
     fn into_size(self) -> Option<Size> {
         Some(Size::Pixel(self as i32))
     }

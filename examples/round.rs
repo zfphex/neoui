@@ -10,7 +10,7 @@ fn main() {
             }
 
             ui.rect(
-                style()
+                rect()
                     .width(200)
                     .height(200)
                     .radius(20)

@@ -29,9 +29,9 @@ fn main() {
             let at = |offset: f32| (my + offset) / rail.height as f32;
             let glow = |a: f32| rgba(155, 132, 217, (a * fade * 255.0) as u8);
 
-            ui.rect(style().x(0).y(0).width(w).height(h).bg(hex("#101011")));
+            ui.rect(rect().x(0).y(0).width(w).height(h).bg(hex("#101011")));
             ui.rect(
-                style()
+                rect()
                     .x(rail.x)
                     .y(0)
                     .width(rail.width)
@@ -40,14 +40,14 @@ fn main() {
             );
 
             if fade > 0.0 {
-                ui.gradient(style().x(rail.x).y(0).width(rail.width).height(h), 180.0)
+                ui.gradient(gradient().x(rail.x).y(0).width(rail.width).height(h), 180.0)
                     .stop(at(-55.0), glow(0.0))
                     .stop(at(-32.0), glow(0.11))
                     .stop(at(0.0), glow(0.30))
                     .stop(at(32.0), glow(0.11))
                     .stop(at(55.0), glow(0.0));
 
-                ui.gradient(style().x(rail.x).y(0).width(1).height(h), 180.0)
+                ui.gradient(gradient().x(rail.x).y(0).width(1).height(h), 180.0)
                     .stop(at(-70.0), rgba(155, 132, 217, 0))
                     .stop(at(0.0), rgba(199, 183, 240, (0.75 * fade * 255.0) as u8))
                     .stop(at(70.0), rgba(155, 132, 217, 0));
@@ -59,13 +59,13 @@ fn main() {
                 let is_active = *ch == active;
                 let state = ui.text(
                     *ch,
-                    style()
+                    text()
                         .x(rail.x + 6)
                         .y(top + i as i32 * 15)
                         .width(18)
                         .height(13)
                         .radius(3)
-                        .align(Alignment::Center)
+                        .content(Alignment::Center)
                         .font_size(11)
                         .fg(match (is_active, has) {
                             (true, _) => hex("#c7b7f0"),

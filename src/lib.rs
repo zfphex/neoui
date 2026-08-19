@@ -1,4 +1,5 @@
 #![feature(portable_simd)]
+#![feature(const_trait_impl)]
 pub mod style;
 pub use style::*;
 
@@ -35,11 +36,11 @@ pub enum Flow {
 }
 
 impl Flow {
-    pub fn vertical(self) -> bool {
+    pub const fn vertical(self) -> bool {
         matches!(self, Flow::Down | Flow::Up)
     }
 
-    pub fn reverse(self) -> bool {
+    pub const fn reverse(self) -> bool {
         matches!(self, Flow::Up | Flow::Left)
     }
 }
@@ -52,7 +53,7 @@ pub struct Frame {
     pub bleed: bool,
     pub clip: Rect,
     pub flow: Flow,
-    pub align_flow: AlignFlow,
+    pub align_children: Align,
     pub depth: usize,
     pub cursor_x: i32,
     pub cursor_y: i32,
@@ -195,8 +196,9 @@ impl<'a> Command<'a> {
     }
 }
 
+/// The space a widget reserved, in screen coordinates.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Layout {
+pub struct Walk {
     pub size: Rect,
     pub paint_x: i32,
     pub paint_y: i32,
@@ -225,7 +227,15 @@ impl State {
     }
 }
 
-fn resolve_bg(style: &Style, hovered: bool) -> Option<u32> {
+fn align_cross(start: i32, extent: i32, size: i32, align: Align) -> i32 {
+    match align {
+        Align::Start => start,
+        Align::Center => start + extent.saturating_sub(size) / 2,
+        Align::End => start + extent.saturating_sub(size),
+    }
+}
+
+fn resolve_bg(style: &Paint, hovered: bool) -> Option<u32> {
     if style.is_selected && style.selected.is_some() {
         style.selected
     } else if hovered && style.hover.is_some() {
@@ -235,7 +245,7 @@ fn resolve_bg(style: &Style, hovered: bool) -> Option<u32> {
     }
 }
 
-fn resolve_border(style: &Style, hovered: bool) -> Option<u32> {
+fn resolve_border(style: &Paint, hovered: bool) -> Option<u32> {
     if style.is_selected && style.selected_border.is_some() {
         style.selected_border
     } else if hovered && style.hover_border.is_some() {
@@ -540,16 +550,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     /// Walk the layout forward by an explicit size and return the screen-space bounding box.
-    pub fn walk_layout(&mut self, width: i32, height: i32, gap: i32) -> Layout {
+    /// `align` overrides the parent's `align_children` for this child only.
+    pub fn walk_layout(&mut self, width: i32, height: i32, gap: i32, align: Option<Align>) -> Walk {
         let frame = self.layout_stack.last_mut().expect("No active layout frame");
+        let align = align.unwrap_or(frame.align_children);
         let (x, y) = if frame.flow.vertical() {
-            let x = match frame.align_flow {
-                AlignFlow::Start => frame.cursor_x,
-                AlignFlow::Center => frame.inner_bounds.x + (frame.inner_bounds.width.saturating_sub(width)) / 2,
-                AlignFlow::End => frame.inner_bounds.right().saturating_sub(width),
-            };
             (
-                x,
+                align_cross(frame.inner_bounds.x, frame.inner_bounds.width, width, align),
                 if frame.flow.reverse() {
                     frame.cursor_y - height
                 } else {
@@ -557,18 +564,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 },
             )
         } else {
-            let y = match frame.align_flow {
-                AlignFlow::Start => frame.cursor_y,
-                AlignFlow::Center => frame.inner_bounds.y + (frame.inner_bounds.height.saturating_sub(height)) / 2,
-                AlignFlow::End => frame.inner_bounds.bottom().saturating_sub(height),
-            };
             (
                 if frame.flow.reverse() {
                     frame.cursor_x - width
                 } else {
                     frame.cursor_x
                 },
-                y,
+                align_cross(frame.inner_bounds.y, frame.inner_bounds.height, height, align),
             )
         };
         let rect = Rect::new(x, y, width, height);
@@ -589,7 +591,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
 
         if frame.scroll_y == 0 {
-            return Layout {
+            return Walk {
                 size: rect,
                 paint_x: rect.x,
                 paint_y: rect.y,
@@ -630,7 +632,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         // ==================
 
         if y + height <= clip_top {
-            return Layout {
+            return Walk {
                 paint_x: x,
                 paint_y: y,
                 ..Default::default()
@@ -650,7 +652,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         //    +---------+
 
         if y >= clip_bottom {
-            return Layout {
+            return Walk {
                 paint_x: x,
                 paint_y: y,
                 ..Default::default()
@@ -660,7 +662,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let visible_y = y.max(clip_top).max(0);
         let visible_bottom = (y + height).min(clip_bottom).max(0);
 
-        Layout {
+        Walk {
             size: Rect::new(rect.x, visible_y, width, visible_bottom.saturating_sub(visible_y)),
             paint_x: x,
             paint_y: y,
@@ -781,10 +783,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     pub fn resolve_size(&self, size: Size, flow: Flow) -> i32 {
-        self.resolve_style_size(size, flow, &Style::default())
+        self.resolve_style_size(size, flow, &Layout::new())
     }
 
-    pub fn resolve_style_size(&self, size: Size, flow: Flow, style: &Style) -> i32 {
+    pub fn resolve_style_size(&self, size: Size, flow: Flow, style: &Layout) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
         let bounds = if style.bleed {
             frame.outer_bounds
@@ -914,46 +916,46 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         Rect::new(x as i32, y as i32, 1, 1)
     }
 
-    pub fn paint_rect(&mut self, rect: Rect, style: Style) {
+    pub fn paint_rect(&mut self, rect: Rect, style: RectStyle) {
         let frame = self.current_frame();
         let clip = frame.clip;
-        let depth = style.depth.unwrap_or(frame.depth);
+        let depth = style.layout.depth.unwrap_or(frame.depth);
 
-        if let Some(color) = style.bg {
+        if let Some(color) = style.paint.bg {
             self.commands[depth].push(Command::Rect {
                 bounds: rect,
                 clip,
                 color,
-                radius: style.radius.unwrap_or(0),
+                radius: style.paint.radius.unwrap_or(0),
             });
         }
 
-        if let Some(color) = style.border {
+        if let Some(color) = style.paint.border {
             self.commands[depth].push(Command::RectStroke {
                 bounds: rect,
                 clip,
                 color,
-                radius: style.radius.unwrap_or(0),
-                border_thickness: style.border_thickness.unwrap_or(1),
-                border_sides: style.border_side.unwrap_or(border::ALL),
+                radius: style.paint.radius.unwrap_or(0),
+                border_thickness: style.paint.border_thickness.unwrap_or(1),
+                border_sides: style.paint.border_side.unwrap_or(border::ALL),
             });
         }
     }
 
-    pub fn paint_triangle(&mut self, a: (i32, i32), b: (i32, i32), c: (i32, i32), style: Style) {
+    pub fn paint_triangle(&mut self, a: (i32, i32), b: (i32, i32), c: (i32, i32), style: RectStyle) {
         let frame = self.current_frame();
         let clip = frame.clip;
-        let depth = style.depth.unwrap_or(frame.depth);
-        if let Some(color) = style.bg {
+        let depth = style.layout.depth.unwrap_or(frame.depth);
+        if let Some(color) = style.paint.bg {
             self.commands[depth].push(Command::Triangle { a, b, c, clip, color });
         }
     }
 
-    pub fn paint_circle(&mut self, bounds: Rect, style: Style) {
+    pub fn paint_circle(&mut self, bounds: Rect, style: RectStyle) {
         let frame = self.current_frame();
         let clip = frame.clip;
-        let depth = style.depth.unwrap_or(frame.depth);
-        if let Some(color) = style.bg.or(style.fg) {
+        let depth = style.layout.depth.unwrap_or(frame.depth);
+        if let Some(color) = style.paint.bg.or(style.paint.fg) {
             self.commands[depth].push(Command::Circle { bounds, clip, color });
         }
     }
@@ -1069,33 +1071,34 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         if let Some(gap) = gap.into_size() {
             let frame = self.layout_stack.last().expect("No active frame");
             let gap = self.resolve_size(gap, frame.flow);
-            self.walk_layout(0, 0, gap);
+            self.walk_layout(0, 0, gap, None);
         }
     }
 
     #[inline]
-    pub fn rect(&mut self, style: Style) -> State {
-        self.widget(0, 0, style, |_, _, _, _| {})
+    pub fn rect(&mut self, style: RectStyle) -> State {
+        self.widget(0, 0, &style.layout, &style.paint, |_, _, _, _| {})
     }
 
-    pub fn circle(&mut self, mut style: Style) -> State {
-        if style.width.is_none() && style.height.is_none() {
-            if let Some(r) = style.radius {
+    pub fn circle(&mut self, mut style: RectStyle) -> State {
+        if style.layout.width.is_none() && style.layout.height.is_none() {
+            if let Some(r) = style.paint.radius {
                 let diameter = (r * 2) as i32;
-                style.width = Some(Size::Pixel(diameter));
-                style.height = Some(Size::Pixel(diameter));
+                style.layout.width = Some(Size::Pixel(diameter));
+                style.layout.height = Some(Size::Pixel(diameter));
             }
         }
-        let bg = style.bg;
-        let fg = style.fg;
-        style.bg = None;
-        self.widget(0, 0, style, |ui, content, state, depth| {
-            let color = if style.is_selected && style.selected.is_some() {
-                style.selected
-            } else if state.hovered && style.hover.is_some() {
-                style.hover
+        let paint = style.paint;
+        // The circle command paints the fill, so the box must not paint it as a rect.
+        let mut box_paint = paint;
+        box_paint.bg = None;
+        self.widget(0, 0, &style.layout, &box_paint, |ui, content, state, depth| {
+            let color = if paint.is_selected && paint.selected.is_some() {
+                paint.selected
+            } else if state.hovered && paint.hover.is_some() {
+                paint.hover
             } else {
-                bg.or(fg)
+                paint.bg.or(paint.fg)
             };
             if let Some(color) = color {
                 let clip = ui.current_frame().clip;
@@ -1109,7 +1112,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     #[inline]
-    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
+    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: TextStyle) -> State {
         self.item(text, style)
     }
 
@@ -1119,31 +1122,32 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         &mut self,
         content_width: i32,
         content_height: i32,
-        style: Style,
+        layout: &Layout,
+        style: &Paint,
         paint: impl FnOnce(&mut Self, Rect, &State, usize),
     ) -> State {
-        let padding = style.padding.unwrap_or_default();
-        let width = style
+        let padding = layout.padding.unwrap_or_default();
+        let width = layout
             .width
-            .map(|w| self.resolve_style_size(w, Flow::Right, &style))
+            .map(|w| self.resolve_style_size(w, Flow::Right, layout))
             .unwrap_or(content_width + padding.left as i32 + padding.right as i32);
-        let height = style
+        let height = layout
             .height
-            .map(|h| self.resolve_style_size(h, Flow::Down, &style))
+            .map(|h| self.resolve_style_size(h, Flow::Down, layout))
             .unwrap_or(content_height + padding.top as i32 + padding.bottom as i32);
 
-        let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, &style);
+        let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, layout);
 
         if rect.is_empty() {
             return State::new(rect);
         }
 
         let frame = self.current_frame();
-        let depth = style.depth.unwrap_or(frame.depth);
+        let depth = layout.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         let state = self.interact(rect, depth);
 
-        if let Some(color) = resolve_bg(&style, state.hovered) {
+        if let Some(color) = resolve_bg(style, state.hovered) {
             self.commands[depth].push(Command::Rect {
                 bounds: paint_bounds,
                 clip,
@@ -1163,7 +1167,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         // TODO: Borders render inside of the bounding box
         // for text which means they can overlap...
-        if let Some(color) = resolve_border(&style, state.hovered) {
+        if let Some(color) = resolve_border(style, state.hovered) {
             self.commands[depth].push(Command::RectStroke {
                 bounds: paint_bounds,
                 clip,
@@ -1177,50 +1181,67 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         state
     }
 
-    pub fn image(&mut self, image: Image<'a>, style: Style) -> State {
+    pub fn image(&mut self, image: Image<'a>, style: ImageStyle) -> State {
         self.widget(
             image.width as i32,
             image.height as i32,
-            style,
+            &style.layout,
+            &style.paint,
             |ui, content, _, depth| {
+                let bounds = match style.fit {
+                    Fit::Stretch => content,
+                    Fit::Contain => {
+                        // Scale down to fit, keeping the aspect ratio, then place the
+                        // result inside the content box.
+                        let (iw, ih) = (image.width as i32, image.height as i32);
+                        let (w, h) = if iw * content.height <= ih * content.width {
+                            ((iw * content.height) / ih.max(1), content.height)
+                        } else {
+                            (content.width, (ih * content.width) / iw.max(1))
+                        };
+                        let alignment = style.content.unwrap_or(Alignment::Center);
+                        match align_rect(content, w, h, alignment, Padding::new()) {
+                            Some((x, y)) => Rect::new(x, y, w, h),
+                            None => return,
+                        }
+                    }
+                };
                 let clip = ui.current_frame().clip;
                 ui.commands[depth].push(Command::Image {
                     image,
-                    bounds: content,
+                    bounds,
                     clip,
-                    opacity: style.opacity.unwrap_or(255),
-                    radius: style.radius.unwrap_or(0),
+                    opacity: style.paint.opacity.unwrap_or(255),
+                    radius: style.paint.radius.unwrap_or(0),
                 });
             },
         )
     }
 
-    pub fn paint_image(&mut self, bounds: Rect, image: Image<'a>, style: Style) {
+    pub fn paint_image(&mut self, bounds: Rect, image: Image<'a>, style: ImageStyle) {
         if bounds.is_empty() {
             return;
         }
         let frame = self.current_frame();
-        let depth = style.depth.unwrap_or(frame.depth);
+        let depth = style.layout.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         self.commands[depth].push(Command::Image {
             image,
             bounds,
             clip,
-            opacity: style.opacity.unwrap_or(255),
-            radius: style.radius.unwrap_or(0),
+            opacity: style.paint.opacity.unwrap_or(255),
+            radius: style.paint.radius.unwrap_or(0),
         });
     }
 
-    /// `angle` follows CSS: 0 points up, 90 points right. Add up to [`MAX_GRADIENT_STOPS`] sorted
-    /// positions in `0..=1` with [`GradientStops::stop`].
-    pub fn gradient(&mut self, style: Style, angle: f32) -> GradientStops<'_, 'frame, 'a> {
+    pub fn gradient(&mut self, style: RectStyle, angle: f32) -> GradientStops<'_, 'frame, 'a> {
         let mut slot = None;
-        let state = self.widget(0, 0, style, |ui, content, _, depth| {
+        let state = self.widget(0, 0, &style.layout, &style.paint, |ui, content, _, depth| {
             let clip = ui.current_frame().clip;
             ui.commands[depth].push(Command::Gradient {
                 bounds: content,
                 clip,
-                radius: style.radius.unwrap_or(0),
+                radius: style.paint.radius.unwrap_or(0),
                 gradient: Gradient {
                     stops: [(0.0, 0); MAX_GRADIENT_STOPS],
                     count: 0,
@@ -1233,7 +1254,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         GradientStops { ui: self, slot, state }
     }
 
-    pub fn lines(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'a>>>, style: Style) -> State {
+    pub fn lines(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'a>>>, style: TextStyle) -> State {
         let parts: Vec<Line<'a>> = parts.into_iter().map(Into::into).collect();
         let default_size = self.default_font_size;
 
@@ -1247,7 +1268,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             } else {
                 self.measure_text(&part.content, part.style.font, font_size, part.style.line_height)
             };
-            let run_pad = part.style.padding.unwrap_or_default();
+            let run_pad = part.style.layout.padding.unwrap_or_default();
             let face = self.face(part.style.font);
             let line_metrics = self.state.fonts[face]
                 .horizontal_line_metrics(font_size as f32)
@@ -1268,18 +1289,12 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             .max()
             .unwrap_or(0);
 
-        self.widget(content_w, content_h, style, |ui, inner, _, depth| {
-            let group_x = match style.align_item.unwrap_or(Alignment::Left) {
-                Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft => inner.x,
-                Alignment::Center | Alignment::TopCenter | Alignment::BottomCenter => {
-                    inner.x + (inner.width.saturating_sub(content_w)) / 2
-                }
-                Alignment::Right | Alignment::TopRight | Alignment::BottomRight => {
-                    inner.x + inner.width.saturating_sub(content_w)
-                }
+        self.widget(content_w, content_h, &style.layout, &style.paint, |ui, inner, _, depth| {
+            // The whole run is placed as one group, on both axes.
+            let alignment = style.content.unwrap_or(Alignment::Center);
+            let Some((group_x, group_y)) = align_rect(inner, content_w, content_h, alignment, Padding::new()) else {
+                return;
             };
-
-            let group_y = inner.y + (inner.height - content_h).max(0) / 2;
 
             let mut cursor_x = group_x;
             for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
@@ -1295,13 +1310,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     part.content,
                     metrics,
                     Rect::new(cursor_x, run_y, run_w, (inner.bottom() - run_y).max(0)),
-                    part.style.fg.unwrap_or(style.fg.unwrap_or(white())),
+                    part.style.paint.fg.unwrap_or(style.paint.fg.unwrap_or(white())),
                     part.style.font,
                     font_size,
                     part.style.line_height,
                     Alignment::TopLeft,
                     run_pad,
-                    part.style.depth.unwrap_or(depth),
+                    part.style.layout.depth.unwrap_or(depth),
                 );
 
                 cursor_x += run_w;
@@ -1310,29 +1325,35 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     #[inline]
-    pub fn item(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
+    pub fn item(&mut self, text: impl Into<Cow<'a, str>>, style: TextStyle) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let metrics = self.measure_text(&text, style.font, font_size, style.line_height);
-        self.widget(metrics.width, metrics.height, style, |ui, content, _, depth| {
-            ui.paint_text_measured(
-                text,
-                metrics,
-                content,
-                style.fg.unwrap_or(white()),
-                style.font,
-                font_size,
-                style.line_height,
-                style.align_item.unwrap_or(Alignment::Center),
-                Padding::default(),
-                depth,
-            );
-        })
+        self.widget(
+            metrics.width,
+            metrics.height,
+            &style.layout,
+            &style.paint,
+            |ui, content, _, depth| {
+                ui.paint_text_measured(
+                    text,
+                    metrics,
+                    content,
+                    style.paint.fg.unwrap_or(white()),
+                    style.font,
+                    font_size,
+                    style.line_height,
+                    style.content.unwrap_or(Alignment::Center),
+                    Padding::default(),
+                    depth,
+                );
+            },
+        )
     }
 
     pub fn flow<R>(
         &mut self,
-        style: impl Into<Style>,
+        style: impl Into<FlowStyle>,
         flow: Flow,
         advance: bool,
         scroll_y: i32,
@@ -1340,23 +1361,24 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     ) -> State {
         let parent_frame = self.current_frame();
         let parent_scroll = parent_frame.scroll_y;
-        let parent_align = parent_frame.align_flow;
+        let parent_default_align = parent_frame.align_children;
         let parent_vertical = parent_frame.flow.vertical();
 
         let style = style.into();
+        let layout = style.layout;
 
-        let pb = if style.bleed {
+        let pb = if layout.bleed {
             parent_frame.outer_bounds
         } else {
             parent_frame.inner_bounds
         };
-        let explicit_x = style.x.map(|x| self.resolve_size(x, Flow::Right));
-        let explicit_y = style.y.map(|y| self.resolve_size(y, Flow::Down));
+        let explicit_x = layout.x.map(|x| self.resolve_size(x, Flow::Right));
+        let explicit_y = layout.y.map(|y| self.resolve_size(y, Flow::Down));
 
         let reverse_x = parent_frame.flow == Flow::Left && explicit_x.is_none();
         let reverse_y = parent_frame.flow == Flow::Up && explicit_y.is_none();
 
-        let margin = style.margin.unwrap_or_default();
+        let margin = layout.margin.unwrap_or_default();
 
         let anchor_x = explicit_x.unwrap_or(parent_frame.cursor_x);
         let anchor_y = explicit_y.unwrap_or(if parent_scroll != 0 {
@@ -1365,7 +1387,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             parent_frame.cursor_y
         });
 
-        let width = style
+        let width = layout
             .width
             .map(|w| self.resolve_size_in(pb, w, if reverse_x { Flow::Left } else { Flow::Right }, anchor_x))
             .unwrap_or(if reverse_x {
@@ -1375,7 +1397,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             })
             .max(0);
 
-        let height = style
+        let height = layout
             .height
             .map(|h| self.resolve_size_in(pb, h, if reverse_y { Flow::Up } else { Flow::Down }, anchor_y))
             .unwrap_or(if reverse_y {
@@ -1388,45 +1410,46 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let x = if reverse_x { anchor_x - width } else { anchor_x };
         let y = if reverse_y { anchor_y - height } else { anchor_y };
 
-        // Cross-axis alignment, only when the size was stated up front.
-        let x = match parent_align {
-            _ if !parent_vertical || style.width.is_none() || explicit_x.is_some() => x,
-            AlignFlow::Start => x,
-            AlignFlow::Center => pb.x + (pb.width - width) / 2,
-            AlignFlow::End => pb.right() - width,
+        // Cross-axis alignment, using the same rule as every other widget. A flow can
+        // only align itself if it stated its cross size: without one it is sized to fill,
+        // and its children are placed before its fitted size is known.
+        let align = layout.align.unwrap_or(parent_default_align);
+        let x = if parent_vertical && layout.width.is_some() && explicit_x.is_none() {
+            align_cross(pb.x, pb.width, width, align)
+        } else {
+            x
         };
-        let y = match parent_align {
-            _ if parent_vertical || style.height.is_none() || explicit_y.is_some() => y,
-            AlignFlow::Start => y,
-            AlignFlow::Center => pb.y + (pb.height - height) / 2,
-            AlignFlow::End => pb.bottom() - height,
+        let y = if !parent_vertical && layout.height.is_some() && explicit_y.is_none() {
+            align_cross(pb.y, pb.height, height, align)
+        } else {
+            y
         };
 
         let outer_bounds = Rect::new(x, y, width, height);
 
-        if style.bleed {
+        if layout.bleed {
             self.layout_stack.last_mut().unwrap().bleed = true;
         }
 
         let scope = self.next_scope();
         let frame = self.current_frame();
-        let depth = style.depth.unwrap_or(frame.depth);
+        let depth = layout.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
-        let padding = style.padding.unwrap_or_default();
-        let align_flow = style.align_flow.unwrap_or_default();
+        let padding = layout.padding.unwrap_or_default();
+        let align_children = style.align_children;
 
-        let culled = !style.skip_cull
-            && style.width.is_some()
-            && style.height.is_some()
+        let culled = !layout.skip_cull
+            && layout.width.is_some()
+            && layout.height.is_some()
             && clip.intersection(outer_bounds).is_empty();
 
-        let paints_bg = !culled && (style.bg.is_some() || style.hover.is_some() || style.selected.is_some());
+        let paints_bg = !culled && (style.paint.bg.is_some() || style.paint.hover.is_some() || style.paint.selected.is_some());
         let bg_index = paints_bg.then(|| {
             self.commands[depth].push(Command::Rect {
                 bounds: outer_bounds,
                 clip,
-                color: style.bg.unwrap_or_default(),
-                radius: style.radius.unwrap_or(0),
+                color: style.paint.bg.unwrap_or_default(),
+                radius: style.paint.radius.unwrap_or(0),
             });
             self.commands[depth].len() - 1
         });
@@ -1439,18 +1462,18 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             .height
             .saturating_sub((padding.top + padding.bottom) as i32);
 
-        let gap = style.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
+        let gap = layout.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
         let new_frame = Frame {
             inner_bounds,
             outer_bounds,
-            clip: if style.clip {
+            clip: if layout.clip {
                 clip.intersection(outer_bounds)
             } else {
                 clip
             },
             flow,
-            align_flow,
+            align_children,
             depth,
             cursor_x: if flow == Flow::Left {
                 inner_bounds.right()
@@ -1467,8 +1490,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             scroll_y,
             padding,
             gap,
-            outer_width: style.width.map(|_| width),
-            outer_height: style.height.map(|_| height),
+            outer_width: layout.width.map(|_| width),
+            outer_height: layout.height.map(|_| height),
             scope,
             ..Default::default()
         };
@@ -1507,7 +1530,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         };
 
         if let Some(index) = bg_index {
-            let bg = resolve_bg(&style, state.hovered);
+            let bg = resolve_bg(&style.paint, state.hovered);
             if let Command::Rect { bounds, color, .. } = &mut self.commands[depth][index] {
                 match bg {
                     Some(bg) => {
@@ -1519,14 +1542,14 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             }
         }
 
-        if !culled && let Some(color) = resolve_border(&style, state.hovered) {
+        if !culled && let Some(color) = resolve_border(&style.paint, state.hovered) {
             self.commands[depth].push(Command::RectStroke {
                 bounds: fitted_bounds,
                 clip,
                 color,
-                radius: style.radius.unwrap_or(0),
-                border_thickness: style.border_thickness.unwrap_or(1),
-                border_sides: style.border_side.unwrap_or(border::ALL),
+                radius: style.paint.radius.unwrap_or(0),
+                border_thickness: style.paint.border_thickness.unwrap_or(1),
+                border_sides: style.paint.border_side.unwrap_or(border::ALL),
             });
         }
 
@@ -1537,41 +1560,41 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         state
     }
 
-    pub fn flow_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn flow_down<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Down, true, 0, ui)
     }
 
-    pub fn flow_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn flow_right<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Right, true, 0, ui)
     }
 
-    pub fn flow_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn flow_up<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Up, true, 0, ui)
     }
 
-    pub fn flow_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn flow_left<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         self.flow(style, Flow::Left, true, 0, ui)
     }
 
-    pub fn place_up<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn place_up<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         let state = self.flow(style, Flow::Up, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
         state
     }
 
-    pub fn place_left<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn place_left<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         let state = self.flow(style, Flow::Left, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
         state
     }
 
-    pub fn place_down<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn place_down<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         let state = self.flow(style, Flow::Down, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
         state
     }
 
-    pub fn place_right<R>(&mut self, style: impl Into<Style>, ui: impl FnOnce(&mut Self) -> R) -> State {
+    pub fn place_right<R>(&mut self, style: impl Into<FlowStyle>, ui: impl FnOnce(&mut Self) -> R) -> State {
         let state = self.flow(style, Flow::Right, false, 0, ui);
         self.layout_stack.pop().expect("Layout underflow");
         state
@@ -1579,7 +1602,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn scroll<R>(
         &mut self,
-        style: impl Into<Style>,
+        style: impl Into<FlowStyle>,
         scroll: &mut Scroll,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> ScrollState {
@@ -1588,13 +1611,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn flow_scroll<R>(
         &mut self,
-        style: impl Into<Style>,
+        style: impl Into<FlowStyle>,
         scroll: &mut Scroll,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> ScrollState {
         //TODO: It's not explicit to the user that this is always clipped.
         let style = style.into().clip(true);
-        let elastic = style.elastic;
+        let elastic = style.layout.elastic;
         self.flow(
             style,
             Flow::Down,
@@ -1669,7 +1692,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         self.layout_stack.last().as_ref().unwrap()
     }
 
-    pub fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Style) -> (i32, i32, Rect, Rect) {
+    pub fn resolve_item_layout(&mut self, width: i32, height: i32, style: &Layout) -> (i32, i32, Rect, Rect) {
         if style.bleed {
             self.layout_stack.last_mut().unwrap().bleed = true;
         }
@@ -1679,7 +1702,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             .map(|gap| self.resolve_size(gap, frame.flow))
             .unwrap_or(frame.gap);
         let clip = frame.clip;
-        let layout = self.walk_layout(width, height, gap);
+        let layout = self.walk_layout(width, height, gap, style.align);
         let paint_x = style.x.map_or(layout.paint_x, |x| self.resolve_size(x, Flow::Right));
         let paint_y = style.y.map_or(layout.paint_y, |y| self.resolve_size(y, Flow::Down));
 

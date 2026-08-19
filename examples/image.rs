@@ -22,42 +22,42 @@ fn main() {
                 ui.window.close();
             }
 
-            let cell = style().width(150).height(150).gap(22);
-            let caption = style().fg(gray()).font_size(14).width(150).gap(22);
-            let heading = style().font_size(17).padt(16).padb(8);
+            let cell = image().width(150).height(150).gap(22);
+            let caption = text().fg(gray()).font_size(14).width(150).gap(22);
+            let heading = text().font_size(17).padt(16).padb(8);
 
-            ui.flow_down(style().pad(20), |ui| {
+            ui.flow_down(flow().pad(20), |ui| {
                 ui.text("radius", heading);
-                ui.flow_right(style().height(150), |ui| {
+                ui.flow_right(flow().height(150), |ui| {
                     for radius in radii {
                         ui.image(wide, cell.radius(radius));
                     }
                 });
-                ui.flow_right(style().height(20), |ui| {
+                ui.flow_right(flow().height(20), |ui| {
                     for radius in radii {
                         ui.text(radius.to_string(), caption);
                     }
                 });
 
                 ui.text("opacity over background", heading);
-                ui.flow_right(style().height(150), |ui| {
+                ui.flow_right(flow().height(150), |ui| {
                     for opacity in opacities {
                         ui.image(tall, cell.radius(8).opacity(opacity).bg(rgb(190, 80, 30)));
                     }
                 });
-                ui.flow_right(style().height(20), |ui| {
+                ui.flow_right(flow().height(20), |ui| {
                     for opacity in opacities {
                         ui.text(opacity.to_string(), caption);
                     }
                 });
 
                 ui.text("scaling, alpha", heading);
-                ui.flow_right(style().height(220), |ui| {
+                ui.flow_right(flow().height(220), |ui| {
                     for size in sizes {
-                        ui.image(logo, style().width(size).height(size).gap(22).bg(rgb(40, 70, 110)));
+                        ui.image(logo, image().width(size).height(size).gap(22).bg(rgb(40, 70, 110)));
                     }
                 });
-                ui.flow_right(style().height(20), |ui| {
+                ui.flow_right(flow().height(20), |ui| {
                     for size in sizes {
                         ui.text(format!("{size}px"), caption);
                     }

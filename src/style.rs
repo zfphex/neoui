@@ -12,12 +12,26 @@ pub enum Size {
     FillMinus(i32),
 }
 
+/// Main-axis placement is not possible as it needs the extent of every sibling
+/// before the first one is placed and this is a single pass layout system.
+/// Use a reverse flow ([`Flow::Left`], [`Flow::Up`]) to align against the far end instead.
+///
+/// A flow can only align itself if it states its own cross size up front for the same reason.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum AlignFlow {
+pub enum Align {
     #[default]
     Start,
     Center,
     End,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Fit {
+    /// Fill the box exactly, ignoring the aspect ratio.
+    #[default]
+    Stretch,
+    /// Scale down to fit inside the box, keeping the aspect ratio.
+    Contain,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -29,7 +43,16 @@ pub struct Padding {
 }
 
 impl Padding {
-    pub fn axis(self, flow: Flow) -> i32 {
+    pub const fn new() -> Self {
+        Padding {
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+        }
+    }
+
+    pub const fn axis(self, flow: Flow) -> i32 {
         if flow.vertical() {
             (self.top + self.bottom) as i32
         } else {
@@ -38,7 +61,7 @@ impl Padding {
     }
 }
 
-pub fn pad(p: usize) -> Padding {
+pub const fn pad(p: usize) -> Padding {
     Padding {
         top: p,
         bottom: p,
@@ -49,7 +72,7 @@ pub fn pad(p: usize) -> Padding {
 
 pub use border::*;
 
-#[rustfmt::skip] 
+#[rustfmt::skip]
 pub mod border {
     pub const NONE:   u8 = 0     ;
     pub const TOP:    u8 = 1 << 0;
@@ -80,8 +103,55 @@ pub struct Font {
     pub italic: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Style {
+/// Where this box lands in the parent's flow and how big it is.
+#[derive(Debug, Clone, Copy)]
+pub struct Layout {
+    pub x: Option<Size>,
+    pub y: Option<Size>,
+    pub width: Option<Size>,
+    pub height: Option<Size>,
+    pub padding: Option<Padding>,
+    /// Grows the painted and interactable box outwards without reserving any layout space.
+    pub margin: Option<Padding>,
+    /// Overrides the parent flow's gap for the space reserved after this box.
+    pub gap: Option<Size>,
+    /// Where this box sits across the parent's flow axis.
+    /// `None` inherits the parent flow's align_children.
+    pub align: Option<Align>,
+    pub depth: Option<usize>,
+    /// Resolve fill against parent's outer bounds, ignoring padding.
+    pub bleed: bool,
+    /// Disabled in scroll views.
+    pub clip: bool,
+    /// Items are culled if a fixed size is given in flows.
+    /// Optionally they can be re-enabled if needed.
+    pub skip_cull: bool,
+    /// Rubber-band past the edges of a scroll view and bounce back.
+    pub elastic: bool,
+}
+
+impl Layout {
+    pub const fn new() -> Self {
+        Layout {
+            x: None,
+            y: None,
+            width: None,
+            height: None,
+            padding: None,
+            margin: None,
+            gap: None,
+            align: None,
+            depth: None,
+            bleed: false,
+            clip: false,
+            skip_cull: false,
+            elastic: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Paint {
     pub fg: Option<u32>,
     pub bg: Option<u32>,
     pub radius: Option<usize>,
@@ -97,377 +167,626 @@ pub struct Style {
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
 
-    pub font: Font,
-    pub font_size: Option<usize>,
-    pub line_height: Option<usize>,
-
-    pub x: Option<Size>,
-    pub y: Option<Size>,
-    pub width: Option<Size>,
-    pub height: Option<Size>,
-    pub padding: Option<Padding>,
-    /// Grows the painted and interactable box outwards without reserving any layout space.
-    pub margin: Option<Padding>,
-
-    pub depth: Option<usize>,
-
-    pub align_item: Option<Alignment>,
-    pub align_flow: Option<AlignFlow>,
-    pub gap: Option<Size>,
-    pub clip: bool,
-    pub skip_cull: bool,
-    /// Rubber-band past the edges of a scroll view and bounce back.
-    pub elastic: bool,
-    /// Resolve fill against parent's outer bounds, ignoring padding.
-    pub bleed: bool,
-
     pub opacity: Option<u8>,
 }
 
-impl Style {
+impl Paint {
     pub const fn new() -> Self {
-        todo!();
+        Paint {
+            fg: None,
+            bg: None,
+            radius: None,
+            border: None,
+            border_thickness: None,
+            border_side: None,
+            is_selected: false,
+            selected: None,
+            selected_border: None,
+            hover: None,
+            hover_border: None,
+            opacity: None,
+        }
     }
-    pub fn gap(mut self, gap: impl IntoSize) -> Self {
-        self.gap = gap.into_size();
+}
+
+/// A container which arranges children along a flow direction.
+#[derive(Debug, Clone, Copy)]
+pub struct FlowStyle {
+    pub layout: Layout,
+    pub paint: Paint,
+    pub align_children: Align,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RectStyle {
+    pub layout: Layout,
+    pub paint: Paint,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TextStyle {
+    pub layout: Layout,
+    pub paint: Paint,
+    pub font: Font,
+    pub font_size: Option<usize>,
+    pub line_height: Option<usize>,
+    /// Where the glyph run sits inside this widget's own content box.
+    pub content: Option<Alignment>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ImageStyle {
+    pub layout: Layout,
+    pub paint: Paint,
+    pub fit: Fit,
+    /// Where the scaled image sits inside this widget's own content box.
+    pub content: Option<Alignment>,
+}
+
+impl FlowStyle {
+    pub const fn new() -> Self {
+        FlowStyle {
+            layout: Layout::new(),
+            paint: Paint::new(),
+            align_children: Align::Start,
+        }
+    }
+}
+
+impl RectStyle {
+    pub const fn new() -> Self {
+        RectStyle {
+            layout: Layout::new(),
+            paint: Paint::new(),
+        }
+    }
+}
+
+impl TextStyle {
+    pub const fn new() -> Self {
+        TextStyle {
+            layout: Layout::new(),
+            paint: Paint::new(),
+            font: Font {
+                id: 0,
+                weight: Weight::Regular,
+                italic: false,
+            },
+            font_size: None,
+            line_height: None,
+            content: None,
+        }
+    }
+}
+
+impl ImageStyle {
+    pub const fn new() -> Self {
+        ImageStyle {
+            layout: Layout::new(),
+            paint: Paint::new(),
+            fit: Fit::Stretch,
+            content: None,
+        }
+    }
+}
+
+pub const fn flow() -> FlowStyle {
+    FlowStyle::new()
+}
+
+pub const fn rect() -> RectStyle {
+    RectStyle::new()
+}
+
+pub const fn circle() -> RectStyle {
+    RectStyle::new()
+}
+
+pub const fn gradient() -> RectStyle {
+    RectStyle::new()
+}
+
+pub const fn text() -> TextStyle {
+    TextStyle::new()
+}
+
+pub const fn image() -> ImageStyle {
+    ImageStyle::new()
+}
+
+impl FlowStyle {
+    pub const fn align_children(mut self, align: Align) -> Self {
+        self.align_children = align;
         self
     }
 
-    pub fn bounds(mut self, bounds: Rect) -> Self {
-        self.x = Some(Size::Pixel(bounds.x));
-        self.y = Some(Size::Pixel(bounds.y));
-        self.width = Some(Size::Pixel(bounds.width));
-        self.height = Some(Size::Pixel(bounds.height));
+    pub const fn children_start(mut self) -> Self {
+        self.align_children = Align::Start;
         self
     }
 
-    pub fn bg(mut self, color: u32) -> Self {
-        self.bg = Some(color);
+    pub const fn children_center(mut self) -> Self {
+        self.align_children = Align::Center;
         self
     }
 
-    pub fn fg(mut self, color: u32) -> Self {
-        self.fg = Some(color);
+    pub const fn children_end(mut self) -> Self {
+        self.align_children = Align::End;
         self
     }
+}
 
-    pub fn border(mut self, color: u32) -> Self {
-        self.border = Some(color);
-        self
-    }
-
-    pub fn border_thickness(mut self, border_thickness: usize) -> Self {
-        self.border_thickness = Some(border_thickness);
-        self
-    }
-
-    pub fn border_side(mut self, border_side: u8) -> Self {
-        self.border_side = Some(border_side);
-        self
-    }
-
-    pub fn radius(mut self, r: usize) -> Self {
-        self.radius = Some(r);
-        self
-    }
-
-    pub fn font_size(mut self, font_size: usize) -> Self {
-        self.font_size = Some(font_size);
-        self
-    }
-
-    pub fn line_height(mut self, line_height: usize) -> Self {
-        self.line_height = Some(line_height);
-        self
-    }
-
-    pub fn is_selected(mut self, is_selected: bool) -> Self {
-        self.is_selected = is_selected;
-        self
-    }
-
-    pub fn selected(mut self, color: u32) -> Self {
-        self.selected = Some(color);
-        self
-    }
-
-    pub fn selected_border(mut self, color: u32) -> Self {
-        self.selected_border = Some(color);
-        self
-    }
-
-    pub fn hover(mut self, color: u32) -> Self {
-        self.hover = Some(color);
-        self
-    }
-
-    pub fn hover_border(mut self, color: u32) -> Self {
-        self.hover_border = Some(color);
-        self
-    }
-
-    pub fn w(mut self, w: impl IntoSize) -> Self {
-        self.width = w.into_size();
-        self
-    }
-
-    pub fn h(mut self, h: impl IntoSize) -> Self {
-        self.height = h.into_size();
-        self
-    }
-
-    pub fn wh(mut self, wh: impl IntoSize) -> Self {
-        let wh = wh.into_size();
-        self.width = wh;
-        self.height = wh;
-        self
-    }
-
-    pub fn width(mut self, w: impl IntoSize) -> Self {
-        self.width = w.into_size();
-        self
-    }
-
-    pub fn height(mut self, h: impl IntoSize) -> Self {
-        self.height = h.into_size();
-        self
-    }
-
-    pub fn y(mut self, y: impl IntoSize) -> Self {
-        self.y = y.into_size();
-        self
-    }
-
-    pub fn x(mut self, x: impl IntoSize) -> Self {
-        self.x = x.into_size();
-        self
-    }
-
-    pub fn fill(mut self) -> Self {
-        self.width = Some(Size::Fill);
-        self.height = Some(Size::Fill);
-        self
-    }
-
-    pub fn fillw(mut self) -> Self {
-        self.width = Some(Size::Fill);
-        self
-    }
-
-    pub fn fillh(mut self) -> Self {
-        self.height = Some(Size::Fill);
-        self
-    }
-
-    //TODO: Remove
-    pub fn fill_width(mut self) -> Self {
-        self.width = Some(Size::Fill);
-        self
-    }
-
-    //TODO: Remove
-    pub fn fill_height(mut self) -> Self {
-        self.height = Some(Size::Fill);
-        self
-    }
-
-    pub fn bleed(mut self) -> Self {
-        self.bleed = true;
-        self
-    }
-
-    pub fn align(mut self, alignment: Alignment) -> Self {
-        self.align_item = Some(alignment);
-        self
-    }
-
-    pub fn align_left(mut self) -> Self {
-        self.align_item = Some(Alignment::Left);
-        self
-    }
-
-    pub fn align_center(mut self) -> Self {
-        self.align_item = Some(Alignment::Center);
-        self
-    }
-
-    pub fn align_right(mut self) -> Self {
-        self.align_item = Some(Alignment::Right);
-        self
-    }
-
-    pub fn align_top_left(mut self) -> Self {
-        self.align_item = Some(Alignment::TopLeft);
-        self
-    }
-
-    pub fn align_top_center(mut self) -> Self {
-        self.align_item = Some(Alignment::TopCenter);
-        self
-    }
-
-    pub fn align_top_right(mut self) -> Self {
-        self.align_item = Some(Alignment::TopRight);
-        self
-    }
-
-    pub fn align_bottom_left(mut self) -> Self {
-        self.align_item = Some(Alignment::BottomLeft);
-        self
-    }
-
-    pub fn align_bottom_center(mut self) -> Self {
-        self.align_item = Some(Alignment::BottomCenter);
-        self
-    }
-
-    pub fn align_bottom_right(mut self) -> Self {
-        self.align_item = Some(Alignment::BottomRight);
-        self
-    }
-
-    /// Since the layout system is a single pass.
-    /// AlignFlow::Center must have a fixed height.
-    pub fn align_flow(mut self, align_flow: AlignFlow) -> Self {
-        self.align_flow = Some(align_flow);
-        self
-    }
-
-    pub fn clip(mut self, clip: bool) -> Self {
-        self.clip = clip;
-        self
-    }
-
-    pub fn skip_cull(mut self) -> Self {
-        self.skip_cull = true;
-        self
-    }
-
-    pub fn elastic(mut self, elastic: bool) -> Self {
-        self.elastic = elastic;
-        self
-    }
-
-    pub fn depth(mut self, depth: usize) -> Self {
-        self.depth = Some(depth);
-        self
-    }
-
-    pub fn font(mut self, font: Font) -> Style {
+impl TextStyle {
+    pub const fn font(mut self, font: Font) -> Self {
         self.font = font;
         self
     }
 
-    pub fn weight(mut self, weight: Weight) -> Style {
+    pub const fn weight(mut self, weight: Weight) -> Self {
         self.font.weight = weight;
         self
     }
 
-    pub fn bold(mut self) -> Style {
+    pub const fn bold(mut self) -> Self {
         self.font.weight = Weight::Bold;
         self
     }
 
-    pub fn italic(mut self) -> Style {
+    pub const fn italic(mut self) -> Self {
         self.font.italic = true;
         self
     }
 
-    pub fn opacity(mut self, opacity: u8) -> Self {
-        self.opacity = Some(opacity);
+    pub const fn font_size(mut self, font_size: usize) -> Self {
+        self.font_size = Some(font_size);
         self
     }
 
-}
+    pub const fn line_height(mut self, line_height: usize) -> Self {
+        self.line_height = Some(line_height);
+        self
+    }
 
-impl Into<Style> for Rect {
-    fn into(self) -> Style {
-        style().bounds(self)
+    pub const fn content(mut self, alignment: Alignment) -> Self {
+        self.content = Some(alignment);
+        self
+    }
+
+    pub const fn content_left(mut self) -> Self {
+        self.content = Some(Alignment::Left);
+        self
+    }
+
+    pub const fn content_center(mut self) -> Self {
+        self.content = Some(Alignment::Center);
+        self
+    }
+
+    pub const fn content_right(mut self) -> Self {
+        self.content = Some(Alignment::Right);
+        self
+    }
+
+    pub const fn content_top_left(mut self) -> Self {
+        self.content = Some(Alignment::TopLeft);
+        self
+    }
+
+    pub const fn content_top_center(mut self) -> Self {
+        self.content = Some(Alignment::TopCenter);
+        self
+    }
+
+    pub const fn content_top_right(mut self) -> Self {
+        self.content = Some(Alignment::TopRight);
+        self
+    }
+
+    pub const fn content_bottom_left(mut self) -> Self {
+        self.content = Some(Alignment::BottomLeft);
+        self
+    }
+
+    pub const fn content_bottom_center(mut self) -> Self {
+        self.content = Some(Alignment::BottomCenter);
+        self
+    }
+
+    pub const fn content_bottom_right(mut self) -> Self {
+        self.content = Some(Alignment::BottomRight);
+        self
     }
 }
 
-macro_rules! impl_pad_swizzle {
-    ($field:ident: $($name:ident => [$($edge:ident),+]);* $(;)?) => {
-        impl Style {
-            $(
-                #[doc = concat!("Set ", stringify!($field), " for (", stringify!($($edge)+), ")")]
-                pub fn $name(mut self, value: usize) -> Self {
-                    let mut p = self.$field.unwrap_or_default();
-                    $(
-                        p.$edge = value;
-                    )+
-                    self.$field = Some(p);
-                    self
-                }
-            )*
+impl ImageStyle {
+    pub const fn fit(mut self, fit: Fit) -> Self {
+        self.fit = fit;
+        self
+    }
+
+    pub const fn contain(mut self) -> Self {
+        self.fit = Fit::Contain;
+        self
+    }
+
+    pub const fn content(mut self, alignment: Alignment) -> Self {
+        self.content = Some(alignment);
+        self
+    }
+
+    pub const fn content_left(mut self) -> Self {
+        self.content = Some(Alignment::Left);
+        self
+    }
+
+    pub const fn content_center(mut self) -> Self {
+        self.content = Some(Alignment::Center);
+        self
+    }
+
+    pub const fn content_right(mut self) -> Self {
+        self.content = Some(Alignment::Right);
+        self
+    }
+}
+
+pub const trait Boxed: Sized {
+    fn layout_mut(&mut self) -> &mut Layout;
+
+    #[inline]
+    fn bounds(mut self, bounds: Rect) -> Self {
+        let l = self.layout_mut();
+        l.x = Some(Size::Pixel(bounds.x));
+        l.y = Some(Size::Pixel(bounds.y));
+        l.width = Some(Size::Pixel(bounds.width));
+        l.height = Some(Size::Pixel(bounds.height));
+        self
+    }
+
+    #[inline]
+    fn x(mut self, x: impl [const] IntoSize) -> Self {
+        self.layout_mut().x = x.into_size();
+        self
+    }
+
+    #[inline]
+    fn y(mut self, y: impl [const] IntoSize) -> Self {
+        self.layout_mut().y = y.into_size();
+        self
+    }
+
+    #[inline]
+    fn w(mut self, w: impl [const] IntoSize) -> Self {
+        self.layout_mut().width = w.into_size();
+        self
+    }
+
+    #[inline]
+    fn h(mut self, h: impl [const] IntoSize) -> Self {
+        self.layout_mut().height = h.into_size();
+        self
+    }
+
+    #[inline]
+    fn wh(mut self, wh: impl [const] IntoSize) -> Self {
+        let wh = wh.into_size();
+        let l = self.layout_mut();
+        l.width = wh;
+        l.height = wh;
+        self
+    }
+
+    #[inline]
+    fn width(mut self, w: impl [const] IntoSize) -> Self {
+        self.layout_mut().width = w.into_size();
+        self
+    }
+
+    #[inline]
+    fn height(mut self, h: impl [const] IntoSize) -> Self {
+        self.layout_mut().height = h.into_size();
+        self
+    }
+
+    #[inline]
+    fn fill(mut self) -> Self {
+        let l = self.layout_mut();
+        l.width = Some(Size::Fill);
+        l.height = Some(Size::Fill);
+        self
+    }
+
+    #[inline]
+    fn fillw(mut self) -> Self {
+        self.layout_mut().width = Some(Size::Fill);
+        self
+    }
+
+    #[inline]
+    fn fillh(mut self) -> Self {
+        self.layout_mut().height = Some(Size::Fill);
+        self
+    }
+
+    #[inline]
+    fn gap(mut self, gap: impl [const] IntoSize) -> Self {
+        self.layout_mut().gap = gap.into_size();
+        self
+    }
+
+    /// Where this box sits across the parent's flow axis.
+    #[inline]
+    fn align(mut self, align: Align) -> Self {
+        self.layout_mut().align = Some(align);
+        self
+    }
+
+    #[inline]
+    fn align_start(mut self) -> Self {
+        self.layout_mut().align = Some(Align::Start);
+        self
+    }
+
+    #[inline]
+    fn align_center(mut self) -> Self {
+        self.layout_mut().align = Some(Align::Center);
+        self
+    }
+
+    #[inline]
+    fn align_end(mut self) -> Self {
+        self.layout_mut().align = Some(Align::End);
+        self
+    }
+
+    #[inline]
+    fn bleed(mut self) -> Self {
+        self.layout_mut().bleed = true;
+        self
+    }
+
+    #[inline]
+    fn clip(mut self, clip: bool) -> Self {
+        self.layout_mut().clip = clip;
+        self
+    }
+
+    #[inline]
+    fn skip_cull(mut self) -> Self {
+        self.layout_mut().skip_cull = true;
+        self
+    }
+
+    #[inline]
+    fn elastic(mut self, elastic: bool) -> Self {
+        self.layout_mut().elastic = elastic;
+        self
+    }
+
+    #[inline]
+    fn depth(mut self, depth: usize) -> Self {
+        self.layout_mut().depth = Some(depth);
+        self
+    }
+
+    #[inline]
+    fn padding(mut self, padding: Padding) -> Self {
+        self.layout_mut().padding = Some(padding);
+        self
+    }
+
+    #[inline]
+    fn margin(mut self, margin: Padding) -> Self {
+        self.layout_mut().margin = Some(margin);
+        self
+    }
+
+    #[rustfmt::skip] #[inline]    fn pad(self, v: usize)   -> Self { self.pad_edges(v, true, true, true, true) }
+    #[rustfmt::skip] #[inline]    fn padh(self, v: usize)  -> Self { self.pad_edges(v, false, false, true, true) }
+    #[rustfmt::skip] #[inline]    fn padv(self, v: usize)  -> Self { self.pad_edges(v, true, true, false, false) }
+    #[rustfmt::skip] #[inline]    fn padt(self, v: usize)  -> Self { self.pad_edges(v, true, false, false, false) }
+    #[rustfmt::skip] #[inline]    fn padb(self, v: usize)  -> Self { self.pad_edges(v, false, true, false, false) }
+    #[rustfmt::skip] #[inline]    fn padl(self, v: usize)  -> Self { self.pad_edges(v, false, false, true, false) }
+    #[rustfmt::skip] #[inline]    fn padr(self, v: usize)  -> Self { self.pad_edges(v, false, false, false, true) }
+    #[rustfmt::skip] #[inline]    fn padtl(self, v: usize) -> Self { self.pad_edges(v, true, false, true, false) }
+    #[rustfmt::skip] #[inline]    fn padtr(self, v: usize) -> Self { self.pad_edges(v, true, false, false, true) }
+    #[rustfmt::skip] #[inline]    fn padbl(self, v: usize) -> Self { self.pad_edges(v, false, true, true, false) }
+    #[rustfmt::skip] #[inline]    fn padbr(self, v: usize) -> Self { self.pad_edges(v, false, true, false, true) }
+
+    #[rustfmt::skip] #[inline]    fn padtb(self, v: usize) -> Self { self.pad_edges(v, true, true, false, false) }
+    #[rustfmt::skip] #[inline]    fn padlr(self, v: usize) -> Self { self.pad_edges(v, false, false, true, true) }
+
+    #[rustfmt::skip] #[inline]    fn mar(self, v: usize)   -> Self { self.mar_edges(v, true, true, true, true) }
+    #[rustfmt::skip] #[inline]    fn marh(self, v: usize)  -> Self { self.mar_edges(v, false, false, true, true) }
+    #[rustfmt::skip] #[inline]    fn marv(self, v: usize)  -> Self { self.mar_edges(v, true, true, false, false) }
+    #[rustfmt::skip] #[inline]    fn mart(self, v: usize)  -> Self { self.mar_edges(v, true, false, false, false) }
+    #[rustfmt::skip] #[inline]    fn marb(self, v: usize)  -> Self { self.mar_edges(v, false, true, false, false) }
+    #[rustfmt::skip] #[inline]    fn marl(self, v: usize)  -> Self { self.mar_edges(v, false, false, true, false) }
+    #[rustfmt::skip] #[inline]    fn marr(self, v: usize)  -> Self { self.mar_edges(v, false, false, false, true) }
+    #[rustfmt::skip] #[inline]    fn martl(self, v: usize) -> Self { self.mar_edges(v, true, false, true, false) }
+    #[rustfmt::skip] #[inline]    fn martr(self, v: usize) -> Self { self.mar_edges(v, true, false, false, true) }
+    #[rustfmt::skip] #[inline]    fn marbl(self, v: usize) -> Self { self.mar_edges(v, false, true, true, false) }
+    #[rustfmt::skip] #[inline]    fn marbr(self, v: usize) -> Self { self.mar_edges(v, false, true, false, true) }
+
+    #[rustfmt::skip] #[inline]    fn martb(self, v: usize) -> Self { self.mar_edges(v, true, true, false, false) }
+    #[rustfmt::skip] #[inline]    fn marlr(self, v: usize) -> Self { self.mar_edges(v, false, false, true, true) }
+
+    #[inline]
+    fn pad_edges(mut self, v: usize, top: bool, bottom: bool, left: bool, right: bool) -> Self {
+        let layout = self.layout_mut();
+        let mut p = match layout.padding {
+            Some(p) => p,
+            None => Padding::new(),
+        };
+        if top {
+            p.top = v;
         }
-    };
+        if bottom {
+            p.bottom = v;
+        }
+        if left {
+            p.left = v;
+        }
+        if right {
+            p.right = v;
+        }
+        layout.padding = Some(p);
+        self
+    }
+
+    #[inline]
+    fn mar_edges(mut self, v: usize, top: bool, bottom: bool, left: bool, right: bool) -> Self {
+        let layout = self.layout_mut();
+        let mut p = match layout.margin {
+            Some(p) => p,
+            None => Padding::new(),
+        };
+        if top {
+            p.top = v;
+        }
+        if bottom {
+            p.bottom = v;
+        }
+        if left {
+            p.left = v;
+        }
+        if right {
+            p.right = v;
+        }
+        layout.margin = Some(p);
+        self
+    }
 }
 
-impl_pad_swizzle! {
-    padding:
-    pad   => [top, bottom, left, right];
-    padh  => [left, right];
-    padv  => [top, bottom];
+/// Fill, border and interaction colours, shared by every style.
+pub const trait Painted: Sized {
+    fn paint_mut(&mut self) -> &mut Paint;
 
-    padt  => [top];
-    padb  => [bottom];
-    padl  => [left];
-    padr  => [right];
+    #[inline]
+    fn bg(mut self, color: impl [const] IntoColor) -> Self {
+        self.paint_mut().bg = color.into_color();
+        self
+    }
 
-    padtl => [top, left];
-    padtr => [top, right];
-    padbl => [bottom, left];
-    padbr => [bottom, right];
+    #[inline]
+    fn fg(mut self, color: impl [const] IntoColor) -> Self {
+        self.paint_mut().fg = color.into_color();
+        self
+    }
 
-    padtb => [top, bottom];
-    padlr => [left, right];
-    padrl => [right, left];
+    #[inline]
+    fn radius(mut self, r: usize) -> Self {
+        self.paint_mut().radius = Some(r);
+        self
+    }
+
+    #[inline]
+    fn border(mut self, color: impl [const] IntoColor) -> Self {
+        self.paint_mut().border = color.into_color();
+        self
+    }
+
+    #[inline]
+    fn border_thickness(mut self, thickness: usize) -> Self {
+        self.paint_mut().border_thickness = Some(thickness);
+        self
+    }
+
+    #[inline]
+    fn border_side(mut self, side: u8) -> Self {
+        self.paint_mut().border_side = Some(side);
+        self
+    }
+
+    #[inline]
+    fn is_selected(mut self, is_selected: bool) -> Self {
+        self.paint_mut().is_selected = is_selected;
+        self
+    }
+
+    #[inline]
+    fn selected(mut self, color: impl [const] IntoColor) -> Self {
+        self.paint_mut().selected = color.into_color();
+        self
+    }
+
+    #[inline]
+    fn selected_border(mut self, color: impl [const] IntoColor) -> Self {
+        self.paint_mut().selected_border = color.into_color();
+        self
+    }
+
+    #[inline]
+    fn hover(mut self, color: impl [const] IntoColor) -> Self {
+        self.paint_mut().hover = color.into_color();
+        self
+    }
+
+    #[inline]
+    fn hover_border(mut self, color: impl [const] IntoColor) -> Self {
+        self.paint_mut().hover_border = color.into_color();
+        self
+    }
+
+    #[inline]
+    fn opacity(mut self, opacity: u8) -> Self {
+        self.paint_mut().opacity = Some(opacity);
+        self
+    }
 }
 
-impl_pad_swizzle! {
-    margin:
-    mar   => [top, bottom, left, right];
-    marh  => [left, right];
-    marv  => [top, bottom];
-
-    mart  => [top];
-    marb  => [bottom];
-    marl  => [left];
-    marr  => [right];
-
-    martl => [top, left];
-    martr => [top, right];
-    marbl => [bottom, left];
-    marbr => [bottom, right];
-
-    martb => [top, bottom];
-    marlr => [left, right];
-    marrl => [right, left];
+impl const Boxed for FlowStyle {
+    fn layout_mut(&mut self) -> &mut Layout {
+        &mut self.layout
+    }
 }
 
-pub fn bg(color: u32) -> Style {
-    style().bg(color)
+impl const Boxed for RectStyle {
+    fn layout_mut(&mut self) -> &mut Layout {
+        &mut self.layout
+    }
 }
 
-pub fn fg(color: u32) -> Style {
-    style().fg(color)
+impl const Boxed for TextStyle {
+    fn layout_mut(&mut self) -> &mut Layout {
+        &mut self.layout
+    }
 }
 
-pub fn font_size(font_size: usize) -> Style {
-    style().font_size(font_size)
+impl const Boxed for ImageStyle {
+    fn layout_mut(&mut self) -> &mut Layout {
+        &mut self.layout
+    }
 }
 
-pub fn bounds(bounds: Rect) -> Style {
-    style().bounds(bounds)
+impl const Painted for FlowStyle {
+    fn paint_mut(&mut self) -> &mut Paint {
+        &mut self.paint
+    }
 }
 
-pub fn style() -> Style {
-    Style::default()
+impl const Painted for RectStyle {
+    fn paint_mut(&mut self) -> &mut Paint {
+        &mut self.paint
+    }
 }
 
-pub fn s() -> Style {
-    Style::default()
+impl const Painted for TextStyle {
+    fn paint_mut(&mut self) -> &mut Paint {
+        &mut self.paint
+    }
+}
+
+impl const Painted for ImageStyle {
+    fn paint_mut(&mut self) -> &mut Paint {
+        &mut self.paint
+    }
+}
+
+impl From<Rect> for FlowStyle {
+    fn from(bounds: Rect) -> Self {
+        flow().bounds(bounds)
+    }
 }
 
 pub const fn white() -> u32 {
@@ -562,26 +881,44 @@ impl Default for Size {
     }
 }
 
+/// Lets colour setters take a colour or `None` to unset one.
+/// Allows users to write `.bg(red())`, `.bg(hex("#101011"))` or `.bg(None)`.
+pub const trait IntoColor {
+    fn into_color(self) -> Option<u32>;
+}
+
+impl const IntoColor for u32 {
+    fn into_color(self) -> Option<u32> {
+        Some(self)
+    }
+}
+
+impl const IntoColor for Option<u32> {
+    fn into_color(self) -> Option<u32> {
+        self
+    }
+}
+
 /// Helper trait to simplify writing Size constraints.
 /// Allows users to write None, 13, 0.2, -32 or Size::*.
-pub trait IntoSize {
+pub const trait IntoSize {
     fn into_size(self) -> Option<Size>;
 }
 
-impl IntoSize for Size {
+impl const IntoSize for Size {
     fn into_size(self) -> Option<Size> {
         Some(self)
     }
 }
 
-impl IntoSize for f32 {
+impl const IntoSize for f32 {
     fn into_size(self) -> Option<Size> {
         Some(Size::Percentage(self))
     }
 }
 
 //Yeah keep it for now, I'll think about it later...
-impl IntoSize for i32 {
+impl const IntoSize for i32 {
     fn into_size(self) -> Option<Size> {
         if self < 0 {
             Some(Size::FillMinus(self))
@@ -591,13 +928,14 @@ impl IntoSize for i32 {
     }
 }
 
-impl IntoSize for usize {
+impl const IntoSize for usize {
     fn into_size(self) -> Option<Size> {
         Some(Size::Pixel(self as i32))
     }
 }
 
-pub fn text<'a>(content: impl Into<Cow<'a, str>>, style: Style) -> Line<'a> {
+/// One styled run inside [`FrameContext::lines`].
+pub fn line<'a>(content: impl Into<Cow<'a, str>>, style: TextStyle) -> Line<'a> {
     Line {
         content: content.into(),
         style,
@@ -607,14 +945,14 @@ pub fn text<'a>(content: impl Into<Cow<'a, str>>, style: Style) -> Line<'a> {
 #[derive(Clone, Debug)]
 pub struct Line<'a> {
     pub content: Cow<'a, str>,
-    pub style: Style,
+    pub style: TextStyle,
 }
 
 impl<'a> From<&'a str> for Line<'a> {
     fn from(content: &'a str) -> Self {
         Line {
             content: Cow::Borrowed(content),
-            style: Style::default(),
+            style: TextStyle::new(),
         }
     }
 }
@@ -623,7 +961,7 @@ impl From<String> for Line<'static> {
     fn from(content: String) -> Self {
         Line {
             content: Cow::Owned(content),
-            style: Style::default(),
+            style: TextStyle::new(),
         }
     }
 }
@@ -632,7 +970,7 @@ impl<'a> From<Cow<'a, str>> for Line<'a> {
     fn from(content: Cow<'a, str>) -> Self {
         Line {
             content,
-            style: Style::default(),
+            style: TextStyle::new(),
         }
     }
 }

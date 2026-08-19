@@ -23,28 +23,28 @@ fn main() {
 
     while ui.window.open() {
         ui.frame(|ui| {
-            ui.flow_down(style(), |ui| {
+            ui.flow_down(flow(), |ui| {
                 for (icon, label) in icons.iter() {
                     ui.lines(
                         [
-                            text(*icon, style().font(icon_id).font_size(32).padr(12)),
-                            text(*label, style().font_size(32)),
+                            line(*icon, text().font(icon_id).font_size(32).padr(12)),
+                            line(*label, text().font_size(32)),
                         ],
-                        style(),
+                        text(),
                     );
                 }
             });
 
             ui.gap(270);
 
-            ui.flow_right(style(), |ui| {
+            ui.flow_right(flow(), |ui| {
                 ui.gap(20);
 
                 for (icon, label) in icons {
-                    ui.flow_down(style().width(96), |ui| {
+                    ui.flow_down(flow().width(96), |ui| {
                         ui.text(
                             icon,
-                            style()
+                            text()
                                 .width(96)
                                 .height(96)
                                 .bg(rgb(24, 24, 24))
@@ -57,12 +57,12 @@ fn main() {
 
                         ui.text(
                             label,
-                            style()
+                            text()
                                 .fg(gray())
                                 .font_size(16)
-                                .fill_width()
+                                .fillw()
                                 .padl(2)
-                                .align(Alignment::Left),
+                                .content(Alignment::Left),
                         );
                     });
 
@@ -76,7 +76,7 @@ fn main() {
                 let icon_rect = Rect::new(x, y + 80, 96, 96);
                 let label_rect = Rect::new(x, y + 190, 96, 28);
 
-                ui.paint_rect(icon_rect, style().bg(rgb(24, 24, 24)).border(rgb(55, 55, 55)));
+                ui.paint_rect(icon_rect, rect().bg(rgb(24, 24, 24)).border(rgb(55, 55, 55)));
                 ui.paint_text(
                     *icon,
                     icon_rect,
@@ -90,7 +90,7 @@ fn main() {
                 );
 
                 ui.place_down(label_rect, |ui| {
-                    ui.text(*label, style().fg(gray()).font_size(16));
+                    ui.text(*label, text().fg(gray()).font_size(16));
                 });
             }
 

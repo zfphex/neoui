@@ -6,11 +6,11 @@ fn main() {
             ui.begin_layout(Flow::Down, None);
             let _s = ui.text(
                 "A line of text\nAnother line of text.",
-                style()
-                    .fill_width()
-                    .fill_height()
+                text()
+                    .fillw()
+                    .fillh()
                     .radius(100)
-                    .align(Alignment::Center)
+                    .content(Alignment::Center)
                     .bg(rgb(34, 46, 155))
                     .fg(rgb(224, 203, 13))
                     .border(red())

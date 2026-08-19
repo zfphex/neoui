@@ -11,12 +11,12 @@ fn main() {
             }
 
             for _ in 0..6 {
-                ui.flow_right(style(), |ui| {
-                    ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
-                    ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
-                    ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
-                    ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
-                    ui.rect(style().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
+                ui.flow_right(flow(), |ui| {
+                    ui.rect(rect().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
+                    ui.rect(rect().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
+                    ui.rect(rect().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
+                    ui.rect(rect().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
+                    ui.rect(rect().width(200).height(200).radius(30).bg(hex("#8aa6d4")));
                 });
             }
         });

@@ -91,11 +91,11 @@ fn main() {
             let (top_nav_rect, body) = ui.split_v(30);
             let (sidebar_rect, track_rect) = ui.split_rect_h(body, 260);
 
-            ui.flow_right(bounds(top_nav_rect).bg(menu_bg), |ui| {
+            ui.flow_right(flow().bounds(top_nav_rect).bg(menu_bg), |ui| {
                 for (label, menu) in items {
                     let state = ui.text(
                         label,
-                        style()
+                        text()
                             .height(top_nav_rect.height)
                             .padl(14)
                             .padr(14)
@@ -112,8 +112,8 @@ fn main() {
                     }
                 }
 
-                let bar = style().width(1).height(top_nav_rect.height).bg(bar_color);
-                let icon = style().font(icon_id).font_size(24).fill_height();
+                let bar = rect().width(1).height(top_nav_rect.height).bg(bar_color);
+                let icon = text().font(icon_id).font_size(24).fillh();
                 if ui.text(stop, icon).clicked {
                     println!("Stop");
                 }
@@ -140,47 +140,47 @@ fn main() {
                 {
                     let width = 200;
                     let height = top_nav_rect.height;
-                    let rect = ui.walk_layout(width, height, 0).size;
+                    let slider = ui.walk_layout(width, height, 0, None).size;
 
-                    ui.paint_rect(rect, bg(rgb(25, 25, 25)));
+                    ui.paint_rect(slider, rect().bg(rgb(25, 25, 25)));
 
-                    if let Some(percent) = ui.drag_percentage_x(rect) {
+                    if let Some(percent) = ui.drag_percentage_x(slider) {
                         volume = percent;
                     }
 
                     let track_height = 6;
-                    let cy = rect.y + height / 2;
+                    let cy = slider.y + height / 2;
 
                     ui.paint_triangle(
-                        (rect.x, cy + track_height),
-                        (rect.x + width, cy + track_height),
-                        (rect.x + width, cy.saturating_sub(track_height)),
-                        bg(black()),
+                        (slider.x, cy + track_height),
+                        (slider.x + width, cy + track_height),
+                        (slider.x + width, cy.saturating_sub(track_height)),
+                        rect().bg(black()),
                     );
 
                     let thumb_w = 12;
                     let thumb_h = 18;
                     let available_width = width.saturating_sub(thumb_w);
-                    let thumb_x = rect.x + (volume * available_width as f32).round() as i32;
-                    let thumb_y = rect.y + (height.saturating_sub(thumb_h)) / 2;
+                    let thumb_x = slider.x + (volume * available_width as f32).round() as i32;
+                    let thumb_y = slider.y + (height.saturating_sub(thumb_h)) / 2;
                     let thumb_color = rgb(0, 102, 204);
 
-                    ui.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), bg(thumb_color));
+                    ui.paint_rect(Rect::new(thumb_x, thumb_y, thumb_w, thumb_h), rect().bg(thumb_color));
                 }
             });
 
             //Should go after the hit testing so there is not a one frame delay.
             if let Some((menu, rect)) = current_menu {
-                let item_style = style()
+                let item_style = text()
                     .width(180)
                     .padlr(12)
                     .padtb(8)
                     .bg(rgb(35, 35, 35))
                     .hover(rgb(60, 60, 60))
-                    .align(Alignment::Left)
+                    .content(Alignment::Left)
                     .depth(1);
 
-                ui.place_down(style().x(rect.x).y(top_nav_rect.height), |ui| {
+                ui.place_down(flow().x(rect.x).y(top_nav_rect.height), |ui| {
                     for &item in dropdown_items(menu) {
                         if ui.item(item, item_style).clicked {
                             println!("{}", item);
@@ -194,36 +194,36 @@ fn main() {
                 }
             }
 
-            let row_style = style()
+            let row_style = text()
                 .pad(8)
                 .padl(12)
                 .hover(rgb(35, 35, 35))
-                .fill_width()
+                .fillw()
                 .hover_border(rgb(90, 90, 90))
                 .selected(rgb(82, 82, 82))
-                .align(Alignment::Left)
+                .content(Alignment::Left)
                 .selected_border(rgb(170, 170, 170));
 
-            ui.flow_down(bounds(sidebar_rect).bg(panel_bg), |ui| {
-                ui.text("All Music", style().fg(text_dim).pad(6));
+            ui.flow_down(flow().bounds(sidebar_rect).bg(panel_bg), |ui| {
+                ui.text("All Music", text().fg(text_dim).pad(6));
 
                 for artist in artists {
                     ui.item(artist, row_style);
                 }
 
-                ui.paint_rect(sidebar_rect, style().border(border_color).border_side(RIGHT));
+                ui.paint_rect(sidebar_rect, rect().border(border_color).border_side(RIGHT));
             });
 
             //This is kinda cursed.
             let (track_rect, scrollbar) = ui.split_rect_h(track_rect, -20);
 
-            let state = ui.scroll(bounds(track_rect).elastic(true), &mut scroll, |ui| {
+            let state = ui.scroll(flow().bounds(track_rect).elastic(true), &mut scroll, |ui| {
                 ui.text(
                     "beabadoobee - Fake It Flowers (2020)",
-                    style().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
+                    text().fg(accent_blue).font_size(14).padl(8).padb(4).height(24),
                 );
 
-                let row_style = row_style.align(Alignment::Left).padl(12);
+                let row_style = row_style.content(Alignment::Left).padl(12);
 
                 for (idx, track) in tracklist.iter().enumerate() {
                     if ui
@@ -253,7 +253,7 @@ fn main() {
 
                 let y = s.y + (ratio * available_height).round() as i32;
                 let thumb = Rect::new(s.x, y, s.width, thumb_h as i32);
-                ui.paint_rect(thumb, bg(rgb(80, 80, 80)));
+                ui.paint_rect(thumb, rect().bg(rgb(80, 80, 80)));
             }
         });
 

@@ -50,11 +50,11 @@ fn main() {
             built = 0;
 
             max_scroll = ui
-                .scroll(bounds(body).bg(panel).elastic(true), &mut scroll, |ui| {
+                .scroll(flow().bounds(body).bg(panel).elastic(true), &mut scroll, |ui| {
                     for index in 0..CARDS {
                         let height = card_height(index);
-                        let card = style().padlr(16).padtb(8).fill_width().height(height);
-                        let body = style().fill_width().height(height);
+                        let card = flow().padlr(16).padtb(8).fillw().height(height);
+                        let body = flow().fillw().height(height);
                         let (card, body) = if cull {
                             (card, body)
                         } else {
@@ -64,7 +64,7 @@ fn main() {
                         ui.flow_right(card, |ui| {
                             built += 1;
 
-                            if ui.rect(style().wh(COVER).bg(rgb(58, 58, 66)).radius(8)).clicked {
+                            if ui.rect(rect().wh(COVER).bg(rgb(58, 58, 66)).radius(8)).clicked {
                                 clicked = format!("cover of album {index}");
                             }
 
@@ -73,17 +73,17 @@ fn main() {
                             ui.flow_down(body, |ui| {
                                 ui.text(
                                     ui.fmt(format_args!("Album {index}")),
-                                    style().fg(white()).font_size(18).padb(6).fill_width(),
+                                    text().fg(white()).font_size(18).padb(6).fillw(),
                                 );
                                 for track in 0..tracks(index) {
                                     let row = ui.item(
                                         ui.fmt(format_args!("{}.  Track title {index}-{track}", track + 1)),
-                                        style()
+                                        text()
                                             .fg(dim)
                                             .padlr(6)
                                             .padtb(3)
                                             .radius(4)
-                                            .fill_width()
+                                            .fillw()
                                             .hover(rgb(44, 44, 52)),
                                     );
                                     if row.clicked {
@@ -98,21 +98,21 @@ fn main() {
                 .max_scroll;
             build_ms = build_start.elapsed().as_secs_f64() * 1000.0;
 
-            ui.place_down(bounds(bar).bg(panel), |ui| {
+            ui.place_down(flow().bounds(bar).bg(panel), |ui| {
                 ui.text(
                     "c: toggle culling — click a cover or a track, then try clicking this bar",
-                    style().fg(dim).padl(16).padt(10).padb(4).fill_width(),
+                    text().fg(dim).padl(16).padt(10).padb(4).fillw(),
                 );
-                ui.rect(style().fill_width().height(1).bg(line));
-                ui.place_right(style().padl(16).padt(8).fill_width().height(28), |ui| {
+                ui.rect(rect().fillw().height(1).bg(line));
+                ui.place_right(flow().padl(16).padt(8).fillw().height(28), |ui| {
                     ui.text(
                         ui.fmt(format_args!(
                             "cull {} · built {built}/{CARDS} in {build_ms:.2}ms · max_scroll {max_scroll} · frame {frame_ms:.2}ms",
                             if cull { "on" } else { "off" }
                         )),
-                        style().fg(white()).padr(24),
+                        text().fg(white()).padr(24),
                     );
-                    ui.text(ui.fmt(format_args!("last click: {clicked}")), style().fg(accent));
+                    ui.text(ui.fmt(format_args!("last click: {clicked}")), text().fg(accent));
                 });
             });
         });

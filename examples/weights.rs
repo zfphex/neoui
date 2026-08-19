@@ -42,15 +42,15 @@ fn main() {
 
     while ui.window.open() {
         ui.frame(|ui| {
-            ui.flow_right(style().fill().pad(16), |ui| {
+            ui.flow_right(flow().fill().pad(16), |ui| {
                 for italic in [false, true] {
-                    ui.flow_down(style().w(550).fill_height(), |ui| {
+                    ui.flow_down(flow().w(550).fillh(), |ui| {
                         for weight in WEIGHTS {
-                            let mut s = style()
+                            let mut s = text()
                                 .weight(weight)
                                 .font_size(28)
                                 .fg(black())
-                                .align_left()
+                                .content_left()
                                 .w(550)
                                 .h(96);
                             if italic {

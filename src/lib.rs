@@ -1073,8 +1073,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
     }
 
+    #[inline]
     pub fn rect(&mut self, style: Style) -> State {
-        self.item("", style)
+        self.widget(0, 0, style, |_, _, _, _| {})
     }
 
     pub fn circle(&mut self, mut style: Style) -> State {
@@ -1107,6 +1108,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         })
     }
 
+    #[inline]
     pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         self.item(text, style)
     }
@@ -1310,9 +1312,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     #[inline]
     pub fn item(&mut self, text: impl Into<Cow<'a, str>>, style: Style) -> State {
         let text = text.into();
-        if text.is_empty() {
-            return self.widget(0, 0, style, |_, _, _, _| {});
-        }
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let metrics = self.measure_text(&text, style.font, font_size, style.line_height);
         self.widget(metrics.width, metrics.height, style, |ui, content, _, depth| {

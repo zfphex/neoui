@@ -125,6 +125,9 @@ pub struct Style {
 }
 
 impl Style {
+    pub const fn new() -> Self {
+        todo!();
+    }
     pub fn gap(mut self, gap: impl IntoSize) -> Self {
         self.gap = gap.into_size();
         self
@@ -240,11 +243,29 @@ impl Style {
         self
     }
 
+    pub fn fill(mut self) -> Self {
+        self.width = Some(Size::Fill);
+        self.height = Some(Size::Fill);
+        self
+    }
+
+    pub fn fillw(mut self) -> Self {
+        self.width = Some(Size::Fill);
+        self
+    }
+
+    pub fn fillh(mut self) -> Self {
+        self.height = Some(Size::Fill);
+        self
+    }
+
+    //TODO: Remove
     pub fn fill_width(mut self) -> Self {
         self.width = Some(Size::Fill);
         self
     }
 
+    //TODO: Remove
     pub fn fill_height(mut self) -> Self {
         self.height = Some(Size::Fill);
         self
@@ -357,11 +378,6 @@ impl Style {
         self
     }
 
-    pub fn fill(mut self) -> Self {
-        self.width = Some(Size::Fill);
-        self.height = Some(Size::Fill);
-        self
-    }
 }
 
 impl Into<Style> for Rect {
@@ -447,6 +463,10 @@ pub fn bounds(bounds: Rect) -> Style {
 }
 
 pub fn style() -> Style {
+    Style::default()
+}
+
+pub fn s() -> Style {
     Style::default()
 }
 

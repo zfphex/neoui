@@ -1053,6 +1053,7 @@ pub fn draw_text(
     color: u32,
     cache: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     clip: Rect,
+    breaks: &[u32],
 ) -> Rect {
     if text.is_empty() || font_size == 0 || window_width == 0 {
         return Rect::default();
@@ -1068,7 +1069,7 @@ pub fn draw_text(
     let baseline_offset = line_metrics.ascent + (line_step - line_metrics.ascent + line_metrics.descent) / 2.0;
     // A single line always spans the whole block, and flush-left lines never move.
     let align_lines =
-        !matches!(alignment, Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft) && text.contains('\n');
+        !matches!(alignment, Alignment::Left | Alignment::TopLeft | Alignment::BottomLeft) && breaks.len() > 2;
 
     let (txt_r, txt_g, txt_b, txt_a) = split(color);
     let is_opaque_text = txt_a >= 254;
@@ -1088,7 +1089,11 @@ pub fn draw_text(
     let clip_bottom = clip.bottom();
     let buffer_height = (buffer.len() / window_width) as i32;
 
-    for line in text.lines() {
+    let single = [0u32, text.len() as u32];
+    let breaks = if breaks.is_empty() { &single[..] } else { breaks };
+
+    for pair in breaks.chunks_exact(2) {
+        let line = &text[pair[0] as usize..pair[1] as usize];
         let mut glyph_x = x_start;
         if align_lines {
             let mut line_width = 0.0;
@@ -1204,7 +1209,9 @@ pub fn measure_text(
     fallbacks: &[usize],
     font_size: usize,
     line_height: Option<usize>,
+    max_width: i32,
     metrics: &mut FxHashMap<(usize, char, usize), fontdue::Metrics>,
+    breaks: &mut Vec<u32>,
 ) -> Rect {
     if text.is_empty() || font_size == 0 {
         return Rect::default();
@@ -1214,40 +1221,107 @@ pub fn measure_text(
     let size = font_size as f32;
     let line_metrics = font.horizontal_line_metrics(size).unwrap();
 
-    let mut max_width = 0.0f32;
-    let mut current_width = 0.0f32;
-    let mut lines: i32 = 1;
+    let mut max_width_seen = 0.0f32;
+    let mut x = 0.0f32;
+    let mut lines: i32 = 0;
 
-    for ch in text.chars() {
-        if ch == '\n' {
-            max_width = max_width.max(current_width);
-            current_width = 0.0;
-            lines += 1;
-            continue;
+    if max_width == i32::MAX {
+        for ch in text.chars() {
+            if ch == '\n' {
+                max_width_seen = max_width_seen.max(x);
+                x = 0.0;
+                lines += 1;
+                continue;
+            }
+            x += metrics
+                .entry((font_id, ch, font_size))
+                .or_insert_with(|| {
+                    let glyph_font = if fallbacks.is_empty() || font.lookup_glyph_index(ch) != 0 {
+                        font_id
+                    } else {
+                        fallbacks
+                            .iter()
+                            .copied()
+                            .find(|f| fonts[*f].lookup_glyph_index(ch) != 0)
+                            .unwrap_or(font_id)
+                    };
+                    fonts[glyph_font].metrics(ch, size)
+                })
+                .advance_width;
+        }
+        max_width_seen = max_width_seen.max(x);
+        lines += 1;
+
+        // A single line needs no offsets at all, drawing falls back to the whole string.
+        if lines > 1 {
+            let mut start = 0u32;
+            for line in text.split('\n') {
+                breaks.push(start);
+                breaks.push(start + line.len() as u32);
+                start += line.len() as u32 + 1;
+            }
+        }
+    } else {
+        let limit = max_width as f32;
+        let mut line_start = 0u32;
+        let mut space: Option<(u32, u32, f32, f32)> = None;
+
+        for (i, ch) in text.char_indices() {
+            let i = i as u32;
+            if ch == '\n' {
+                breaks.push(line_start);
+                breaks.push(i);
+                max_width_seen = max_width_seen.max(x);
+                lines += 1;
+                line_start = i + 1;
+                x = 0.0;
+                space = None;
+                continue;
+            }
+
+            let advance = metrics
+                .entry((font_id, ch, font_size))
+                .or_insert_with(|| {
+                    let glyph_font = if fallbacks.is_empty() || font.lookup_glyph_index(ch) != 0 {
+                        font_id
+                    } else {
+                        fallbacks
+                            .iter()
+                            .copied()
+                            .find(|f| fonts[*f].lookup_glyph_index(ch) != 0)
+                            .unwrap_or(font_id)
+                    };
+                    fonts[glyph_font].metrics(ch, size)
+                })
+                .advance_width;
+
+            if x + advance > limit && i > line_start {
+                let (end, resume, width, after) = space.unwrap_or((i, i, x, x));
+                breaks.push(line_start);
+                breaks.push(end);
+                max_width_seen = max_width_seen.max(width);
+                lines += 1;
+                line_start = resume;
+                x -= after;
+                space = None;
+            }
+
+            if ch == ' ' {
+                space = Some((i, i + 1, x, x + advance));
+            }
+            x += advance;
         }
 
-        let metrics = metrics.entry((font_id, ch, font_size)).or_insert_with(|| {
-            let glyph_font = if fallbacks.is_empty() || font.lookup_glyph_index(ch) != 0 {
-                font_id
-            } else {
-                fallbacks
-                    .iter()
-                    .copied()
-                    .find(|f| fonts[*f].lookup_glyph_index(ch) != 0)
-                    .unwrap_or(font_id)
-            };
-            fonts[glyph_font].metrics(ch, size)
-        });
-
-        current_width += metrics.advance_width;
+        breaks.push(line_start);
+        breaks.push(text.len() as u32);
+        max_width_seen = max_width_seen.max(x);
+        lines += 1;
     }
-
-    max_width = max_width.max(current_width);
 
     Rect {
         x: 0,
         y: 0,
-        width: max_width.round() as i32,
+        width: max_width_seen.round() as i32,
         height: match line_height {
             Some(line_height) => lines * line_height as i32,
             None => (lines as f32 * line_metrics.new_line_size).round() as i32,
@@ -1310,6 +1384,7 @@ pub fn draw_command(
     fallbacks: &[usize],
     font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     columns: &mut Vec<u32>,
+    line_breaks: &[u32],
 ) {
     let clip = command.clip().scale(display_scale).intersection(damage);
     if clip.is_empty() {
@@ -1357,6 +1432,7 @@ pub fn draw_command(
             font_id,
             line_height,
             alignment,
+            breaks,
             clip: _,
         } => {
             draw_text(
@@ -1373,13 +1449,10 @@ pub fn draw_command(
                 *color,
                 font_bitmaps,
                 clip,
+                &line_breaks[breaks.0 as usize..breaks.1 as usize],
             );
         }
-        Command::Circle {
-            bounds,
-            color,
-            clip: _,
-        } => draw_circle_sdf(
+        Command::Circle { bounds, color, clip: _ } => draw_circle_sdf(
             buffer,
             bounds.scale(display_scale),
             framebuffer_width,
@@ -1459,6 +1532,7 @@ pub fn raster_damage(
     fallbacks: &[usize],
     font_bitmaps: &mut FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     columns: &mut Vec<u32>,
+    line_breaks: &[u32],
 ) {
     let damage = cache.damage();
 
@@ -1478,6 +1552,7 @@ pub fn raster_damage(
                         fallbacks,
                         font_bitmaps,
                         columns,
+                        line_breaks,
                     );
                 }
             }
@@ -1502,6 +1577,7 @@ pub fn raster_damage(
                         fallbacks,
                         font_bitmaps,
                         columns,
+                        line_breaks,
                     );
                 }
             }
@@ -1519,6 +1595,7 @@ pub fn raster_damage(
                             fallbacks,
                             font_bitmaps,
                             columns,
+                            line_breaks,
                         );
                     }
                 }

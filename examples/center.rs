@@ -16,7 +16,7 @@ fn main() {
             // Vertical child + stated width     - horizontal centering.
             ui.flow_right(flow().fillw().height(0.5).bg(rgb(30, 30, 30)).children_center(), |ui| {
                 ui.flow_down(flow().fillw().height(64).children_center(), |ui| {
-                    ui.flow_down(flow().width(160).height(64).bg(red()).padding(pad(8)), |ui| {
+                    ui.flow_down(flow().width(160).height(64).bg(red()).pad(8), |ui| {
                         ui.text("known size", text());
                     });
                 });
@@ -29,7 +29,7 @@ fn main() {
                     .x((w - fitted.width) / 2)
                     .y(h / 2 + (h / 4 - fitted.height / 2))
                     .bg(blue())
-                    .padding(pad(12))
+                    .pad(12)
                     .gap(6),
                 |ui| {
                     ui.text("auto sized", text());

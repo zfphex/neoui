@@ -57,12 +57,7 @@ fn main() {
 
                         ui.text(
                             label,
-                            text()
-                                .fg(gray())
-                                .font_size(16)
-                                .fillw()
-                                .padl(2)
-                                .content(Alignment::Left),
+                            text().fg(gray()).font_size(16).fillw().padl(2).content(Alignment::Left),
                         );
                     });
 

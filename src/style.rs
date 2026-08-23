@@ -210,6 +210,8 @@ pub struct TextStyle {
     pub font: Font,
     pub font_size: Option<usize>,
     pub line_height: Option<usize>,
+    /// Break lines to fit the width this style asks for. Needs an explicit width.
+    pub wrap: bool,
     /// Where the glyph run sits inside this widget's own content box.
     pub content: Option<Alignment>,
 }
@@ -254,6 +256,7 @@ impl TextStyle {
             },
             font_size: None,
             line_height: None,
+            wrap: false,
             content: None,
         }
     }
@@ -339,6 +342,11 @@ impl TextStyle {
 
     pub const fn font_size(mut self, font_size: usize) -> Self {
         self.font_size = Some(font_size);
+        self
+    }
+
+    pub const fn wrap(mut self, wrap: bool) -> Self {
+        self.wrap = wrap;
         self
     }
 
@@ -934,7 +942,6 @@ const impl IntoSize for usize {
     }
 }
 
-/// One styled run inside [`FrameContext::lines`].
 pub fn line<'a>(content: impl Into<Cow<'a, str>>, style: TextStyle) -> Line<'a> {
     Line {
         content: content.into(),

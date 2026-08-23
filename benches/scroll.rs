@@ -20,7 +20,7 @@ fn layers(commands: Vec<Command<'static>>) -> [Vec<Command<'static>>; 16] {
     layers
 }
 
-fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
+fn scroll_frame(scroll_y: i32, line_breaks: &mut Vec<u32>) -> [Vec<Command<'static>>; 16] {
     let clip = Rect::new(VIEW_X, VIEW_Y, VIEW_W, VIEW_H);
     let mut cmds = Vec::with_capacity((ROW_COUNT * 2) as usize);
 
@@ -44,8 +44,12 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
             color,
             radius: 0,
         });
+        let text = format!("{row:03}. Song title example row for scroll bench");
+        let breaks = (line_breaks.len() as u32, line_breaks.len() as u32 + 2);
+        line_breaks.push(0);
+        line_breaks.push(text.len() as u32);
         cmds.push(Command::Text {
-            text: std::borrow::Cow::Owned(format!("{row:03}. Song title example row for scroll bench")),
+            text: std::borrow::Cow::Owned(text),
             font_id: 0,
             clip,
             bounds: Rect::new(bounds.x + 8, bounds.y, bounds.width - 16, bounds.height),
@@ -53,6 +57,7 @@ fn scroll_frame(scroll_y: i32) -> [Vec<Command<'static>>; 16] {
             size: 16,
             line_height: None,
             alignment: Alignment::Left,
+            breaks,
         });
         if row % 7 == 0 {
             cmds.push(Command::RectStroke {
@@ -75,6 +80,7 @@ struct ScrollBench {
     fonts: Vec<fontdue::Font>,
     bitmaps: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     columns: Vec<u32>,
+    line_breaks: Vec<u32>,
     frames: [[Vec<Command<'static>>; 16]; 2],
     step: usize,
     last_damage_rects: usize,
@@ -83,7 +89,11 @@ struct ScrollBench {
 
 impl ScrollBench {
     fn new() -> Self {
-        let frames = [scroll_frame(0), scroll_frame(SCROLL_STEP)];
+        let mut line_breaks = Vec::new();
+        let frames = [
+            scroll_frame(0, &mut line_breaks),
+            scroll_frame(SCROLL_STEP, &mut line_breaks),
+        ];
         let mut cache = RenderCache::default();
         cache.update(&frames[0], 1.0, FB_W, FB_H, black());
         cache.finish();
@@ -93,6 +103,7 @@ impl ScrollBench {
             fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
             bitmaps: FxHashMap::default(),
             columns: Vec::new(),
+            line_breaks,
             frames,
             step: 0,
             last_damage_rects: 0,
@@ -126,6 +137,7 @@ impl ScrollBench {
                 &[],
                 &mut self.bitmaps,
                 &mut self.columns,
+                &self.line_breaks,
             );
         }
         self.cache.finish();
@@ -167,7 +179,11 @@ fn bench_scroll(c: &mut Criterion) {
     });
 
     let offsets = [0, 30, 60, 90, 60, 30];
-    let sequence: Vec<_> = offsets.into_iter().map(scroll_frame).collect();
+    let mut line_breaks = Vec::new();
+    let sequence: Vec<_> = offsets
+        .into_iter()
+        .map(|offset| scroll_frame(offset, &mut line_breaks))
+        .collect();
 
     c.bench_function("scroll_path_six_steps_full", |b| {
         b.iter_batched_ref(
@@ -186,7 +202,19 @@ fn bench_scroll(c: &mut Criterion) {
                 let commands = &sequence[*idx];
                 if cache.update(commands, 1.0, FB_W, FB_H, black()) {
                     clear_damage(buffer, FB_W, cache.damage(), black());
-                    raster_damage(commands, cache, buffer, FB_W, FB_H, 1.0, fonts, &[], bitmaps, columns);
+                    raster_damage(
+                        commands,
+                        cache,
+                        buffer,
+                        FB_W,
+                        FB_H,
+                        1.0,
+                        fonts,
+                        &[],
+                        bitmaps,
+                        columns,
+                        &line_breaks,
+                    );
                 }
                 cache.finish();
                 black_box(*idx);

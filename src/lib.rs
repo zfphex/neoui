@@ -166,6 +166,7 @@ pub enum Command<'a> {
         size: usize,
         line_height: Option<usize>,
         alignment: Alignment,
+        breaks: (u32, u32),
     },
     Image {
         image: Image<'a>,
@@ -280,6 +281,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             debug_damage_cache: Vec::new(),
             font_metrics: FxHashMap::default(),
             text_measure_cache: FxHashMap::default(),
+            line_breaks: Vec::new(),
             default_font_size: 32,
             clear_color: black(),
             scroll_y: 0.0,
@@ -334,7 +336,11 @@ pub struct UiState {
     pub debug_damage_fade: f32,
     pub debug_damage_cache: Vec<(Rect, u32, std::time::Instant)>,
     pub font_metrics: FxHashMap<(usize, char, usize), fontdue::Metrics>,
-    pub text_measure_cache: FxHashMap<(u64, usize, usize, Option<usize>), Rect>,
+    /// (text hash, font ID, font size, line height, wrap width) -> (extent, break start, break end).
+    /// The two indices bound this run's slice of line_breaks.
+    pub text_measure_cache: FxHashMap<(u64, usize, usize, Option<usize>, i32), (Rect, u32, u32)>,
+    /// Byte offset pairs, marking where each line starts and ends.
+    pub line_breaks: Vec<u32>,
     pub default_font_size: usize,
     pub vsync: bool,
     pub clear_color: u32,
@@ -974,6 +980,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         &mut self,
         text: impl Into<Cow<'a, str>>,
         metrics: Rect,
+        breaks: (u32, u32),
         rect: Rect,
         color: u32,
         font: Font,
@@ -1014,6 +1021,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             size: font_size,
             line_height,
             alignment,
+            breaks,
         });
     }
 
@@ -1033,10 +1041,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         if text.is_empty() {
             return;
         }
-        let metrics = self.measure_text(&text, font, font_size, line_height);
+        let (metrics, breaks) = self.measure_text(&text, font, font_size, line_height, i32::MAX);
         self.paint_text_measured(
             text,
             metrics,
+            breaks,
             rect,
             color,
             font,
@@ -1048,9 +1057,16 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         );
     }
 
-    pub fn measure_text(&mut self, text: &str, font: Font, font_size: usize, line_height: Option<usize>) -> Rect {
+    pub fn measure_text(
+        &mut self,
+        text: &str,
+        font: Font,
+        font_size: usize,
+        line_height: Option<usize>,
+        max_width: i32,
+    ) -> (Rect, (u32, u32)) {
         if text.is_empty() || font_size == 0 {
-            return Rect::default();
+            return (Rect::default(), (0, 0));
         }
         let font_id = self.face(font);
         let state = &mut *self.state;
@@ -1058,12 +1074,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let mut hasher = rustc_hash::FxHasher::default();
         text.hash(&mut hasher);
         let text_hash = hasher.finish();
-        let key = (text_hash, font_id, font_size, line_height);
+        let key = (text_hash, font_id, font_size, line_height, max_width);
 
-        if let Some(&rect) = state.text_measure_cache.get(&key) {
-            return rect;
+        if let Some(&(rect, start, end)) = state.text_measure_cache.get(&key) {
+            return (rect, (start, end));
         }
 
+        let start = state.line_breaks.len() as u32;
         let rect = measure_text(
             text,
             &state.fonts,
@@ -1071,10 +1088,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             &state.fallbacks,
             font_size,
             line_height,
+            max_width,
             &mut state.font_metrics,
+            &mut state.line_breaks,
         );
-        state.text_measure_cache.insert(key, rect);
-        rect
+        let end = state.line_breaks.len() as u32;
+        state.text_measure_cache.insert(key, (rect, start, end));
+        (rect, (start, end))
     }
 
     pub fn gap(&mut self, gap: impl IntoSize) {
@@ -1119,11 +1139,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 });
             }
         })
-    }
-
-    #[inline]
-    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: TextStyle) -> State {
-        self.item(text, style)
     }
 
     ///paint: (FrameContext, Rect, State, Depth)
@@ -1270,13 +1285,19 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         let mut content_w = 0i32;
         let mut baseline = 0i32;
-        let mut run_metrics: Vec<(Rect, Padding, i32)> = Vec::with_capacity(parts.len());
+        let mut run_metrics: Vec<(Rect, (u32, u32), Padding, i32)> = Vec::with_capacity(parts.len());
         for part in &parts {
             let font_size = part.style.font_size.unwrap_or(default_size);
-            let metrics = if part.content.is_empty() {
-                Rect::default()
+            let (metrics, breaks) = if part.content.is_empty() {
+                (Rect::default(), (0, 0))
             } else {
-                self.measure_text(&part.content, part.style.font, font_size, part.style.line_height)
+                self.measure_text(
+                    &part.content,
+                    part.style.font,
+                    font_size,
+                    part.style.line_height,
+                    i32::MAX,
+                )
             };
             let run_pad = part.style.layout.padding.unwrap_or_default();
             let face = self.face(part.style.font);
@@ -1289,11 +1310,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 + run_pad.top as i32;
             content_w += metrics.width + run_pad.left as i32 + run_pad.right as i32;
             baseline = baseline.max(above);
-            run_metrics.push((metrics, run_pad, above));
+            run_metrics.push((metrics, breaks, run_pad, above));
         }
         let content_h = run_metrics
             .iter()
-            .map(|(metrics, run_pad, above)| {
+            .map(|(metrics, _, run_pad, above)| {
                 baseline - above + run_pad.top as i32 + metrics.height + run_pad.bottom as i32
             })
             .max()
@@ -1313,7 +1334,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 };
 
                 let mut cursor_x = group_x;
-                for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
+                for (part, (metrics, breaks, run_pad, above)) in parts.into_iter().zip(run_metrics) {
                     if part.content.is_empty() {
                         cursor_x += run_pad.left as i32 + run_pad.right as i32;
                         continue;
@@ -1325,6 +1346,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     ui.paint_text_measured(
                         part.content,
                         metrics,
+                        breaks,
                         Rect::new(cursor_x, run_y, run_w, (inner.bottom() - run_y).max(0)),
                         part.style.paint.fg.unwrap_or(style.paint.fg.unwrap_or(white())),
                         part.style.font,
@@ -1342,10 +1364,17 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     #[inline]
-    pub fn item(&mut self, text: impl Into<Cow<'a, str>>, style: TextStyle) -> State {
+    pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: TextStyle) -> State {
         let text = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let metrics = self.measure_text(&text, style.font, font_size, style.line_height);
+        let padding = style.layout.padding.unwrap_or_default();
+        let max_width = match (style.wrap, style.layout.width) {
+            (true, Some(width)) => (self.resolve_style_size(width, Flow::Right, &style.layout)
+                - (padding.left + padding.right) as i32)
+                .max(1),
+            _ => i32::MAX,
+        };
+        let (metrics, breaks) = self.measure_text(&text, style.font, font_size, style.line_height, max_width);
         self.widget(
             metrics.width,
             metrics.height,
@@ -1355,6 +1384,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 ui.paint_text_measured(
                     text,
                     metrics,
+                    breaks,
                     content,
                     style.paint.fg.unwrap_or(white()),
                     style.font,
@@ -1867,6 +1897,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                                 &state.fallbacks,
                                 &mut state.font_bitmaps,
                                 &mut state.image_columns,
+                                &state.line_breaks,
                             );
                         }
                     }
@@ -1908,6 +1939,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 &state.fallbacks,
                 &mut state.font_bitmaps,
                 &mut state.image_columns,
+                &state.line_breaks,
             );
             window.present_damage(state.render_cache.damage());
         }

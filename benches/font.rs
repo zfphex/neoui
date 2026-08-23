@@ -7,6 +7,7 @@ struct BenchContext {
     buffer: Vec<u32>,
     glyph: FxHashMap<(usize, char, usize), (fontdue::Metrics, Vec<u8>)>,
     text: String,
+    breaks: Vec<u32>,
 }
 
 fn bench_draw_text(c: &mut Criterion) {
@@ -15,7 +16,9 @@ fn bench_draw_text(c: &mut Criterion) {
         buffer: vec![0u32; 1000usize * 1000 * 4],
         glyph: FxHashMap::default(),
         text: "abcdefghijklmnopqrstuvwxyz1234567890-=!@#$%^&*()_+".repeat(200),
+        breaks: Vec::new(),
     };
+    ctx.breaks = vec![0, ctx.text.len() as u32];
 
     c.bench_function("bench_draw_text", |b| {
         b.iter(|| {
@@ -33,6 +36,7 @@ fn bench_draw_text(c: &mut Criterion) {
                 black_box(white()),
                 black_box(&mut ctx.glyph),
                 black_box(Rect::new(0, 0, 2000, 2000)),
+                black_box(&ctx.breaks),
             );
         });
     });

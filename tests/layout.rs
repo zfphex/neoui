@@ -151,6 +151,17 @@ fn main() {
             assert_eq!(ui.circle(circle().radius(15)).bounds, Rect::new(0, 20, 30, 30));
         });
 
+        // Text wraps to an explicit width when asked, and hugs its content otherwise.
+        ui.place_down(flow().bounds(Rect::new(0, 0, 400, 400)), |ui| {
+            const LINE: &str = "wrap me onto several lines please";
+            let hug = ui.text(LINE, text().font_size(20));
+            // Without wrap the run keeps hugging, even with a width.
+            let unwrapped = ui.text(LINE, text().font_size(20).w(100));
+            assert_eq!(unwrapped.bounds.height, hug.bounds.height);
+            let narrow = ui.text(LINE, text().font_size(20).w(100).wrap(true));
+            assert!(narrow.bounds.width == 100 && narrow.bounds.height > hug.bounds.height);
+        });
+
         ui.window.close();
     });
 }

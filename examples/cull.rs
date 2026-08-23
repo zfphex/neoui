@@ -76,7 +76,7 @@ fn main() {
                                     text().fg(white()).font_size(18).padb(6).fillw(),
                                 );
                                 for track in 0..tracks(index) {
-                                    let row = ui.item(
+                                    let row = ui.text(
                                         ui.fmt(format_args!("{}.  Track title {index}-{track}", track + 1)),
                                         text()
                                             .fg(dim)

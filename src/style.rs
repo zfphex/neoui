@@ -569,17 +569,17 @@ pub const trait Boxed: Sized {
         self
     }
 
-    #[inline]
-    fn padding(mut self, padding: Padding) -> Self {
-        self.layout_mut().padding = Some(padding);
-        self
-    }
+    // #[inline]
+    // fn padding(mut self, padding: Padding) -> Self {
+    //     self.layout_mut().padding = Some(padding);
+    //     self
+    // }
 
-    #[inline]
-    fn margin(mut self, margin: Padding) -> Self {
-        self.layout_mut().margin = Some(margin);
-        self
-    }
+    // #[inline]
+    // fn margin(mut self, margin: Padding) -> Self {
+    //     self.layout_mut().margin = Some(margin);
+    //     self
+    // }
 
     #[rustfmt::skip] #[inline]    fn pad(self, v: usize)   -> Self { self.pad_edges(v, true, true, true, true) }
     #[rustfmt::skip] #[inline]    fn padh(self, v: usize)  -> Self { self.pad_edges(v, false, false, true, true) }

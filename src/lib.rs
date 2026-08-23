@@ -614,8 +614,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         //                     |
         //            VIEWPORT |
         //  ====================
-        let x = rect.x;
-        let y = rect.y - frame.scroll_y;
+        let paint_x = rect.x;
+        let paint_y = rect.y - frame.scroll_y;
         let clip_top = frame.clip.y;
         let clip_bottom = frame.clip.bottom();
 
@@ -631,10 +631,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         // |                |
         // ==================
 
-        if y + height <= clip_top {
+        if paint_y + height <= clip_top {
             return Walk {
-                paint_x: x,
-                paint_y: y,
+                paint_x,
+                paint_y,
                 ..Default::default()
             };
         }
@@ -651,21 +651,21 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         //    | ITEM    |
         //    +---------+
 
-        if y >= clip_bottom {
+        if paint_y >= clip_bottom {
             return Walk {
-                paint_x: x,
-                paint_y: y,
+                paint_x,
+                paint_y,
                 ..Default::default()
             };
         }
 
-        let visible_y = y.max(clip_top).max(0);
-        let visible_bottom = (y + height).min(clip_bottom).max(0);
+        let visible_y = paint_y.max(clip_top).max(0);
+        let visible_bottom = (paint_y + height).min(clip_bottom).max(0);
 
         Walk {
             size: Rect::new(rect.x, visible_y, width, visible_bottom.saturating_sub(visible_y)),
-            paint_x: x,
-            paint_y: y,
+            paint_x,
+            paint_y,
         }
     }
 
@@ -1289,39 +1289,46 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             .max()
             .unwrap_or(0);
 
-        self.widget(content_w, content_h, &style.layout, &style.paint, |ui, inner, _, depth| {
-            // The whole run is placed as one group, on both axes.
-            let alignment = style.content.unwrap_or(Alignment::Center);
-            let Some((group_x, group_y)) = align_rect(inner, content_w, content_h, alignment, Padding::new()) else {
-                return;
-            };
+        self.widget(
+            content_w,
+            content_h,
+            &style.layout,
+            &style.paint,
+            |ui, inner, _, depth| {
+                // The whole run is placed as one group, on both axes.
+                let alignment = style.content.unwrap_or(Alignment::Center);
+                let Some((group_x, group_y)) = align_rect(inner, content_w, content_h, alignment, Padding::new())
+                else {
+                    return;
+                };
 
-            let mut cursor_x = group_x;
-            for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
-                if part.content.is_empty() {
-                    cursor_x += run_pad.left as i32 + run_pad.right as i32;
-                    continue;
+                let mut cursor_x = group_x;
+                for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
+                    if part.content.is_empty() {
+                        cursor_x += run_pad.left as i32 + run_pad.right as i32;
+                        continue;
+                    }
+                    let font_size = part.style.font_size.unwrap_or(default_size);
+                    let run_w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
+                    let run_y = group_y + baseline - above;
+
+                    ui.paint_text_measured(
+                        part.content,
+                        metrics,
+                        Rect::new(cursor_x, run_y, run_w, (inner.bottom() - run_y).max(0)),
+                        part.style.paint.fg.unwrap_or(style.paint.fg.unwrap_or(white())),
+                        part.style.font,
+                        font_size,
+                        part.style.line_height,
+                        Alignment::TopLeft,
+                        run_pad,
+                        part.style.layout.depth.unwrap_or(depth),
+                    );
+
+                    cursor_x += run_w;
                 }
-                let font_size = part.style.font_size.unwrap_or(default_size);
-                let run_w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
-                let run_y = group_y + baseline - above;
-
-                ui.paint_text_measured(
-                    part.content,
-                    metrics,
-                    Rect::new(cursor_x, run_y, run_w, (inner.bottom() - run_y).max(0)),
-                    part.style.paint.fg.unwrap_or(style.paint.fg.unwrap_or(white())),
-                    part.style.font,
-                    font_size,
-                    part.style.line_height,
-                    Alignment::TopLeft,
-                    run_pad,
-                    part.style.layout.depth.unwrap_or(depth),
-                );
-
-                cursor_x += run_w;
-            }
-        })
+            },
+        )
     }
 
     #[inline]
@@ -1443,7 +1450,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             && layout.height.is_some()
             && clip.intersection(outer_bounds).is_empty();
 
-        let paints_bg = !culled && (style.paint.bg.is_some() || style.paint.hover.is_some() || style.paint.selected.is_some());
+        let paints_bg =
+            !culled && (style.paint.bg.is_some() || style.paint.hover.is_some() || style.paint.selected.is_some());
         let bg_index = paints_bg.then(|| {
             self.commands[depth].push(Command::Rect {
                 bounds: outer_bounds,

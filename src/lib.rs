@@ -64,9 +64,9 @@ pub struct Frame {
     pub gap: i32,
     pub outer_width: Option<i32>,
     pub outer_height: Option<i32>,
-    scope: usize,
-    child_index: usize,
-    anim_slot: usize,
+    pub scope: usize,
+    pub child_index: usize,
+    pub anim_slot: usize,
 }
 
 impl Frame {
@@ -294,6 +294,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
             animating: false,
             hovered_depth: None,
             render_cache: RenderCache::default(),
+            commands: [const { Vec::new() }; 16],
             vsync: true,
             string_pool: UnsafeCell::new(Vec::with_capacity(128)),
             string_index: Cell::new(0),
@@ -303,7 +304,7 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
 
 pub struct Context {
     pub window: std::pin::Pin<Box<Window>>,
-    state: UiState,
+    pub state: UiState,
 }
 
 impl Deref for Context {
@@ -352,6 +353,7 @@ pub struct UiState {
     pub hovered_depth: Option<usize>,
     pub layout_stack: Vec<Frame>,
     pub render_cache: RenderCache,
+    pub commands: [Vec<Command<'static>>; 16],
     pub string_pool: UnsafeCell<Vec<Box<String>>>,
     pub string_index: Cell<usize>,
 }
@@ -393,7 +395,7 @@ impl UiState {
 pub struct FrameContext<'frame, 'a> {
     pub window: &'frame mut Window,
     pub commands: [Vec<Command<'a>>; 16],
-    state: &'frame mut UiState,
+    pub state: &'frame mut UiState,
 }
 
 impl<'frame, 'a> FrameContext<'frame, 'a> {
@@ -467,10 +469,12 @@ impl Context {
 
         self.window.draw(|window| {
             state.string_index.set(0);
+            //Safety: Requires that commands are cleared each frame and adhear to the 'a lifetime.
+            let commands: [Vec<Command<'a>>; 16] = unsafe { std::mem::transmute(std::mem::take(&mut state.commands)) };
             let mut frame = FrameContext {
                 window,
                 state,
-                commands: [const { Vec::new() }; 16],
+                commands,
             };
             let now = std::time::Instant::now();
             frame.dt = (now - frame.last_frame_time).as_secs_f32();
@@ -514,6 +518,12 @@ impl Context {
                 frame.left_mouse_start = None;
                 frame.left_mouse_release = None;
             }
+
+            for layer in &mut frame.commands {
+                layer.clear();
+            }
+
+            frame.state.commands = unsafe { std::mem::transmute(frame.commands) };
         });
 
         if !self.window.open() {

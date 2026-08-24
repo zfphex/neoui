@@ -1202,6 +1202,7 @@ pub fn draw_text(
     }
 }
 
+/// Calculate the (width, height) of a text run
 pub fn measure_text(
     text: &str,
     fonts: &[fontdue::Font],
@@ -1212,9 +1213,9 @@ pub fn measure_text(
     max_width: i32,
     metrics: &mut FxHashMap<(usize, char, usize), fontdue::Metrics>,
     breaks: &mut Vec<u32>,
-) -> Rect {
+) -> (i32, i32) {
     if text.is_empty() || font_size == 0 {
-        return Rect::default();
+        return (0, 0);
     }
 
     let font = &fonts[font_id];
@@ -1318,15 +1319,13 @@ pub fn measure_text(
         lines += 1;
     }
 
-    Rect {
-        x: 0,
-        y: 0,
-        width: max_width_seen.round() as i32,
-        height: match line_height {
+    (
+        max_width_seen.round() as i32,
+        match line_height {
             Some(line_height) => lines * line_height as i32,
             None => (lines as f32 * line_metrics.new_line_size).round() as i32,
         },
-    }
+    )
 }
 
 pub fn clear_damage(buffer: &mut [u32], framebuffer_width: usize, damage: &[Rect], color: u32) {

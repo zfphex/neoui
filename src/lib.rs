@@ -278,23 +278,17 @@ pub fn ui(title: &str, width: usize, height: usize) -> Context {
 }
 
 pub fn ui_hidden(width: usize, height: usize) -> Context {
-    let window = create_window("hidden", None, width as i32, height as i32, false, WindowStyle::Borderless);
+    let mut window = create_window(
+        "hidden",
+        None,
+        width as i32,
+        height as i32,
+        false,
+        WindowStyle::Borderless,
+    );
 
-    #[cfg(target_os = "windows")]
-    unsafe {
-        ShowWindow(window.hwnd, 0);
-        SetWindowPos(
-            window.hwnd,
-            0,
-            0,
-            0,
-            width as i32,
-            height as i32,
-            SWP_NOMOVE | SWP_NOZORDER,
-        );
-    }
-
-    //TODO: MacOS
+    window.hide();
+    window.set_size(width as i32, height as i32);
 
     let mut context = Context::new(window);
     context.window.display_scale = 1.0;

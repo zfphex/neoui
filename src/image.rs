@@ -317,3 +317,75 @@ pub fn draw_image(
         }
     }
 }
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut table = [0u32; 256];
+    for (n, entry) in table.iter_mut().enumerate() {
+        let mut c = n as u32;
+        for _ in 0..8 {
+            c = match c & 1 {
+                0 => c >> 1,
+                _ => 0xEDB8_8320 ^ (c >> 1),
+            };
+        }
+        *entry = c;
+    }
+    let mut crc = 0xFFFF_FFFFu32;
+    for &byte in bytes {
+        crc = table[((crc ^ byte as u32) & 0xFF) as usize] ^ (crc >> 8);
+    }
+    crc ^ 0xFFFF_FFFF
+}
+
+fn adler32(bytes: &[u8]) -> u32 {
+    let (mut a, mut b) = (1u32, 0u32);
+    for chunk in bytes.chunks(5552) {
+        for &byte in chunk {
+            a += byte as u32;
+            b += a;
+        }
+        a %= 65521;
+        b %= 65521;
+    }
+    (b << 16) | a
+}
+
+fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    let start = out.len();
+    out.extend_from_slice(kind);
+    out.extend_from_slice(data);
+    let crc = crc32(&out[start..]);
+    out.extend_from_slice(&crc.to_be_bytes());
+}
+
+pub fn write_png(path: &str, width: usize, height: usize, bgra: &[u8], stride: usize) -> std::io::Result<()> {
+    let mut raw = Vec::with_capacity(height * (1 + width * 3));
+    for y in 0..height {
+        raw.push(0);
+        for pixel in bgra[y * stride..y * stride + width * 4].chunks_exact(4) {
+            raw.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
+        }
+    }
+
+    let blocks = raw.len().div_ceil(65535).max(1);
+    let mut zlib = vec![0x78, 0x01];
+    for (index, block) in raw.chunks(65535).enumerate() {
+        zlib.push((index + 1 == blocks) as u8);
+        zlib.extend_from_slice(&(block.len() as u16).to_le_bytes());
+        zlib.extend_from_slice(&(!(block.len() as u16)).to_le_bytes());
+        zlib.extend_from_slice(block);
+    }
+    zlib.extend_from_slice(&adler32(&raw).to_be_bytes());
+
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&(width as u32).to_be_bytes());
+    ihdr.extend_from_slice(&(height as u32).to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+
+    let mut out = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &zlib);
+    chunk(&mut out, b"IEND", &[]);
+    std::fs::write(path, out)
+}

@@ -274,47 +274,77 @@ pub fn family(id: usize) -> [[Option<usize>; 9]; 2] {
 
 pub fn ui(title: &str, width: usize, height: usize) -> Context {
     let window = create_window(title, None, width as i32, height as i32, false, WindowStyle::Standard);
+    Context::new(window)
+}
 
-    Context {
-        window,
-        state: UiState {
-            fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
-            fallbacks: Vec::new(),
-            families: vec![family(0)],
-            layout_stack: Vec::new(),
-            font_bitmaps: FxHashMap::default(),
-            image_columns: Vec::new(),
-            debug_damage: false,
-            debug_damage_fade: 1.5,
-            debug_damage_cache: Vec::new(),
-            font_metrics: FxHashMap::default(),
-            text_measure_cache: FxHashMap::default(),
-            line_breaks: Vec::new(),
-            default_font_size: 32,
-            clear_color: black(),
-            scroll_y: 0.0,
-            scroll_events: Vec::new(),
-            left_mouse_start: None,
-            left_mouse_release: None,
-            dt: 0.0,
-            id_stack: Vec::new(),
-            anim_state_f32: FxHashMap::default(),
-            anim_state_color: FxHashMap::default(),
-            last_frame_time: std::time::Instant::now(),
-            animating: false,
-            hovered_depth: None,
-            render_cache: RenderCache::default(),
-            commands: [const { Vec::new() }; 16],
-            vsync: true,
-            string_pool: UnsafeCell::new(Vec::with_capacity(128)),
-            string_index: Cell::new(0),
-        },
+pub fn ui_hidden(width: usize, height: usize) -> Context {
+    let window = create_window("hidden", None, width as i32, height as i32, false, WindowStyle::Borderless);
+
+    #[cfg(target_os = "windows")]
+    unsafe {
+        ShowWindow(window.hwnd, 0);
+        SetWindowPos(
+            window.hwnd,
+            0,
+            0,
+            0,
+            width as i32,
+            height as i32,
+            SWP_NOMOVE | SWP_NOZORDER,
+        );
     }
+
+    //TODO: MacOS
+
+    let mut context = Context::new(window);
+    context.window.display_scale = 1.0;
+    context.vsync = false;
+    context
 }
 
 pub struct Context {
     pub window: std::pin::Pin<Box<Window>>,
     pub state: UiState,
+}
+
+impl Context {
+    pub fn new(window: std::pin::Pin<Box<Window>>) -> Self {
+        Context {
+            window,
+            state: UiState {
+                fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
+                fallbacks: Vec::new(),
+                families: vec![family(0)],
+                layout_stack: Vec::new(),
+                font_bitmaps: FxHashMap::default(),
+                image_columns: Vec::new(),
+                debug_damage: false,
+                debug_damage_fade: 1.5,
+                debug_damage_cache: Vec::new(),
+                font_metrics: FxHashMap::default(),
+                text_measure_cache: FxHashMap::default(),
+                line_breaks: Vec::new(),
+                default_font_size: 32,
+                clear_color: black(),
+                scroll_y: 0.0,
+                scroll_events: Vec::new(),
+                left_mouse_start: None,
+                left_mouse_release: None,
+                dt: 0.0,
+                id_stack: Vec::new(),
+                anim_state_f32: FxHashMap::default(),
+                anim_state_color: FxHashMap::default(),
+                last_frame_time: std::time::Instant::now(),
+                animating: false,
+                hovered_depth: None,
+                render_cache: RenderCache::default(),
+                commands: [const { Vec::new() }; 16],
+                vsync: true,
+                string_pool: UnsafeCell::new(Vec::with_capacity(128)),
+                string_index: Cell::new(0),
+            },
+        }
+    }
 }
 
 impl Deref for Context {
@@ -551,6 +581,18 @@ impl Context {
         if !self.state.animating {
             self.state.last_frame_time = std::time::Instant::now();
         }
+    }
+
+    ///Render a single frame to a png.
+    pub fn frame_hidden<F>(&mut self, path: &str, ui: F) -> std::io::Result<()>
+    where
+        F: for<'frame, 'text> FnMut(&mut FrameContext<'frame, 'text>),
+    {
+        self.frame(ui);
+        let (width, height) = self.window.scaled_size();
+        let buffer = self.window.framebuffer();
+        let bgra = unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 4) };
+        write_png(path, width, height, bgra, width * 4)
     }
 }
 

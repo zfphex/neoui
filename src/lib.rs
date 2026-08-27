@@ -291,7 +291,6 @@ pub fn ui_hidden(width: usize, height: usize) -> Context {
     window.set_size(width as i32, height as i32);
 
     let mut context = Context::new(window);
-    context.window.display_scale = 1.0;
     context.vsync = false;
     context
 }

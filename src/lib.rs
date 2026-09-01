@@ -926,19 +926,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let (focused, key_activated) = if self.state.accessability {
             let focused = self.state.accessability_state.is_focused(rect, RoleFlags::FOCUSABLE);
             let key_activated = focused && (self.window.pressed(Key::Enter) || self.window.pressed(Key::Space));
-            if clicked {
-                let centroid = (
-                    rect.x as f32 + rect.width as f32 * 0.5,
-                    rect.y as f32 + rect.height as f32 * 0.5,
-                );
-                self.state.accessability_state.cursor = Some(SpatialCursor::new(
-                    centroid,
-                    RoleFlags::BUTTON,
-                    0,
-                    self.state.accessability_state.current_nodes.len(),
-                    depth,
-                ));
-            }
             (focused, key_activated)
         } else {
             (false, false)
@@ -1323,9 +1310,24 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let frame = self.current_frame();
         let depth = layout.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
-        let state = self.interact(rect, depth);
+        let mut state = self.interact(rect, depth);
 
         if self.state.accessability && role.is_focusable() {
+            if state.clicked {
+                let centroid = (
+                    rect.x as f32 + rect.width as f32 * 0.5,
+                    rect.y as f32 + rect.height as f32 * 0.5,
+                );
+                self.state.accessability_state.cursor = Some(SpatialCursor::new(
+                    centroid,
+                    role,
+                    hash32(text),
+                    self.state.accessability_state.current_nodes.len(),
+                    depth,
+                ));
+                state.focused = true;
+            }
+
             let state_flags = if state.focused {
                 StateFlags::FOCUSED
             } else {

@@ -15,6 +15,9 @@ pub use image::*;
 pub mod scroll;
 pub use scroll::*;
 
+pub mod accessability;
+pub use accessability::*;
+
 pub use mini::*;
 pub use minwin::*;
 
@@ -221,6 +224,8 @@ pub struct State {
     pub double_clicked: bool,
     pub hovered: bool,
     pub bounds: Rect,
+    pub focused: bool,
+    pub activated: bool,
 }
 
 impl State {
@@ -232,6 +237,8 @@ impl State {
             double_clicked: false,
             hovered: false,
             bounds,
+            focused: false,
+            activated: false,
         }
     }
 }
@@ -335,6 +342,7 @@ impl Context {
                 vsync: true,
                 string_pool: UnsafeCell::new(Vec::with_capacity(128)),
                 string_index: Cell::new(0),
+                accessability: AccessabilityState::new(),
             },
         }
     }
@@ -393,6 +401,7 @@ pub struct UiState {
     pub commands: [Vec<Command<'static>>; 16],
     pub string_pool: UnsafeCell<Vec<Box<String>>>,
     pub string_index: Cell<usize>,
+    pub accessability: AccessabilityState,
 }
 
 impl UiState {
@@ -535,6 +544,11 @@ impl Context {
                 frame.left_mouse_release = Some(frame.mouse_position());
             }
 
+            frame
+                .state
+                .accessability
+                .begin_frame(Some(frame.window), frame.hovered_depth);
+
             let (width, height) = frame.window.size();
             let bounds = Rect::new(0, 0, width as i32, height as i32);
 
@@ -548,6 +562,8 @@ impl Context {
             });
 
             ui(&mut frame);
+
+            frame.state.accessability.end_frame(frame.hovered_depth);
 
             frame.draw_frame();
 
@@ -899,13 +915,33 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn interact(&mut self, rect: Rect, depth: usize) -> State {
         let hovered = self.hovered_depth(rect, depth);
+        let clicked = hovered && self.clicked(rect);
+        let focused = self.state.accessability.is_focused(rect, RoleFlags::FOCUSABLE);
+        let key_activated = focused && (self.window.pressed(Key::Enter) || self.window.pressed(Key::Space));
+
+        if clicked {
+            let centroid = (
+                rect.x as f32 + rect.width as f32 * 0.5,
+                rect.y as f32 + rect.height as f32 * 0.5,
+            );
+            self.state.accessability.cursor = Some(SpatialCursor::new(
+                centroid,
+                RoleFlags::BUTTON,
+                0,
+                self.state.accessability.current_nodes.len(),
+                depth,
+            ));
+        }
+
         State {
-            clicked: hovered && self.clicked(rect),
+            clicked,
             double_clicked: hovered && self.double_clicked(rect),
             pressed: hovered && self.pressed(rect),
             released: hovered && self.released(rect),
             hovered,
             bounds: rect,
+            focused,
+            activated: clicked || key_activated,
         }
     }
 
@@ -1154,7 +1190,19 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     #[inline]
     pub fn rect(&mut self, style: RectStyle) -> State {
-        self.widget(0, 0, &style.layout, &style.paint, |_, _, _, _| {})
+        let role = style.role.unwrap_or_else(|| {
+            if style.paint.hover.is_some()
+                || style.paint.hover_border.is_some()
+                || style.paint.is_selected
+                || style.paint.selected.is_some()
+                || style.paint.selected_border.is_some()
+            {
+                RoleFlags::BUTTON
+            } else {
+                RoleFlags::NONE
+            }
+        });
+        self.widget_with_role(0, 0, &style.layout, &style.paint, role, "", |_, _, _, _| {})
     }
 
     pub fn circle(&mut self, mut style: RectStyle) -> State {
@@ -1188,14 +1236,50 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         })
     }
 
-    ///paint: (FrameContext, Rect, State, Depth)
     #[inline]
-    pub fn widget(
+    pub fn emit_semantic(&mut self, bounds: Rect, role: RoleFlags, text: &str, state: StateFlags) -> usize {
+        let text_start = self.state.accessability.text_arena.len() as u32;
+        self.state.accessability.text_arena.push_str(text);
+        let text_end = self.state.accessability.text_arena.len() as u32;
+        let sig = hash32(text);
+        let depth = self.current_frame().depth;
+
+        let index = self.state.accessability.current_nodes.len();
+        self.state.accessability.current_nodes.push(SemanticNode::new(
+            bounds,
+            text_start..text_end,
+            role,
+            state,
+            depth,
+            sig,
+        ));
+        index
+    }
+
+    #[inline]
+    pub fn is_focused(&self, bounds: Rect, role: RoleFlags) -> bool {
+        self.state.accessability.is_focused(bounds, role)
+    }
+
+    #[inline]
+    pub fn focus_cursor(&self) -> Option<SpatialCursor> {
+        self.state.accessability.cursor
+    }
+
+    #[inline]
+    pub fn set_focus_cursor(&mut self, cursor: Option<SpatialCursor>) {
+        self.state.accessability.cursor = cursor;
+    }
+
+    #[inline]
+    pub fn widget_with_role(
         &mut self,
         content_width: i32,
         content_height: i32,
         layout: &Layout,
         style: &Paint,
+        role: RoleFlags,
+        text: &str,
         paint: impl FnOnce(&mut Self, Rect, &State, usize),
     ) -> State {
         let padding = layout.padding.unwrap_or_default();
@@ -1218,6 +1302,23 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let depth = layout.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         let state = self.interact(rect, depth);
+
+        if role.is_focusable() {
+            let state_flags = if state.focused {
+                StateFlags::FOCUSED
+            } else {
+                StateFlags::NONE
+            } | if state.hovered {
+                StateFlags::HOVERED
+            } else {
+                StateFlags::NONE
+            } | if style.is_selected {
+                StateFlags::SELECTED
+            } else {
+                StateFlags::NONE
+            };
+            self.emit_semantic(rect, role, text, state_flags);
+        }
 
         if let Some(color) = resolve_bg(style, state.hovered) {
             self.commands[depth].push(Command::Rect {
@@ -1251,6 +1352,37 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
 
         state
+    }
+
+    ///paint: (FrameContext, Rect, State, Depth)
+    #[inline]
+    pub fn widget(
+        &mut self,
+        content_width: i32,
+        content_height: i32,
+        layout: &Layout,
+        style: &Paint,
+        paint: impl FnOnce(&mut Self, Rect, &State, usize),
+    ) -> State {
+        let role = if style.hover.is_some()
+            || style.hover_border.is_some()
+            || style.is_selected
+            || style.selected.is_some()
+            || style.selected_border.is_some()
+        {
+            RoleFlags::BUTTON
+        } else {
+            RoleFlags::NONE
+        };
+        self.widget_with_role(
+            content_width,
+            content_height,
+            layout,
+            style,
+            role,
+            "",
+            paint,
+        )
     }
 
     pub fn image(&mut self, image: Image<'a>, style: ImageStyle) -> State {
@@ -1411,7 +1543,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     #[inline]
     pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: TextStyle) -> State {
-        let text = text.into();
+        let text: Cow<'a, str> = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let padding = style.layout.padding.unwrap_or_default();
         let max_width = match (style.wrap, style.layout.width) {
@@ -1421,12 +1553,27 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             _ => i32::MAX,
         };
         let metrics = self.measure_text(&text, style.font, font_size, style.line_height, max_width);
-        self.widget(
+        let text_str = text.clone();
+        let role = style.role.unwrap_or_else(|| {
+            if style.paint.hover.is_some()
+                || style.paint.hover_border.is_some()
+                || style.paint.is_selected
+                || style.paint.selected.is_some()
+                || style.paint.selected_border.is_some()
+            {
+                RoleFlags::BUTTON
+            } else {
+                RoleFlags::LABEL
+            }
+        });
+        self.widget_with_role(
             metrics.width,
             metrics.height,
             &style.layout,
             &style.paint,
-            |ui, content, _, depth| {
+            role,
+            &text_str,
+            move |ui, content, _, depth| {
                 ui.paint_text_measured(
                     text,
                     metrics,

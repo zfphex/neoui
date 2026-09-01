@@ -201,6 +201,7 @@ pub struct FlowStyle {
 pub struct RectStyle {
     pub layout: Layout,
     pub paint: Paint,
+    pub role: Option<RoleFlags>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,6 +215,7 @@ pub struct TextStyle {
     pub wrap: bool,
     /// Where the glyph run sits inside this widget's own content box.
     pub content: Option<Alignment>,
+    pub role: Option<RoleFlags>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -240,6 +242,7 @@ impl RectStyle {
         RectStyle {
             layout: Layout::new(),
             paint: Paint::new(),
+            role: None,
         }
     }
 }
@@ -258,6 +261,7 @@ impl TextStyle {
             line_height: None,
             wrap: false,
             content: None,
+            role: None,
         }
     }
 }
@@ -402,6 +406,56 @@ impl TextStyle {
 
     pub const fn content_bottom_right(mut self) -> Self {
         self.content = Some(Alignment::BottomRight);
+        self
+    }
+
+    pub const fn role(mut self, role: RoleFlags) -> Self {
+        self.role = Some(role);
+        self
+    }
+
+    pub const fn button(mut self) -> Self {
+        self.role = Some(RoleFlags::BUTTON);
+        self
+    }
+
+    pub const fn header(mut self) -> Self {
+        self.role = Some(RoleFlags::HEADER);
+        self
+    }
+
+    pub const fn label(mut self) -> Self {
+        self.role = Some(RoleFlags::LABEL);
+        self
+    }
+
+    pub const fn focusable(mut self, focusable: bool) -> Self {
+        if focusable {
+            self.role = Some(RoleFlags::BUTTON);
+        } else {
+            self.role = Some(RoleFlags::LABEL);
+        }
+        self
+    }
+}
+
+impl RectStyle {
+    pub const fn role(mut self, role: RoleFlags) -> Self {
+        self.role = Some(role);
+        self
+    }
+
+    pub const fn button(mut self) -> Self {
+        self.role = Some(RoleFlags::BUTTON);
+        self
+    }
+
+    pub const fn focusable(mut self, focusable: bool) -> Self {
+        if focusable {
+            self.role = Some(RoleFlags::BUTTON);
+        } else {
+            self.role = Some(RoleFlags::NONE);
+        }
         self
     }
 }

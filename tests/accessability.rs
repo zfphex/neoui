@@ -7,7 +7,7 @@ fn test_in_place_rename_mutation() {
         SemanticNode::new(
             Rect::new(0, 0, 100, 30),
             0..4,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Renamed"),
@@ -15,7 +15,7 @@ fn test_in_place_rename_mutation() {
         SemanticNode::new(
             Rect::new(0, 40, 100, 30),
             4..10,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Cancel"),
@@ -23,7 +23,7 @@ fn test_in_place_rename_mutation() {
     ];
 
     // Cursor had focus on "Old" at (50.0, 15.0) which was renamed to "Renamed" in place
-    let mut cursor = SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("Old"), 0, 0);
+    let mut cursor = SpatialCursor::new((50.0, 15.0), Role::BUTTON, hash32("Old"), 0, 0);
     let snapped = snap_focus(&nodes, &mut cursor, 200.0, None);
 
     assert!(snapped);
@@ -38,7 +38,7 @@ fn test_semantic_jumping() {
         SemanticNode::new(
             Rect::new(0, 0, 100, 30),
             0..4,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Btn1"),
@@ -46,7 +46,7 @@ fn test_semantic_jumping() {
         SemanticNode::new(
             Rect::new(0, 40, 100, 30),
             4..10,
-            RoleFlags::HEADER,
+            Role::HEADER,
             StateFlags::NONE,
             0,
             hash32("Header 1"),
@@ -54,7 +54,7 @@ fn test_semantic_jumping() {
         SemanticNode::new(
             Rect::new(0, 80, 100, 30),
             10..14,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Btn2"),
@@ -62,7 +62,7 @@ fn test_semantic_jumping() {
         SemanticNode::new(
             Rect::new(0, 120, 100, 30),
             14..20,
-            RoleFlags::HEADER,
+            Role::HEADER,
             StateFlags::NONE,
             0,
             hash32("Header 2"),
@@ -70,29 +70,29 @@ fn test_semantic_jumping() {
         SemanticNode::new(
             Rect::new(0, 160, 100, 30),
             20..24,
-            RoleFlags::LINK,
+            Role::LINK,
             StateFlags::NONE,
             0,
             hash32("Link 1"),
         ),
     ];
 
-    let mut cursor = SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("Btn1"), 0, 0);
+    let mut cursor = SpatialCursor::new((50.0, 15.0), Role::BUTTON, hash32("Btn1"), 0, 0);
 
     // Jump to next HEADER -> Header 1 (index 1)
-    assert!(navigate_semantic(&nodes, &mut cursor, RoleFlags::HEADER, true, None));
+    assert!(navigate_semantic(&nodes, &mut cursor, Role::HEADER, true, None));
     assert_eq!(cursor.stream_index, 1);
 
     // Jump to next HEADER -> Header 2 (index 3)
-    assert!(navigate_semantic(&nodes, &mut cursor, RoleFlags::HEADER, true, None));
+    assert!(navigate_semantic(&nodes, &mut cursor, Role::HEADER, true, None));
     assert_eq!(cursor.stream_index, 3);
 
     // Jump to next LINK -> Link 1 (index 4)
-    assert!(navigate_semantic(&nodes, &mut cursor, RoleFlags::LINK, true, None));
+    assert!(navigate_semantic(&nodes, &mut cursor, Role::LINK, true, None));
     assert_eq!(cursor.stream_index, 4);
 
     // Jump backward to previous HEADER -> Header 2 (index 3)
-    assert!(navigate_semantic(&nodes, &mut cursor, RoleFlags::HEADER, false, None));
+    assert!(navigate_semantic(&nodes, &mut cursor, Role::HEADER, false, None));
     assert_eq!(cursor.stream_index, 3);
 }
 
@@ -102,7 +102,7 @@ fn test_disabled_element_skipped() {
         SemanticNode::new(
             Rect::new(0, 0, 100, 30),
             0..4,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Btn1"),
@@ -110,7 +110,7 @@ fn test_disabled_element_skipped() {
         SemanticNode::new(
             Rect::new(0, 40, 100, 30),
             4..8,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::DISABLED,
             0,
             hash32("Disabled"),
@@ -118,14 +118,14 @@ fn test_disabled_element_skipped() {
         SemanticNode::new(
             Rect::new(0, 80, 100, 30),
             8..12,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Btn2"),
         ),
     ];
 
-    let mut cursor = SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("Btn1"), 0, 0);
+    let mut cursor = SpatialCursor::new((50.0, 15.0), Role::BUTTON, hash32("Btn1"), 0, 0);
 
     // Tab forward -> skips Disabled (index 1) -> snaps to Btn2 (index 2)
     assert!(navigate_sequential(&nodes, &mut cursor, true, None));
@@ -145,7 +145,7 @@ fn test_depth_layer_isolation() {
         SemanticNode::new(
             Rect::new(10, 10, 80, 30),
             0..4,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Bg1"),
@@ -153,7 +153,7 @@ fn test_depth_layer_isolation() {
         SemanticNode::new(
             Rect::new(10, 50, 80, 30),
             4..8,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Bg2"),
@@ -162,7 +162,7 @@ fn test_depth_layer_isolation() {
         SemanticNode::new(
             Rect::new(100, 100, 80, 30),
             8..12,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             1,
             hash32("Modal1"),
@@ -170,14 +170,14 @@ fn test_depth_layer_isolation() {
         SemanticNode::new(
             Rect::new(100, 140, 80, 30),
             12..16,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             1,
             hash32("Modal2"),
         ),
     ];
 
-    let mut cursor = SpatialCursor::new((140.0, 115.0), RoleFlags::BUTTON, hash32("Modal1"), 2, 1);
+    let mut cursor = SpatialCursor::new((140.0, 115.0), Role::BUTTON, hash32("Modal1"), 2, 1);
 
     // When modal at depth 1 is active:
     // Tab forward stays in depth 1 (cycles Modal1 -> Modal2 -> Modal1)
@@ -196,7 +196,7 @@ fn test_ui_state_accessability_lifecycle() {
     let node1 = SemanticNode::new(
         Rect::new(0, 0, 100, 30),
         0..4,
-        RoleFlags::BUTTON,
+        Role::BUTTON,
         StateFlags::NONE,
         0,
         hash32("First"),
@@ -204,7 +204,7 @@ fn test_ui_state_accessability_lifecycle() {
     let node2 = SemanticNode::new(
         Rect::new(0, 40, 100, 30),
         4..8,
-        RoleFlags::BUTTON,
+        Role::BUTTON,
         StateFlags::NONE,
         0,
         hash32("Second"),
@@ -214,7 +214,7 @@ fn test_ui_state_accessability_lifecycle() {
 
     accessability.cursor = Some(SpatialCursor::new(
         (50.0, 15.0),
-        RoleFlags::BUTTON,
+        Role::BUTTON,
         hash32("First"),
         0,
         0,
@@ -224,8 +224,8 @@ fn test_ui_state_accessability_lifecycle() {
     accessability.end_frame(None);
 
     assert_eq!(accessability.prev_nodes.len(), 2);
-    assert!(accessability.is_focused(Rect::new(0, 0, 100, 30), RoleFlags::BUTTON));
-    assert!(!accessability.is_focused(Rect::new(0, 40, 100, 30), RoleFlags::BUTTON));
+    assert!(accessability.is_focused(Rect::new(0, 0, 100, 30), Role::BUTTON));
+    assert!(!accessability.is_focused(Rect::new(0, 40, 100, 30), Role::BUTTON));
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn test_static_label_inference_skipped_by_navigation() {
         SemanticNode::new(
             Rect::new(0, 0, 100, 30),
             0..5,
-            RoleFlags::HEADER,
+            Role::HEADER,
             StateFlags::NONE,
             0,
             hash32("Title"),
@@ -242,7 +242,7 @@ fn test_static_label_inference_skipped_by_navigation() {
         SemanticNode::new(
             Rect::new(0, 40, 100, 30),
             5..9,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Btn1"),
@@ -250,7 +250,7 @@ fn test_static_label_inference_skipped_by_navigation() {
         SemanticNode::new(
             Rect::new(0, 80, 100, 30),
             9..13,
-            RoleFlags::LABEL,
+            Role::LABEL,
             StateFlags::NONE,
             0,
             hash32("Desc"),
@@ -258,14 +258,14 @@ fn test_static_label_inference_skipped_by_navigation() {
         SemanticNode::new(
             Rect::new(0, 120, 100, 30),
             13..17,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Btn2"),
         ),
     ];
 
-    let mut cursor = SpatialCursor::new((50.0, 55.0), RoleFlags::BUTTON, hash32("Btn1"), 1, 0);
+    let mut cursor = SpatialCursor::new((50.0, 55.0), Role::BUTTON, hash32("Btn1"), 1, 0);
 
     // Tab forward from Btn1 (index 1) -> skips "Desc" (index 2, RoleFlags::LABEL) -> reaches Btn2 (index 3)
     assert!(navigate_sequential(&nodes, &mut cursor, true, None));
@@ -284,7 +284,7 @@ fn test_directional_row_vs_column_edge_projection() {
         SemanticNode::new(
             Rect::new(16, 260, 184, 30),
             0..7,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Prepend"),
@@ -292,7 +292,7 @@ fn test_directional_row_vs_column_edge_projection() {
         SemanticNode::new(
             Rect::new(208, 260, 152, 30),
             7..13,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Rename"),
@@ -300,7 +300,7 @@ fn test_directional_row_vs_column_edge_projection() {
         SemanticNode::new(
             Rect::new(368, 260, 172, 30),
             13..19,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Delete"),
@@ -308,7 +308,7 @@ fn test_directional_row_vs_column_edge_projection() {
         SemanticNode::new(
             Rect::new(16, 300, 548, 30),
             19..25,
-            RoleFlags::BUTTON,
+            Role::BUTTON,
             StateFlags::NONE,
             0,
             hash32("Task 1"),
@@ -316,7 +316,7 @@ fn test_directional_row_vs_column_edge_projection() {
     ];
 
     // Start at Rename (index 1)
-    let mut cursor = SpatialCursor::new((284.0, 275.0), RoleFlags::BUTTON, hash32("Rename"), 1, 0);
+    let mut cursor = SpatialCursor::new((284.0, 275.0), Role::BUTTON, hash32("Rename"), 1, 0);
 
     // Pressing Right from Rename must go directly to Delete (index 2), NOT Task 1 (index 3)
     assert!(navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None));

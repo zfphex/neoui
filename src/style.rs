@@ -201,7 +201,7 @@ pub struct FlowStyle {
 pub struct RectStyle {
     pub layout: Layout,
     pub paint: Paint,
-    pub role: Option<RoleFlags>,
+    pub role: Option<Role>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -215,7 +215,7 @@ pub struct TextStyle {
     pub wrap: bool,
     /// Where the glyph run sits inside this widget's own content box.
     pub content: Option<Alignment>,
-    pub role: Option<RoleFlags>,
+    pub role: Option<Role>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -409,32 +409,32 @@ impl TextStyle {
         self
     }
 
-    pub const fn role(mut self, role: RoleFlags) -> Self {
+    pub const fn role(mut self, role: Role) -> Self {
         self.role = Some(role);
         self
     }
 
     pub const fn focusable(mut self, focusable: bool) -> Self {
         if focusable {
-            self.role = Some(RoleFlags::BUTTON);
+            self.role = Some(Role::BUTTON);
         } else {
-            self.role = Some(RoleFlags::LABEL);
+            self.role = Some(Role::LABEL);
         }
         self
     }
 }
 
 impl RectStyle {
-    pub const fn role(mut self, role: RoleFlags) -> Self {
+    pub const fn role(mut self, role: Role) -> Self {
         self.role = Some(role);
         self
     }
 
     pub const fn focusable(mut self, focusable: bool) -> Self {
         if focusable {
-            self.role = Some(RoleFlags::BUTTON);
+            self.role = Some(Role::BUTTON);
         } else {
-            self.role = Some(RoleFlags::NONE);
+            self.role = Some(Role::NONE);
         }
         self
     }

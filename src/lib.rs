@@ -924,7 +924,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let clicked = hovered && self.clicked(rect);
 
         let (focused, key_activated) = if self.state.accessability {
-            let focused = self.state.accessability_state.is_focused(rect, RoleFlags::FOCUSABLE);
+            let focused = self.state.accessability_state.is_focused(rect, Role::FOCUSABLE);
             let key_activated = focused && (self.window.pressed(Key::Enter) || self.window.pressed(Key::Space));
             (focused, key_activated)
         } else {
@@ -1195,9 +1195,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 || style.paint.selected.is_some()
                 || style.paint.selected_border.is_some()
             {
-                RoleFlags::BUTTON
+                Role::BUTTON
             } else {
-                RoleFlags::NONE
+                Role::NONE
             }
         });
         self.widget_with_role(0, 0, &style.layout, &style.paint, role, "", |_, _, _, _| {})
@@ -1235,7 +1235,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     #[inline]
-    pub fn emit_semantic(&mut self, bounds: Rect, role: RoleFlags, text: &str, state: StateFlags) -> usize {
+    pub fn emit_semantic(&mut self, bounds: Rect, role: Role, text: &str, state: StateFlags) -> usize {
         if !self.state.accessability {
             return 0;
         }
@@ -1258,7 +1258,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     #[inline]
-    pub fn is_focused(&self, bounds: Rect, role: RoleFlags) -> bool {
+    pub fn is_focused(&self, bounds: Rect, role: Role) -> bool {
         if !self.state.accessability {
             return false;
         }
@@ -1287,7 +1287,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         content_height: i32,
         layout: &Layout,
         style: &Paint,
-        role: RoleFlags,
+        role: Role,
         text: &str,
         paint: impl FnOnce(&mut Self, Rect, &State, usize),
     ) -> State {
@@ -1394,19 +1394,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             || style.selected.is_some()
             || style.selected_border.is_some()
         {
-            RoleFlags::BUTTON
+            Role::BUTTON
         } else {
-            RoleFlags::NONE
+            Role::NONE
         };
-        self.widget_with_role(
-            content_width,
-            content_height,
-            layout,
-            style,
-            role,
-            "",
-            paint,
-        )
+        self.widget_with_role(content_width, content_height, layout, style, role, "", paint)
     }
 
     pub fn image(&mut self, image: Image<'a>, style: ImageStyle) -> State {
@@ -1585,9 +1577,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 || style.paint.selected.is_some()
                 || style.paint.selected_border.is_some()
             {
-                RoleFlags::BUTTON
+                Role::BUTTON
             } else {
-                RoleFlags::LABEL
+                Role::LABEL
             }
         });
         self.widget_with_role(

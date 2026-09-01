@@ -6,9 +6,9 @@ use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Range};
 /// Role flags for accessibility and semantic classification.
 /// Implemented using standard-library bitfield operations without third-party crates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct RoleFlags(pub u16);
+pub struct Role(pub u16);
 
-impl RoleFlags {
+impl Role {
     pub const NONE: Self = Self(0);
     pub const BUTTON: Self = Self(1 << 0);
     pub const TEXT_INPUT: Self = Self(1 << 1);
@@ -76,7 +76,7 @@ impl RoleFlags {
     }
 }
 
-impl BitOr for RoleFlags {
+impl BitOr for Role {
     type Output = Self;
     #[inline(always)]
     fn bitor(self, rhs: Self) -> Self {
@@ -84,14 +84,14 @@ impl BitOr for RoleFlags {
     }
 }
 
-impl BitOrAssign for RoleFlags {
+impl BitOrAssign for Role {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 |= rhs.0;
     }
 }
 
-impl BitAnd for RoleFlags {
+impl BitAnd for Role {
     type Output = Self;
     #[inline(always)]
     fn bitand(self, rhs: Self) -> Self {
@@ -99,14 +99,14 @@ impl BitAnd for RoleFlags {
     }
 }
 
-impl BitAndAssign for RoleFlags {
+impl BitAndAssign for Role {
     #[inline(always)]
     fn bitand_assign(&mut self, rhs: Self) {
         self.0 &= rhs.0;
     }
 }
 
-impl Not for RoleFlags {
+impl Not for Role {
     type Output = Self;
     #[inline(always)]
     fn not(self) -> Self {
@@ -210,7 +210,7 @@ pub struct SemanticNode {
     /// Byte range index into the linear string arena.
     pub text_range: (u32, u32),
     /// Bitfield specifying semantic roles (BUTTON, HEADER, LINK, etc.).
-    pub role: RoleFlags,
+    pub role: Role,
     /// Bitfield specifying accessibility state (DISABLED, CHECKED, etc.).
     pub state: StateFlags,
     /// Depth layer corresponding to neoui's 0..15 depth stack.
@@ -224,7 +224,7 @@ impl SemanticNode {
     pub fn new(
         bounds: Rect,
         text_range: Range<u32>,
-        role: RoleFlags,
+        role: Role,
         state: StateFlags,
         depth: usize,
         text_signature: u32,
@@ -255,7 +255,7 @@ pub struct SpatialCursor {
     /// Continuous 2D sub-pixel coordinate (centroid of active element).
     pub point: (f32, f32),
     /// Role flags of the active element.
-    pub role: RoleFlags,
+    pub role: Role,
     /// 32-bit content signature of the active element's text.
     pub text_signature: u32,
     /// Index resolved in the current/previous frame semantic array.
@@ -265,7 +265,7 @@ pub struct SpatialCursor {
 }
 
 impl SpatialCursor {
-    pub fn new(point: (f32, f32), role: RoleFlags, text_signature: u32, stream_index: usize, depth: usize) -> Self {
+    pub fn new(point: (f32, f32), role: Role, text_signature: u32, stream_index: usize, depth: usize) -> Self {
         Self {
             point,
             role,
@@ -629,7 +629,7 @@ pub fn navigate_directional(
 pub fn navigate_semantic(
     nodes: &[SemanticNode],
     cursor: &mut SpatialCursor,
-    target_role: RoleFlags,
+    target_role: Role,
     forward: bool,
     active_depth: Option<usize>,
 ) -> bool {
@@ -772,7 +772,7 @@ impl AccessabilityState {
 
     /// Check if a node with given bounds and depth is currently focused.
     #[inline]
-    pub fn is_focused(&self, bounds: Rect, role: RoleFlags) -> bool {
+    pub fn is_focused(&self, bounds: Rect, role: Role) -> bool {
         let Some(cursor) = self.cursor else {
             return false;
         };
@@ -800,7 +800,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 0, 100, 30),
                 0..4,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Save"),
@@ -808,14 +808,14 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 40, 100, 30),
                 4..10,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Cancel"),
             ),
         ];
 
-        let mut cursor = SpatialCursor::new((50.0, 55.0), RoleFlags::BUTTON, hash32("Cancel"), 1, 0);
+        let mut cursor = SpatialCursor::new((50.0, 55.0), Role::BUTTON, hash32("Cancel"), 1, 0);
         let snapped = snap_focus(&nodes, &mut cursor, 200.0, None);
 
         assert!(snapped);
@@ -830,7 +830,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 0, 100, 30),
                 0..3,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("New"),
@@ -838,7 +838,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 40, 100, 30),
                 3..7,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Save"),
@@ -846,7 +846,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 100, 100, 30),
                 7..13,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Cancel"),
@@ -854,7 +854,7 @@ mod tests {
         ];
 
         // Cursor was at (50.0, 55.0) where "Cancel" was on previous frame
-        let mut cursor = SpatialCursor::new((50.0, 55.0), RoleFlags::BUTTON, hash32("Cancel"), 1, 0);
+        let mut cursor = SpatialCursor::new((50.0, 55.0), Role::BUTTON, hash32("Cancel"), 1, 0);
         let snapped = snap_focus(&nodes, &mut cursor, 200.0, None);
 
         assert!(snapped);
@@ -869,7 +869,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 0, 100, 30),
                 0..4,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Save"),
@@ -877,14 +877,14 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 40, 100, 30),
                 4..9,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Apply"),
             ),
         ];
 
-        let mut cursor = SpatialCursor::new((50.0, 100.0), RoleFlags::BUTTON, hash32("Deleted"), 2, 0);
+        let mut cursor = SpatialCursor::new((50.0, 100.0), Role::BUTTON, hash32("Deleted"), 2, 0);
         let snapped = snap_focus(&nodes, &mut cursor, 200.0, None);
 
         assert!(snapped);
@@ -898,7 +898,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 0, 100, 30),
                 0..4,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Btn1"),
@@ -906,7 +906,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 40, 100, 30),
                 4..10,
-                RoleFlags::HEADER,
+                Role::HEADER,
                 StateFlags::NONE,
                 0,
                 hash32("Header"),
@@ -914,14 +914,14 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 80, 100, 30),
                 10..14,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("Btn2"),
             ),
         ];
 
-        let mut cursor = SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("Btn1"), 0, 0);
+        let mut cursor = SpatialCursor::new((50.0, 15.0), Role::BUTTON, hash32("Btn1"), 0, 0);
 
         // Tab forward -> skips Header (not focusable) -> reaches Btn2 (index 2)
         assert!(navigate_sequential(&nodes, &mut cursor, true, None));
@@ -945,7 +945,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 0, 100, 30),
                 0..2,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("TL"),
@@ -953,7 +953,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(120, 0, 100, 30),
                 2..4,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("TR"),
@@ -961,7 +961,7 @@ mod tests {
             SemanticNode::new(
                 Rect::new(0, 50, 100, 30),
                 4..6,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("BL"),
@@ -969,14 +969,14 @@ mod tests {
             SemanticNode::new(
                 Rect::new(120, 50, 100, 30),
                 6..8,
-                RoleFlags::BUTTON,
+                Role::BUTTON,
                 StateFlags::NONE,
                 0,
                 hash32("BR"),
             ),
         ];
 
-        let mut cursor = SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("TL"), 0, 0);
+        let mut cursor = SpatialCursor::new((50.0, 15.0), Role::BUTTON, hash32("TL"), 0, 0);
 
         // Navigate Right -> snaps to TR (index 1)
         assert!(navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None));

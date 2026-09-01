@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use neoui::*;
-use std::hash::Hasher;
 use rustc_hash::FxHasher;
+use std::hash::Hasher;
 
 fn fxhash32(text: &str) -> u32 {
     let mut hasher = FxHasher::default();
@@ -17,14 +17,7 @@ fn generate_test_nodes(count: usize) -> Vec<SemanticNode> {
             let col = i % cols;
             let bounds = Rect::new((col * 100) as i32, (row * 40) as i32, 90, 32);
             let label = format!("Button {i}");
-            SemanticNode::new(
-                bounds,
-                0..8,
-                RoleFlags::BUTTON,
-                StateFlags::NONE,
-                0,
-                fxhash32(&label),
-            )
+            SemanticNode::new(bounds, 0..8, Role::BUTTON, StateFlags::NONE, 0, fxhash32(&label))
         })
         .collect()
 }
@@ -45,7 +38,7 @@ fn bench_sspa_tree_emission(c: &mut Criterion) {
                     state.current_nodes.push(SemanticNode::new(
                         bounds,
                         start..end,
-                        RoleFlags::BUTTON,
+                        Role::BUTTON,
                         StateFlags::NONE,
                         0,
                         0xAABBCCDD,
@@ -128,12 +121,19 @@ fn bench_sspa_navigation(c: &mut Criterion) {
     for &count in &counts {
         let nodes = generate_test_nodes(count);
         let start_node = &nodes[0];
-        let cursor_template = SpatialCursor::new(start_node.centroid(), start_node.role, start_node.text_signature, 0, 0);
+        let cursor_template =
+            SpatialCursor::new(start_node.centroid(), start_node.role, start_node.text_signature, 0, 0);
 
         group.bench_with_input(BenchmarkId::from_parameter(count), &nodes, |b, nodes| {
             b.iter(|| {
                 let mut cursor = cursor_template;
-                black_box(navigate_directional(black_box(nodes), &mut cursor, Direction::Right, 2.0, None));
+                black_box(navigate_directional(
+                    black_box(nodes),
+                    &mut cursor,
+                    Direction::Right,
+                    2.0,
+                    None,
+                ));
                 black_box(cursor);
             });
         });
@@ -145,7 +145,8 @@ fn bench_sspa_navigation(c: &mut Criterion) {
     for &count in &counts {
         let nodes = generate_test_nodes(count);
         let start_node = &nodes[0];
-        let cursor_template = SpatialCursor::new(start_node.centroid(), start_node.role, start_node.text_signature, 0, 0);
+        let cursor_template =
+            SpatialCursor::new(start_node.centroid(), start_node.role, start_node.text_signature, 0, 0);
 
         group.bench_with_input(BenchmarkId::from_parameter(count), &nodes, |b, nodes| {
             b.iter(|| {

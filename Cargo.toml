@@ -72,7 +72,13 @@ required-features = ["bench"]
 name = "draw_rect_fill"
 harness = false
 required-features = ["bench"]
+
 [[bench]]
 name = "measure"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "accessability"
 harness = false
 required-features = ["bench"]

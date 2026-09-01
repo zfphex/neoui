@@ -233,7 +233,7 @@ fn main() {
                 ui.text("SSPA LIVE TELEMETRY", text().fg(hex("#a78bfa")).bold());
 
                 let cursor_opt = ui.focus_cursor();
-                let total_nodes = ui.state.accessability.prev_nodes.len();
+                let total_nodes = ui.state.accessability_state.prev_nodes.len();
 
                 let (px, py, stream_idx, role_bits, text_sig, depth) = if let Some(cursor) = cursor_opt {
                     (

@@ -414,21 +414,6 @@ impl TextStyle {
         self
     }
 
-    pub const fn button(mut self) -> Self {
-        self.role = Some(RoleFlags::BUTTON);
-        self
-    }
-
-    pub const fn header(mut self) -> Self {
-        self.role = Some(RoleFlags::HEADER);
-        self
-    }
-
-    pub const fn label(mut self) -> Self {
-        self.role = Some(RoleFlags::LABEL);
-        self
-    }
-
     pub const fn focusable(mut self, focusable: bool) -> Self {
         if focusable {
             self.role = Some(RoleFlags::BUTTON);
@@ -442,11 +427,6 @@ impl TextStyle {
 impl RectStyle {
     pub const fn role(mut self, role: RoleFlags) -> Self {
         self.role = Some(role);
-        self
-    }
-
-    pub const fn button(mut self) -> Self {
-        self.role = Some(RoleFlags::BUTTON);
         self
     }
 

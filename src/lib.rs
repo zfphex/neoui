@@ -342,7 +342,8 @@ impl Context {
                 vsync: true,
                 string_pool: UnsafeCell::new(Vec::with_capacity(128)),
                 string_index: Cell::new(0),
-                accessability: AccessabilityState::new(),
+                accessability: true,
+                accessability_state: AccessabilityState::new(),
             },
         }
     }
@@ -401,7 +402,8 @@ pub struct UiState {
     pub commands: [Vec<Command<'static>>; 16],
     pub string_pool: UnsafeCell<Vec<Box<String>>>,
     pub string_index: Cell<usize>,
-    pub accessability: AccessabilityState,
+    pub accessability: bool,
+    pub accessability_state: AccessabilityState,
 }
 
 impl UiState {
@@ -544,10 +546,12 @@ impl Context {
                 frame.left_mouse_release = Some(frame.mouse_position());
             }
 
-            frame
-                .state
-                .accessability
-                .begin_frame(Some(frame.window), frame.hovered_depth);
+            if frame.state.accessability {
+                frame
+                    .state
+                    .accessability_state
+                    .begin_frame(Some(frame.window), frame.hovered_depth);
+            }
 
             let (width, height) = frame.window.size();
             let bounds = Rect::new(0, 0, width as i32, height as i32);
@@ -563,7 +567,9 @@ impl Context {
 
             ui(&mut frame);
 
-            frame.state.accessability.end_frame(frame.hovered_depth);
+            if frame.state.accessability {
+                frame.state.accessability_state.end_frame(frame.hovered_depth);
+            }
 
             frame.draw_frame();
 
@@ -916,22 +922,27 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     pub fn interact(&mut self, rect: Rect, depth: usize) -> State {
         let hovered = self.hovered_depth(rect, depth);
         let clicked = hovered && self.clicked(rect);
-        let focused = self.state.accessability.is_focused(rect, RoleFlags::FOCUSABLE);
-        let key_activated = focused && (self.window.pressed(Key::Enter) || self.window.pressed(Key::Space));
 
-        if clicked {
-            let centroid = (
-                rect.x as f32 + rect.width as f32 * 0.5,
-                rect.y as f32 + rect.height as f32 * 0.5,
-            );
-            self.state.accessability.cursor = Some(SpatialCursor::new(
-                centroid,
-                RoleFlags::BUTTON,
-                0,
-                self.state.accessability.current_nodes.len(),
-                depth,
-            ));
-        }
+        let (focused, key_activated) = if self.state.accessability {
+            let focused = self.state.accessability_state.is_focused(rect, RoleFlags::FOCUSABLE);
+            let key_activated = focused && (self.window.pressed(Key::Enter) || self.window.pressed(Key::Space));
+            if clicked {
+                let centroid = (
+                    rect.x as f32 + rect.width as f32 * 0.5,
+                    rect.y as f32 + rect.height as f32 * 0.5,
+                );
+                self.state.accessability_state.cursor = Some(SpatialCursor::new(
+                    centroid,
+                    RoleFlags::BUTTON,
+                    0,
+                    self.state.accessability_state.current_nodes.len(),
+                    depth,
+                ));
+            }
+            (focused, key_activated)
+        } else {
+            (false, false)
+        };
 
         State {
             clicked,
@@ -1238,14 +1249,17 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     #[inline]
     pub fn emit_semantic(&mut self, bounds: Rect, role: RoleFlags, text: &str, state: StateFlags) -> usize {
-        let text_start = self.state.accessability.text_arena.len() as u32;
-        self.state.accessability.text_arena.push_str(text);
-        let text_end = self.state.accessability.text_arena.len() as u32;
+        if !self.state.accessability {
+            return 0;
+        }
+        let text_start = self.state.accessability_state.text_arena.len() as u32;
+        self.state.accessability_state.text_arena.push_str(text);
+        let text_end = self.state.accessability_state.text_arena.len() as u32;
         let sig = hash32(text);
         let depth = self.current_frame().depth;
 
-        let index = self.state.accessability.current_nodes.len();
-        self.state.accessability.current_nodes.push(SemanticNode::new(
+        let index = self.state.accessability_state.current_nodes.len();
+        self.state.accessability_state.current_nodes.push(SemanticNode::new(
             bounds,
             text_start..text_end,
             role,
@@ -1258,17 +1272,25 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     #[inline]
     pub fn is_focused(&self, bounds: Rect, role: RoleFlags) -> bool {
-        self.state.accessability.is_focused(bounds, role)
+        if !self.state.accessability {
+            return false;
+        }
+        self.state.accessability_state.is_focused(bounds, role)
     }
 
     #[inline]
     pub fn focus_cursor(&self) -> Option<SpatialCursor> {
-        self.state.accessability.cursor
+        if !self.state.accessability {
+            return None;
+        }
+        self.state.accessability_state.cursor
     }
 
     #[inline]
     pub fn set_focus_cursor(&mut self, cursor: Option<SpatialCursor>) {
-        self.state.accessability.cursor = cursor;
+        if self.state.accessability {
+            self.state.accessability_state.cursor = cursor;
+        }
     }
 
     #[inline]
@@ -1303,7 +1325,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let clip = frame.clip;
         let state = self.interact(rect, depth);
 
-        if role.is_focusable() {
+        if self.state.accessability && role.is_focusable() {
             let state_flags = if state.focused {
                 StateFlags::FOCUSED
             } else {

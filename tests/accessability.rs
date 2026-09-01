@@ -4,8 +4,22 @@ use neoui::*;
 #[test]
 fn test_in_place_rename_mutation() {
     let nodes = vec![
-        SemanticNode::new(Rect::new(0, 0, 100, 30), 0..4, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Renamed")),
-        SemanticNode::new(Rect::new(0, 40, 100, 30), 4..10, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Cancel")),
+        SemanticNode::new(
+            Rect::new(0, 0, 100, 30),
+            0..4,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Renamed"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 40, 100, 30),
+            4..10,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Cancel"),
+        ),
     ];
 
     // Cursor had focus on "Old" at (50.0, 15.0) which was renamed to "Renamed" in place
@@ -21,11 +35,46 @@ fn test_in_place_rename_mutation() {
 #[test]
 fn test_semantic_jumping() {
     let nodes = vec![
-        SemanticNode::new(Rect::new(0, 0, 100, 30), 0..4, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Btn1")),
-        SemanticNode::new(Rect::new(0, 40, 100, 30), 4..10, RoleFlags::HEADER, StateFlags::NONE, 0, hash32("Header 1")),
-        SemanticNode::new(Rect::new(0, 80, 100, 30), 10..14, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Btn2")),
-        SemanticNode::new(Rect::new(0, 120, 100, 30), 14..20, RoleFlags::HEADER, StateFlags::NONE, 0, hash32("Header 2")),
-        SemanticNode::new(Rect::new(0, 160, 100, 30), 20..24, RoleFlags::LINK, StateFlags::NONE, 0, hash32("Link 1")),
+        SemanticNode::new(
+            Rect::new(0, 0, 100, 30),
+            0..4,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Btn1"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 40, 100, 30),
+            4..10,
+            RoleFlags::HEADER,
+            StateFlags::NONE,
+            0,
+            hash32("Header 1"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 80, 100, 30),
+            10..14,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Btn2"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 120, 100, 30),
+            14..20,
+            RoleFlags::HEADER,
+            StateFlags::NONE,
+            0,
+            hash32("Header 2"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 160, 100, 30),
+            20..24,
+            RoleFlags::LINK,
+            StateFlags::NONE,
+            0,
+            hash32("Link 1"),
+        ),
     ];
 
     let mut cursor = SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("Btn1"), 0, 0);
@@ -50,9 +99,30 @@ fn test_semantic_jumping() {
 #[test]
 fn test_disabled_element_skipped() {
     let nodes = vec![
-        SemanticNode::new(Rect::new(0, 0, 100, 30), 0..4, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Btn1")),
-        SemanticNode::new(Rect::new(0, 40, 100, 30), 4..8, RoleFlags::BUTTON, StateFlags::DISABLED, 0, hash32("Disabled")),
-        SemanticNode::new(Rect::new(0, 80, 100, 30), 8..12, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Btn2")),
+        SemanticNode::new(
+            Rect::new(0, 0, 100, 30),
+            0..4,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Btn1"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 40, 100, 30),
+            4..8,
+            RoleFlags::BUTTON,
+            StateFlags::DISABLED,
+            0,
+            hash32("Disabled"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 80, 100, 30),
+            8..12,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Btn2"),
+        ),
     ];
 
     let mut cursor = SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("Btn1"), 0, 0);
@@ -72,11 +142,39 @@ fn test_disabled_element_skipped() {
 fn test_depth_layer_isolation() {
     let nodes = vec![
         // Background layer 0
-        SemanticNode::new(Rect::new(10, 10, 80, 30), 0..4, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Bg1")),
-        SemanticNode::new(Rect::new(10, 50, 80, 30), 4..8, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Bg2")),
+        SemanticNode::new(
+            Rect::new(10, 10, 80, 30),
+            0..4,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Bg1"),
+        ),
+        SemanticNode::new(
+            Rect::new(10, 50, 80, 30),
+            4..8,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Bg2"),
+        ),
         // Modal popup layer 1
-        SemanticNode::new(Rect::new(100, 100, 80, 30), 8..12, RoleFlags::BUTTON, StateFlags::NONE, 1, hash32("Modal1")),
-        SemanticNode::new(Rect::new(100, 140, 80, 30), 12..16, RoleFlags::BUTTON, StateFlags::NONE, 1, hash32("Modal2")),
+        SemanticNode::new(
+            Rect::new(100, 100, 80, 30),
+            8..12,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            1,
+            hash32("Modal1"),
+        ),
+        SemanticNode::new(
+            Rect::new(100, 140, 80, 30),
+            12..16,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            1,
+            hash32("Modal2"),
+        ),
     ];
 
     let mut cursor = SpatialCursor::new((140.0, 115.0), RoleFlags::BUTTON, hash32("Modal1"), 2, 1);
@@ -95,12 +193,32 @@ fn test_ui_state_accessability_lifecycle() {
     let mut accessability = AccessabilityState::new();
     accessability.begin_frame(None, None);
 
-    let node1 = SemanticNode::new(Rect::new(0, 0, 100, 30), 0..4, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("First"));
-    let node2 = SemanticNode::new(Rect::new(0, 40, 100, 30), 4..8, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Second"));
+    let node1 = SemanticNode::new(
+        Rect::new(0, 0, 100, 30),
+        0..4,
+        RoleFlags::BUTTON,
+        StateFlags::NONE,
+        0,
+        hash32("First"),
+    );
+    let node2 = SemanticNode::new(
+        Rect::new(0, 40, 100, 30),
+        4..8,
+        RoleFlags::BUTTON,
+        StateFlags::NONE,
+        0,
+        hash32("Second"),
+    );
     accessability.current_nodes.push(node1);
     accessability.current_nodes.push(node2);
 
-    accessability.cursor = Some(SpatialCursor::new((50.0, 15.0), RoleFlags::BUTTON, hash32("First"), 0, 0));
+    accessability.cursor = Some(SpatialCursor::new(
+        (50.0, 15.0),
+        RoleFlags::BUTTON,
+        hash32("First"),
+        0,
+        0,
+    ));
 
     // End frame snaps and swaps current into prev
     accessability.end_frame(None);
@@ -113,10 +231,38 @@ fn test_ui_state_accessability_lifecycle() {
 #[test]
 fn test_static_label_inference_skipped_by_navigation() {
     let nodes = vec![
-        SemanticNode::new(Rect::new(0, 0, 100, 30), 0..5, RoleFlags::HEADER, StateFlags::NONE, 0, hash32("Title")),
-        SemanticNode::new(Rect::new(0, 40, 100, 30), 5..9, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Btn1")),
-        SemanticNode::new(Rect::new(0, 80, 100, 30), 9..13, RoleFlags::LABEL, StateFlags::NONE, 0, hash32("Desc")),
-        SemanticNode::new(Rect::new(0, 120, 100, 30), 13..17, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Btn2")),
+        SemanticNode::new(
+            Rect::new(0, 0, 100, 30),
+            0..5,
+            RoleFlags::HEADER,
+            StateFlags::NONE,
+            0,
+            hash32("Title"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 40, 100, 30),
+            5..9,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Btn1"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 80, 100, 30),
+            9..13,
+            RoleFlags::LABEL,
+            StateFlags::NONE,
+            0,
+            hash32("Desc"),
+        ),
+        SemanticNode::new(
+            Rect::new(0, 120, 100, 30),
+            13..17,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Btn2"),
+        ),
     ];
 
     let mut cursor = SpatialCursor::new((50.0, 55.0), RoleFlags::BUTTON, hash32("Btn1"), 1, 0);
@@ -135,10 +281,38 @@ fn test_directional_row_vs_column_edge_projection() {
     // Toolbar row: [Prepend (index 0)] [Rename (index 1)] [Delete (index 2)]
     // Full width list below: [Task 1 (index 3)]
     let nodes = vec![
-        SemanticNode::new(Rect::new(16, 260, 184, 30), 0..7, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Prepend")),
-        SemanticNode::new(Rect::new(208, 260, 152, 30), 7..13, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Rename")),
-        SemanticNode::new(Rect::new(368, 260, 172, 30), 13..19, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Delete")),
-        SemanticNode::new(Rect::new(16, 300, 548, 30), 19..25, RoleFlags::BUTTON, StateFlags::NONE, 0, hash32("Task 1")),
+        SemanticNode::new(
+            Rect::new(16, 260, 184, 30),
+            0..7,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Prepend"),
+        ),
+        SemanticNode::new(
+            Rect::new(208, 260, 152, 30),
+            7..13,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Rename"),
+        ),
+        SemanticNode::new(
+            Rect::new(368, 260, 172, 30),
+            13..19,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Delete"),
+        ),
+        SemanticNode::new(
+            Rect::new(16, 300, 548, 30),
+            19..25,
+            RoleFlags::BUTTON,
+            StateFlags::NONE,
+            0,
+            hash32("Task 1"),
+        ),
     ];
 
     // Start at Rename (index 1)

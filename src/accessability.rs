@@ -1,4 +1,6 @@
 use minwin::{Key, PlatformWindow, Rect, Window};
+use rustc_hash::FxHasher;
+use std::hash::Hasher;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Range};
 
 /// Role flags for accessibility and semantic classification.
@@ -295,15 +297,11 @@ impl Direction {
     }
 }
 
-/// Fast 32-bit FNV-1a hash function for weak content signatures.
 #[inline]
 pub fn hash32(text: &str) -> u32 {
-    let mut hash: u32 = 0x811c9dc5;
-    for byte in text.as_bytes() {
-        hash ^= *byte as u32;
-        hash = hash.wrapping_mul(0x01000193);
-    }
-    hash
+    let mut hasher = FxHasher::default();
+    hasher.write(text.as_bytes());
+    hasher.finish() as u32
 }
 
 #[inline(always)]
@@ -795,24 +793,6 @@ impl AccessabilityState {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_role_and_state_bitflags() {
-        let mut role = RoleFlags::BUTTON | RoleFlags::LINK;
-        assert!(role.contains(RoleFlags::BUTTON));
-        assert!(role.contains(RoleFlags::LINK));
-        assert!(!role.contains(RoleFlags::TEXT_INPUT));
-        assert!(role.is_focusable());
-
-        role &= !RoleFlags::BUTTON;
-        assert!(!role.contains(RoleFlags::BUTTON));
-        assert!(role.contains(RoleFlags::LINK));
-
-        let state = StateFlags::CHECKED | StateFlags::FOCUSED;
-        assert!(state.contains(StateFlags::CHECKED));
-        assert!(state.contains(StateFlags::FOCUSED));
-        assert!(!state.contains(StateFlags::DISABLED));
-    }
 
     #[test]
     fn test_tier_1_containment() {

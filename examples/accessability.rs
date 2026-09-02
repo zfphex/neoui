@@ -14,14 +14,24 @@ fn main() {
         "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India",
     ];
 
+    let grid_hints = [
+        "Selects waypoint Alpha in navigation grid",
+        "Selects waypoint Bravo in navigation grid",
+        "Selects waypoint Charlie in navigation grid",
+        "Selects waypoint Delta in navigation grid",
+        "Selects waypoint Echo in navigation grid",
+        "Selects waypoint Foxtrot in navigation grid",
+        "Selects waypoint Golf in navigation grid",
+        "Selects waypoint Hotel in navigation grid",
+        "Selects waypoint India in navigation grid",
+    ];
+
     let mut task_counter = 4usize;
     let mut tasks = vec![
         "Task 1: Spatial geometric focus".to_string(),
         "Task 2: Zero cross-frame IDs".to_string(),
         "Task 3: Weak signature shift snap".to_string(),
     ];
-
-    let mut event_logs: Vec<String> = vec!["Ready. Use Tab or Arrow keys to navigate.".to_string()];
 
     while ui.window.open() {
         ui.frame(|ui| {
@@ -79,21 +89,14 @@ fn main() {
                                 .content(Alignment::Center)
                                 .border(border_col)
                                 .border_thickness(1)
-                                .radius(4);
+                                .radius(4)
+                                .hint(grid_hints[idx]);
 
                             let state = ui.text(label, btn_style);
 
                             // Highlight focus ring if SSPA active
                             if state.focused {
                                 ui.paint_rect(state.bounds, rect().border(accent_blue).border_thickness(2).radius(4));
-                            }
-
-                            if state.activated {
-                                let trigger = if state.clicked { "Mouse Click" } else { "Keyboard Enter/Space" };
-                                if event_logs.len() >= 8 {
-                                    event_logs.remove(0);
-                                }
-                                event_logs.push(format!("[ACTIVATED] Grid \"{label}\" via {trigger}"));
                             }
                         }
                     });
@@ -120,7 +123,10 @@ fn main() {
                         .radius(4)
                         .content(Alignment::Center);
 
-                    let prepend_state = ui.text("+ Prepend Item (Tier 2 Shift)", tool_btn);
+                    let prepend_state = ui.text(
+                        "+ Prepend Item (Tier 2 Shift)",
+                        tool_btn.hint("Inserts task to test Tier 2 geometric focus tracking"),
+                    );
                     if prepend_state.focused {
                         ui.paint_rect(
                             prepend_state.bounds,
@@ -130,15 +136,12 @@ fn main() {
                     if prepend_state.activated {
                         tasks.insert(0, format!("Task {task_counter}: Dynamically prepended"));
                         task_counter += 1;
-                        if event_logs.len() >= 8 {
-                            event_logs.remove(0);
-                        }
-                        event_logs.push(
-                            "[MUTATION] Prepended item -> Focus automatically tracks shifted elements".to_string(),
-                        );
                     }
 
-                    let rename_state = ui.text("Rename Label (Tier 1b)", tool_btn);
+                    let rename_state = ui.text(
+                        "Rename Label (Tier 1b)",
+                        tool_btn.hint("Renames active task in place to test Tier 1b focus lock"),
+                    );
                     if rename_state.focused {
                         ui.paint_rect(
                             rename_state.bounds,
@@ -146,30 +149,24 @@ fn main() {
                         );
                     }
                     if rename_state.activated {
-                        if let Some(cursor) = ui.focus_cursor() {
-                            let (cx, cy) = cursor.point;
-                            for task in &mut tasks {
-                                if task.contains("Task") {
-                                    if task.ends_with(" [EDITED]") {
-                                        *task = task.replace(" [EDITED]", "");
-                                    } else {
-                                        task.push_str(" [EDITED]");
-                                    }
-                                    break;
+                        for task in &mut tasks {
+                            if task.contains("Task") {
+                                if task.ends_with(" [EDITED]") {
+                                    *task = task.replace(" [EDITED]", "");
+                                } else {
+                                    task.push_str(" [EDITED]");
                                 }
+                                break;
                             }
-                            if event_logs.len() >= 8 {
-                                event_logs.remove(0);
-                            }
-                            event_logs.push(format!(
-                                "[MUTATION] Renamed label at ({cx:.0}, {cy:.0}) -> Tier 1b retains focus"
-                            ));
                         }
                     }
 
                     let delete_state = ui.text(
                         "- Delete Selected (Tier 3)",
-                        tool_btn.bg(hex("#7f1d1d")).hover(hex("#991b1b")),
+                        tool_btn
+                            .bg(hex("#7f1d1d"))
+                            .hover(hex("#991b1b"))
+                            .hint("Deletes first task to test Tier 3 deletion fallback"),
                     );
                     if delete_state.focused {
                         ui.paint_rect(
@@ -177,21 +174,19 @@ fn main() {
                             rect().border(hex("#ef4444")).border_thickness(2).radius(4),
                         );
                     }
-                    if delete_state.activated {
-                        if !tasks.is_empty() {
-                            let removed = tasks.remove(0);
-                            if event_logs.len() >= 8 {
-                                event_logs.remove(0);
-                            }
-                            event_logs.push(format!(
-                                "[MUTATION] Deleted \"{removed}\" -> Tier 3 snapped to neighbor"
-                            ));
-                        }
+                    if delete_state.activated && !tasks.is_empty() {
+                        tasks.remove(0);
                     }
                 });
 
                 ui.flow_down(flow().fillw().gap(6).padtb(4), |ui| {
                     for (i, task) in tasks.iter().enumerate() {
+                        let task_hint = match i {
+                            0 => "First task: Focus snaps automatically using centroid",
+                            1 => "Second task: Retained across frames without ID hashes",
+                            2 => "Third task: Tracks position shifts during list reflow",
+                            _ => "Dynamically generated list task item",
+                        };
                         let row_style = text()
                             .padtb(8)
                             .padlr(12)
@@ -202,7 +197,8 @@ fn main() {
                             .radius(4)
                             .border(border_col)
                             .border_thickness(1)
-                            .content(Alignment::Left);
+                            .content(Alignment::Left)
+                            .hint(task_hint);
 
                         let task_label = ui.fmt(format_args!("{task}"));
                         let state = ui.text(task_label, row_style);
@@ -212,14 +208,6 @@ fn main() {
                                 state.bounds,
                                 rect().border(hex("#60a5fa")).border_thickness(2).radius(4),
                             );
-                        }
-
-                        if state.activated {
-                            let trigger = if state.clicked { "Mouse" } else { "Keyboard" };
-                            if event_logs.len() >= 8 {
-                                event_logs.remove(0);
-                            }
-                            event_logs.push(format!("[ACTIVATED] Item #{i} \"{task}\" via {trigger}"));
                         }
                     }
                 });
@@ -231,25 +219,42 @@ fn main() {
                 let cursor_opt = ui.focus_cursor();
                 let total_nodes = ui.state.accessability_state.prev_nodes.len();
 
-                let (px, py, stream_idx, role_bits, text_sig, depth) = if let Some(cursor) = cursor_opt {
-                    (
-                        format!("{:.1}", cursor.point.0),
-                        format!("{:.1}", cursor.point.1),
-                        format!("{} / {}", cursor.stream_index, total_nodes),
-                        format!("0x{:04X}", cursor.role.bits()),
-                        format!("0x{:08X}", cursor.text_signature),
-                        cursor.depth.to_string(),
-                    )
-                } else {
-                    (
-                        "None".into(),
-                        "None".into(),
-                        format!("0 / {}", total_nodes),
-                        "None".into(),
-                        "None".into(),
-                        "0".into(),
-                    )
-                };
+                let (px, py, stream_idx, role_bits, text_sig, depth, active_label, active_hint) =
+                    if let Some(cursor) = cursor_opt {
+                        let (label, hint) = if cursor.stream_index < total_nodes {
+                            let node = &ui.state.accessability_state.prev_nodes[cursor.stream_index];
+                            let arena = &ui.state.accessability_state.text_arena;
+                            let l = node.text(arena);
+                            let h = node.hint(arena);
+                            (
+                                if l.is_empty() { "None" } else { l },
+                                if h.is_empty() { "No hint assigned" } else { h },
+                            )
+                        } else {
+                            ("None", "No hint assigned")
+                        };
+                        (
+                            format!("{:.1}", cursor.point.0),
+                            format!("{:.1}", cursor.point.1),
+                            format!("{} / {}", cursor.stream_index, total_nodes),
+                            format!("0x{:04X}", cursor.role.bits()),
+                            format!("0x{:08X}", cursor.text_signature),
+                            cursor.depth.to_string(),
+                            label.to_string(),
+                            hint.to_string(),
+                        )
+                    } else {
+                        (
+                            "None".into(),
+                            "None".into(),
+                            format!("0 / {}", total_nodes),
+                            "None".into(),
+                            "None".into(),
+                            "0".into(),
+                            "None".into(),
+                            "None (Focus with Tab/Arrows)".into(),
+                        )
+                    };
 
                 let px_str = ui.fmt(format_args!("• Subpixel Centroid: ({px}, {py})"));
                 let stream_str = ui.fmt(format_args!("• Stream Index:      {stream_idx}"));
@@ -276,31 +281,28 @@ fn main() {
 
                 ui.gap(6);
 
-                ui.text("EVENT LOG", text().fg(hex("#fbbf24")).bold());
+                ui.text("ACCESSIBILITY HINTS & METADATA", text().fg(hex("#fbbf24")).bold());
+                let label_str = ui.fmt(format_args!("• Focused Label: {active_label}"));
+                let hint_str = ui.fmt(format_args!("• Access Hint:   {active_hint}"));
+                let readout_str = if active_label == "None" {
+                    "• Screen Reader: [Inactive - Press Tab to Focus]".to_string()
+                } else {
+                    format!("• Screen Reader: \"{active_label}\" — {active_hint}")
+                };
+                let readout_str = ui.fmt(format_args!("{readout_str}"));
+
                 ui.flow_down(
                     flow()
                         .fillw()
-                        .gap(4)
+                        .gap(6)
                         .pad(8)
                         .bg(hex("#0f172a"))
                         .radius(4)
                         .border(border_col),
                     |ui| {
-                        if event_logs.is_empty() {
-                            ui.text("No events yet.", text().fg(text_dim));
-                        } else {
-                            for log in &event_logs {
-                                let col = if log.contains("[ACTIVATED]") {
-                                    hex("#86efac")
-                                } else if log.contains("[MUTATION]") {
-                                    hex("#fde047")
-                                } else {
-                                    hex("#cbd5e1")
-                                };
-                                let log_str = ui.fmt(format_args!("{log}"));
-                                ui.text(log_str, text().fg(col).font_size(12));
-                            }
-                        }
+                        ui.text(label_str, text().fg(hex("#38bdf8")).bold());
+                        ui.text(hint_str, text().fg(hex("#86efac")));
+                        ui.text(readout_str, text().fg(hex("#cbd5e1")).font_size(12));
                     },
                 );
 

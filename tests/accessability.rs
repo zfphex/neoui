@@ -330,3 +330,26 @@ fn test_directional_row_vs_column_edge_projection() {
     assert!(navigate_directional(&nodes, &mut cursor, Direction::Down, 2.0, None));
     assert_eq!(cursor.stream_index, 3);
 }
+
+#[test]
+fn test_accessibility_hints() {
+    let mut ui = ui("test_hints", 400, 300);
+    ui.state.accessability = true;
+
+    ui.frame(|ui| {
+        ui.text("Save", text().hint("Saves current file to disk"));
+        ui.text("Cancel", text());
+    });
+
+    assert_eq!(ui.state.accessability_state.prev_nodes.len(), 2);
+    let save_node = &ui.state.accessability_state.prev_nodes[0];
+    let cancel_node = &ui.state.accessability_state.prev_nodes[1];
+
+    let arena = &ui.state.accessability_state.text_arena;
+    assert_eq!(save_node.text(arena), "Save");
+    assert_eq!(save_node.hint(arena), "Saves current file to disk");
+
+    assert_eq!(cancel_node.text(arena), "Cancel");
+    assert_eq!(cancel_node.hint(arena), "");
+}
+

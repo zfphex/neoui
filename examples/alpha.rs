@@ -56,7 +56,7 @@ fn main() {
     }
 }
 
-fn overlay(x: i32, y: i32, size: i32, color: u32) -> RectStyle {
+fn overlay(x: i32, y: i32, size: i32, color: u32) -> RectStyle<'static> {
     rect()
         .x(x)
         .y(y)

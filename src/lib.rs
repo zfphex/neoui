@@ -1179,7 +1179,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 Role::NONE
             }
         });
-        self.widget_with_role(0, 0, &style.layout, &style.paint, role, "", |_, _, _, _| {})
+        let hint = style.hint.unwrap_or("");
+        self.widget_with_role(0, 0, &style.layout, &style.paint, role, "", hint, |_, _, _, _| {})
     }
 
     pub fn circle(&mut self, mut style: RectStyle) -> State {
@@ -1214,25 +1215,34 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     #[inline]
-    pub fn emit_semantic(&mut self, bounds: Rect, role: Role, text: &str, state: StateFlags) -> usize {
+    pub fn emit_semantic(&mut self, bounds: Rect, role: Role, text: &str, hint: &str, state: StateFlags) -> usize {
         if !self.state.accessability {
             return 0;
         }
         let text_start = self.state.accessability_state.text_arena.len() as u32;
         self.state.accessability_state.text_arena.push_str(text);
         let text_end = self.state.accessability_state.text_arena.len() as u32;
+
+        let hint_start = self.state.accessability_state.text_arena.len() as u32;
+        if !hint.is_empty() {
+            self.state.accessability_state.text_arena.push_str(hint);
+        }
+        let hint_end = self.state.accessability_state.text_arena.len() as u32;
+
         let sig = hash32(text);
         let depth = self.current_frame().depth;
 
         let index = self.state.accessability_state.current_nodes.len();
-        self.state.accessability_state.current_nodes.push(SemanticNode::new(
+        let mut node = SemanticNode::new(
             bounds,
             text_start..text_end,
             role,
             state,
             depth,
             sig,
-        ));
+        );
+        node.hint_range = (hint_start, hint_end);
+        self.state.accessability_state.current_nodes.push(node);
         index
     }
 
@@ -1268,6 +1278,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         style: &Paint,
         role: Role,
         text: &str,
+        hint: &str,
         paint: impl FnOnce(&mut Self, Rect, &State, usize),
     ) -> State {
         let padding = layout.padding.unwrap_or_default();
@@ -1291,8 +1302,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let clip = frame.clip;
         let mut state = self.interact(rect, depth);
 
-        if self.state.accessability && role.is_focusable() {
-            if state.clicked {
+        if self.state.accessability && !role.is_empty() {
+            if role.is_focusable() && state.clicked {
                 let centroid = (
                     rect.x as f32 + rect.width as f32 * 0.5,
                     rect.y as f32 + rect.height as f32 * 0.5,
@@ -1310,7 +1321,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             let state_flags = if state.focused { StateFlags::FOCUSED } else { StateFlags::NONE }
                 | if state.hovered { StateFlags::HOVERED } else { StateFlags::NONE }
                 | if style.is_selected { StateFlags::SELECTED } else { StateFlags::NONE };
-            self.emit_semantic(rect, role, text, state_flags);
+            self.emit_semantic(rect, role, text, hint, state_flags);
         }
 
         if let Some(color) = resolve_bg(style, state.hovered) {
@@ -1367,15 +1378,19 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         } else {
             Role::NONE
         };
-        self.widget_with_role(content_width, content_height, layout, style, role, "", paint)
+        self.widget_with_role(content_width, content_height, layout, style, role, "", "", paint)
     }
 
     pub fn image(&mut self, image: Image<'a>, style: ImageStyle) -> State {
-        self.widget(
+        let hint = style.hint.unwrap_or("");
+        self.widget_with_role(
             image.width as i32,
             image.height as i32,
             &style.layout,
             &style.paint,
+            Role::IMAGE,
+            "",
+            hint,
             |ui, content, _, depth| {
                 let bounds = match style.fit {
                     Fit::Stretch => content,
@@ -1551,6 +1566,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 Role::LABEL
             }
         });
+        let hint = style.hint.unwrap_or("");
         self.widget_with_role(
             metrics.width,
             metrics.height,
@@ -1558,6 +1574,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             &style.paint,
             role,
             &text_str,
+            hint,
             move |ui, content, _, depth| {
                 ui.paint_text_measured(
                     text,

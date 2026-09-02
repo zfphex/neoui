@@ -198,14 +198,15 @@ pub struct FlowStyle {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct RectStyle {
+pub struct RectStyle<'a> {
     pub layout: Layout,
     pub paint: Paint,
     pub role: Option<Role>,
+    pub hint: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TextStyle {
+pub struct TextStyle<'a> {
     pub layout: Layout,
     pub paint: Paint,
     pub font: Font,
@@ -216,15 +217,17 @@ pub struct TextStyle {
     /// Where the glyph run sits inside this widget's own content box.
     pub content: Option<Alignment>,
     pub role: Option<Role>,
+    pub hint: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ImageStyle {
+pub struct ImageStyle<'a> {
     pub layout: Layout,
     pub paint: Paint,
     pub fit: Fit,
     /// Where the scaled image sits inside this widget's own content box.
     pub content: Option<Alignment>,
+    pub hint: Option<&'a str>,
 }
 
 impl FlowStyle {
@@ -237,17 +240,18 @@ impl FlowStyle {
     }
 }
 
-impl RectStyle {
+impl<'a> RectStyle<'a> {
     pub const fn new() -> Self {
         RectStyle {
             layout: Layout::new(),
             paint: Paint::new(),
             role: None,
+            hint: None,
         }
     }
 }
 
-impl TextStyle {
+impl<'a> TextStyle<'a> {
     pub const fn new() -> Self {
         TextStyle {
             layout: Layout::new(),
@@ -262,17 +266,19 @@ impl TextStyle {
             wrap: false,
             content: None,
             role: None,
+            hint: None,
         }
     }
 }
 
-impl ImageStyle {
+impl<'a> ImageStyle<'a> {
     pub const fn new() -> Self {
         ImageStyle {
             layout: Layout::new(),
             paint: Paint::new(),
             fit: Fit::Stretch,
             content: None,
+            hint: None,
         }
     }
 }
@@ -281,23 +287,23 @@ pub const fn flow() -> FlowStyle {
     FlowStyle::new()
 }
 
-pub const fn rect() -> RectStyle {
+pub const fn rect<'a>() -> RectStyle<'a> {
     RectStyle::new()
 }
 
-pub const fn circle() -> RectStyle {
+pub const fn circle<'a>() -> RectStyle<'a> {
     RectStyle::new()
 }
 
-pub const fn gradient() -> RectStyle {
+pub const fn gradient<'a>() -> RectStyle<'a> {
     RectStyle::new()
 }
 
-pub const fn text() -> TextStyle {
+pub const fn text<'a>() -> TextStyle<'a> {
     TextStyle::new()
 }
 
-pub const fn image() -> ImageStyle {
+pub const fn image<'a>() -> ImageStyle<'a> {
     ImageStyle::new()
 }
 
@@ -323,7 +329,7 @@ impl FlowStyle {
     }
 }
 
-impl TextStyle {
+impl<'a> TextStyle<'a> {
     pub const fn font(mut self, font: Font) -> Self {
         self.font = font;
         self
@@ -422,9 +428,14 @@ impl TextStyle {
         }
         self
     }
+
+    pub const fn hint(mut self, hint: &'a str) -> Self {
+        self.hint = Some(hint);
+        self
+    }
 }
 
-impl RectStyle {
+impl<'a> RectStyle<'a> {
     pub const fn role(mut self, role: Role) -> Self {
         self.role = Some(role);
         self
@@ -438,9 +449,14 @@ impl RectStyle {
         }
         self
     }
+
+    pub const fn hint(mut self, hint: &'a str) -> Self {
+        self.hint = Some(hint);
+        self
+    }
 }
 
-impl ImageStyle {
+impl<'a> ImageStyle<'a> {
     pub const fn fit(mut self, fit: Fit) -> Self {
         self.fit = fit;
         self
@@ -468,6 +484,11 @@ impl ImageStyle {
 
     pub const fn content_right(mut self) -> Self {
         self.content = Some(Alignment::Right);
+        self
+    }
+
+    pub const fn hint(mut self, hint: &'a str) -> Self {
+        self.hint = Some(hint);
         self
     }
 }
@@ -783,19 +804,19 @@ const impl Boxed for FlowStyle {
     }
 }
 
-const impl Boxed for RectStyle {
+const impl<'a> Boxed for RectStyle<'a> {
     fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
 }
 
-const impl Boxed for TextStyle {
+const impl<'a> Boxed for TextStyle<'a> {
     fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
 }
 
-const impl Boxed for ImageStyle {
+const impl<'a> Boxed for ImageStyle<'a> {
     fn layout_mut(&mut self) -> &mut Layout {
         &mut self.layout
     }
@@ -807,19 +828,19 @@ const impl Painted for FlowStyle {
     }
 }
 
-const impl Painted for RectStyle {
+const impl<'a> Painted for RectStyle<'a> {
     fn paint_mut(&mut self) -> &mut Paint {
         &mut self.paint
     }
 }
 
-const impl Painted for TextStyle {
+const impl<'a> Painted for TextStyle<'a> {
     fn paint_mut(&mut self) -> &mut Paint {
         &mut self.paint
     }
 }
 
-const impl Painted for ImageStyle {
+const impl<'a> Painted for ImageStyle<'a> {
     fn paint_mut(&mut self) -> &mut Paint {
         &mut self.paint
     }
@@ -972,7 +993,7 @@ const impl IntoSize for usize {
     }
 }
 
-pub fn line<'a>(content: impl Into<Cow<'a, str>>, style: TextStyle) -> Line<'a> {
+pub fn line<'a>(content: impl Into<Cow<'a, str>>, style: TextStyle<'a>) -> Line<'a> {
     Line {
         content: content.into(),
         style,
@@ -982,7 +1003,7 @@ pub fn line<'a>(content: impl Into<Cow<'a, str>>, style: TextStyle) -> Line<'a> 
 #[derive(Clone, Debug)]
 pub struct Line<'a> {
     pub content: Cow<'a, str>,
-    pub style: TextStyle,
+    pub style: TextStyle<'a>,
 }
 
 impl<'a> From<&'a str> for Line<'a> {

@@ -209,6 +209,8 @@ pub struct SemanticNode {
     pub bounds: Rect,
     /// Byte range index into the linear string arena.
     pub text_range: (u32, u32),
+    /// Byte range index for accessibility hint into the linear string arena.
+    pub hint_range: (u32, u32),
     /// Bitfield specifying semantic roles (BUTTON, HEADER, LINK, etc.).
     pub role: Role,
     /// Bitfield specifying accessibility state (DISABLED, CHECKED, etc.).
@@ -232,11 +234,28 @@ impl SemanticNode {
         Self {
             bounds,
             text_range: (text_range.start, text_range.end),
+            hint_range: (0, 0),
             role,
             state,
             depth: depth as u8,
             text_signature,
         }
+    }
+
+    #[inline(always)]
+    pub fn with_hint(mut self, hint_range: Range<u32>) -> Self {
+        self.hint_range = (hint_range.start, hint_range.end);
+        self
+    }
+
+    #[inline(always)]
+    pub fn text<'a>(&self, arena: &'a str) -> &'a str {
+        &arena[self.text_range.0 as usize..self.text_range.1 as usize]
+    }
+
+    #[inline(always)]
+    pub fn hint<'a>(&self, arena: &'a str) -> &'a str {
+        &arena[self.hint_range.0 as usize..self.hint_range.1 as usize]
     }
 
     /// Screen-space centroid of this node.
@@ -787,6 +806,16 @@ impl AccessabilityState {
         }
 
         std::mem::swap(&mut self.prev_nodes, &mut self.current_nodes);
+    }
+
+    #[inline(always)]
+    pub fn node_text<'a>(&'a self, node: &SemanticNode) -> &'a str {
+        node.text(&self.text_arena)
+    }
+
+    #[inline(always)]
+    pub fn node_hint<'a>(&'a self, node: &SemanticNode) -> &'a str {
+        node.hint(&self.text_arena)
     }
 }
 

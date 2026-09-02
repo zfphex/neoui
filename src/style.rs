@@ -962,11 +962,7 @@ const impl IntoSize for f32 {
 //Yeah keep it for now, I'll think about it later...
 const impl IntoSize for i32 {
     fn into_size(self) -> Option<Size> {
-        if self < 0 {
-            Some(Size::FillMinus(self))
-        } else {
-            Some(Size::Pixel(self))
-        }
+        if self < 0 { Some(Size::FillMinus(self)) } else { Some(Size::Pixel(self)) }
     }
 }
 

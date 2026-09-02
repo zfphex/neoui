@@ -854,11 +854,7 @@ pub fn draw_triangle_sdf(
     let step_long = (x2 as f32 - x0 as f32) / total_height as f32;
 
     let height_top = y1 - y0;
-    let step_short_top = if height_top > 0 {
-        (x1 as f32 - x0 as f32) / height_top as f32
-    } else {
-        0.0
-    };
+    let step_short_top = if height_top > 0 { (x1 as f32 - x0 as f32) / height_top as f32 } else { 0.0 };
     let height_bottom = y2 - y1;
     let step_short_bottom = if height_bottom > 0 {
         (x2 as f32 - x1 as f32) / height_bottom as f32

@@ -212,13 +212,7 @@ fn test_ui_state_accessability_lifecycle() {
     accessability.current_nodes.push(node1);
     accessability.current_nodes.push(node2);
 
-    accessability.cursor = Some(SpatialCursor::new(
-        (50.0, 15.0),
-        Role::BUTTON,
-        hash32("First"),
-        0,
-        0,
-    ));
+    accessability.cursor = Some(SpatialCursor::new((50.0, 15.0), Role::BUTTON, hash32("First"), 0, 0));
 
     // End frame snaps and swaps current into prev
     accessability.end_frame(None);

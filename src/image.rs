@@ -97,11 +97,7 @@ pub fn decode(bytes: &[u8]) -> Result<(Vec<u32>, usize, usize), Box<dyn std::err
         2 => {
             for i in (0..width * height).rev() {
                 let word = out[i / 2].to_ne_bytes();
-                let (luma, alpha) = if i % 2 == 0 {
-                    (word[0], word[1])
-                } else {
-                    (word[2], word[3])
-                };
+                let (luma, alpha) = if i % 2 == 0 { (word[0], word[1]) } else { (word[2], word[3]) };
                 out[i] = premultiply(luma, luma, luma, alpha);
             }
         }
@@ -242,11 +238,7 @@ fn scale_argb(pixel: u32, factor: u32) -> u32 {
 
 #[inline(always)]
 fn blend(pixel: &mut u32, source: u32, factor: u32) {
-    let source = if factor == 255 {
-        source
-    } else {
-        scale_argb(source, factor)
-    };
+    let source = if factor == 255 { source } else { scale_argb(source, factor) };
     *pixel = match source >> 24 {
         255 => source & RGB,
         0 => *pixel,

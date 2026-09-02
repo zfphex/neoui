@@ -89,11 +89,7 @@ fn main() {
                             }
 
                             if state.activated {
-                                let trigger = if state.clicked {
-                                    "Mouse Click"
-                                } else {
-                                    "Keyboard Enter/Space"
-                                };
+                                let trigger = if state.clicked { "Mouse Click" } else { "Keyboard Enter/Space" };
                                 if event_logs.len() >= 8 {
                                     event_logs.remove(0);
                                 }

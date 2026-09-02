@@ -72,11 +72,7 @@ fn main() {
                             (_, true) => rgba(236, 233, 228, 153),
                             _ => rgba(236, 233, 228, 56),
                         })
-                        .bg(if is_active {
-                            rgba(155, 132, 217, 41)
-                        } else {
-                            rgba(0, 0, 0, 0)
-                        }),
+                        .bg(if is_active { rgba(155, 132, 217, 41) } else { rgba(0, 0, 0, 0) }),
                 );
 
                 if state.clicked && has {

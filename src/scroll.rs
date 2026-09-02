@@ -149,11 +149,7 @@ impl Scroll {
                     .last_timestamp
                     .map(|last| (event.timestamp - last) as f32)
                     .unwrap_or(f32::MAX);
-                self.velocity = if gap > 0.0 && gap < VELOCITY_TIMEOUT {
-                    delta / gap
-                } else {
-                    0.0
-                };
+                self.velocity = if gap > 0.0 && gap < VELOCITY_TIMEOUT { delta / gap } else { 0.0 };
                 self.last_timestamp = Some(event.timestamp);
             }
 
@@ -197,11 +193,7 @@ impl Scroll {
                 let span = self.wheel_target - self.wheel_start;
                 // Carry the speed of the animation already running into the slope of the new one,
                 // so a burst of notches reads as one accelerating scroll instead of a stutter.
-                self.wheel_slope = if span.abs() > f32::EPSILON {
-                    velocity * WHEEL_DURATION / span
-                } else {
-                    0.0
-                };
+                self.wheel_slope = if span.abs() > f32::EPSILON { velocity * WHEEL_DURATION / span } else { 0.0 };
                 self.wheel_elapsed = 0.0;
                 continue;
             }

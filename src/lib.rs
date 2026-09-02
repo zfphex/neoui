@@ -638,19 +638,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let (x, y) = if frame.flow.vertical() {
             (
                 align_cross(frame.inner_bounds.x, frame.inner_bounds.width, width, align),
-                if frame.flow.reverse() {
-                    frame.cursor_y - height
-                } else {
-                    frame.cursor_y
-                },
+                if frame.flow.reverse() { frame.cursor_y - height } else { frame.cursor_y },
             )
         } else {
             (
-                if frame.flow.reverse() {
-                    frame.cursor_x - width
-                } else {
-                    frame.cursor_x
-                },
+                if frame.flow.reverse() { frame.cursor_x - width } else { frame.cursor_x },
                 align_cross(frame.inner_bounds.y, frame.inner_bounds.height, height, align),
             )
         };
@@ -844,12 +836,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         } else {
             (bounds.width, bounds.x, bounds.right())
         };
-        let remaining = if flow.reverse() {
-            start_pos - start
-        } else {
-            end - start_pos
-        }
-        .max(0);
+        let remaining = if flow.reverse() { start_pos - start } else { end - start_pos }.max(0);
         match size {
             Size::Pixel(px) => px,
             Size::Percentage(pct) => (total as f32 * pct) as i32,
@@ -869,16 +856,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn resolve_style_size(&self, size: Size, flow: Flow, style: &Layout) -> i32 {
         let frame = self.layout_stack.last().expect("No active frame");
-        let bounds = if style.bleed {
-            frame.outer_bounds
-        } else {
-            frame.inner_bounds
-        };
-        let start_pos = if flow.vertical() {
-            frame.cursor_y
-        } else {
-            frame.cursor_x
-        };
+        let bounds = if style.bleed { frame.outer_bounds } else { frame.inner_bounds };
+        let start_pos = if flow.vertical() { frame.cursor_y } else { frame.cursor_x };
         self.resolve_size_in(bounds, size, flow, start_pos)
     }
 
@@ -1328,19 +1307,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 state.focused = true;
             }
 
-            let state_flags = if state.focused {
-                StateFlags::FOCUSED
-            } else {
-                StateFlags::NONE
-            } | if state.hovered {
-                StateFlags::HOVERED
-            } else {
-                StateFlags::NONE
-            } | if style.is_selected {
-                StateFlags::SELECTED
-            } else {
-                StateFlags::NONE
-            };
+            let state_flags = if state.focused { StateFlags::FOCUSED } else { StateFlags::NONE }
+                | if state.hovered { StateFlags::HOVERED } else { StateFlags::NONE }
+                | if style.is_selected { StateFlags::SELECTED } else { StateFlags::NONE };
             self.emit_semantic(rect, role, text, state_flags);
         }
 
@@ -1622,11 +1591,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let style = style.into();
         let layout = style.layout;
 
-        let pb = if layout.bleed {
-            parent_frame.outer_bounds
-        } else {
-            parent_frame.inner_bounds
-        };
+        let pb = if layout.bleed { parent_frame.outer_bounds } else { parent_frame.inner_bounds };
         let explicit_x = layout.x.map(|x| self.resolve_size(x, Flow::Right));
         let explicit_y = layout.y.map(|y| self.resolve_size(y, Flow::Down));
 
@@ -1645,21 +1610,13 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let width = layout
             .width
             .map(|w| self.resolve_size_in(pb, w, if reverse_x { Flow::Left } else { Flow::Right }, anchor_x))
-            .unwrap_or(if reverse_x {
-                anchor_x - pb.x
-            } else {
-                pb.right() - anchor_x
-            })
+            .unwrap_or(if reverse_x { anchor_x - pb.x } else { pb.right() - anchor_x })
             .max(0);
 
         let height = layout
             .height
             .map(|h| self.resolve_size_in(pb, h, if reverse_y { Flow::Up } else { Flow::Down }, anchor_y))
-            .unwrap_or(if reverse_y {
-                anchor_y - pb.y
-            } else {
-                pb.bottom() - anchor_y
-            })
+            .unwrap_or(if reverse_y { anchor_y - pb.y } else { pb.bottom() - anchor_y })
             .max(0);
 
         let x = if reverse_x { anchor_x - width } else { anchor_x };
@@ -1723,24 +1680,12 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let new_frame = Frame {
             inner_bounds,
             outer_bounds,
-            clip: if layout.clip {
-                clip.intersection(outer_bounds)
-            } else {
-                clip
-            },
+            clip: if layout.clip { clip.intersection(outer_bounds) } else { clip },
             flow,
             align_children,
             depth,
-            cursor_x: if flow == Flow::Left {
-                inner_bounds.right()
-            } else {
-                inner_bounds.x
-            },
-            cursor_y: if flow == Flow::Up {
-                inner_bounds.bottom()
-            } else {
-                inner_bounds.y
-            },
+            cursor_x: if flow == Flow::Left { inner_bounds.right() } else { inner_bounds.x },
+            cursor_y: if flow == Flow::Up { inner_bounds.bottom() } else { inner_bounds.y },
             // Nested flows are already placed in screen space; do not re-apply parent scroll
             // on their children. Only this frame's own scroll_y (e.g. scroll_view) applies.
             scroll_y,
@@ -1759,16 +1704,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         let (fitted_w, fitted_h) = self.current_frame().fitted_size();
         let fitted_bounds = Rect::new(
-            if flow == Flow::Left {
-                outer_bounds.right() - fitted_w
-            } else {
-                x
-            },
-            if flow == Flow::Up {
-                outer_bounds.bottom() - fitted_h
-            } else {
-                y
-            },
+            if flow == Flow::Left { outer_bounds.right() - fitted_w } else { x },
+            if flow == Flow::Up { outer_bounds.bottom() - fitted_h } else { y },
             fitted_w,
             fitted_h,
         );
@@ -2004,11 +1941,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     pub fn begin_layout(&mut self, flow: Flow, bounds: Option<Rect>) {
-        let bounds = if let Some(bounds) = bounds {
-            bounds
-        } else {
-            self.current_frame_bounds()
-        };
+        let bounds = if let Some(bounds) = bounds { bounds } else { self.current_frame_bounds() };
 
         let scope = self.next_scope();
         let parent = self.layout_stack.last().expect("Layout stack empty");

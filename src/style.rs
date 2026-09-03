@@ -128,6 +128,7 @@ pub struct Layout {
     pub skip_cull: bool,
     /// Rubber-band past the edges of a scroll view and bounce back.
     pub elastic: bool,
+    pub hide: bool,
 }
 
 impl Layout {
@@ -146,6 +147,7 @@ impl Layout {
             clip: false,
             skip_cull: false,
             elastic: false,
+            hide: false,
         }
     }
 }
@@ -629,6 +631,12 @@ pub const trait Boxed: Sized {
     #[inline]
     fn depth(mut self, depth: usize) -> Self {
         self.layout_mut().depth = Some(depth);
+        self
+    }
+
+    #[inline]
+    fn hide(mut self) -> Self {
+        self.layout_mut().hide = true;
         self
     }
 

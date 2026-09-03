@@ -162,6 +162,21 @@ fn main() {
             assert!(narrow.bounds.width == 100 && narrow.bounds.height > hug.bounds.height);
         });
 
+        // Hide style calculates layout but skips draw commands
+        let initial_cmds = ui.commands.iter().map(|c| c.len()).sum::<usize>();
+        let measured = ui.place_down(flow().x(0).y(0).hide().pad(10).gap(5), |ui| {
+            assert_eq!(ui.rect(rect().wh(30)).bounds, Rect::new(10, 10, 30, 30));
+            assert_eq!(ui.rect(rect().wh(30)).bounds, Rect::new(10, 45, 30, 30));
+        });
+        assert_eq!(measured.bounds, Rect::new(0, 0, 50, 85));
+        let after_cmds = ui.commands.iter().map(|c| c.len()).sum::<usize>();
+        assert_eq!(initial_cmds, after_cmds);
+
+        // ui.center
+        let c = ui.center(measured.bounds);
+        let inner = ui.current_frame().inner_bounds;
+        assert_eq!(c, Rect::new(inner.x + (inner.width - 50) / 2, inner.y + (inner.height - 85) / 2, 50, 85));
+
         ui.window.close();
     });
 }

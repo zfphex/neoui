@@ -70,6 +70,7 @@ pub struct Frame {
     pub scope: usize,
     pub child_index: usize,
     pub anim_slot: usize,
+    pub hidden: bool,
 }
 
 impl Frame {
@@ -830,6 +831,14 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         (top_rect, bottom_rect)
     }
 
+    /// Center rectangle in current frame.
+    pub fn center(&self, rect: Rect) -> Rect {
+        let frame = self.current_frame();
+        let x = frame.inner_bounds.x + (frame.inner_bounds.width - rect.width) / 2;
+        let y = frame.inner_bounds.y + (frame.inner_bounds.height - rect.height) / 2;
+        Rect::new(x, y, rect.width, rect.height)
+    }
+
     pub fn resolve_size_in(&self, bounds: Rect, size: Size, flow: Flow, start_pos: i32) -> i32 {
         let (total, start, end) = if flow.vertical() {
             (bounds.height, bounds.y, bounds.bottom())
@@ -990,6 +999,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn paint_rect(&mut self, rect: Rect, style: RectStyle) {
         let frame = self.current_frame();
+        if style.layout.hide || frame.hidden {
+            return;
+        }
         let clip = frame.clip;
         let depth = style.layout.depth.unwrap_or(frame.depth);
 
@@ -1016,6 +1028,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn paint_triangle(&mut self, a: (i32, i32), b: (i32, i32), c: (i32, i32), style: RectStyle) {
         let frame = self.current_frame();
+        if style.layout.hide || frame.hidden {
+            return;
+        }
         let clip = frame.clip;
         let depth = style.layout.depth.unwrap_or(frame.depth);
         if let Some(color) = style.paint.bg {
@@ -1025,6 +1040,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn paint_circle(&mut self, bounds: Rect, style: RectStyle) {
         let frame = self.current_frame();
+        if style.layout.hide || frame.hidden {
+            return;
+        }
         let clip = frame.clip;
         let depth = style.layout.depth.unwrap_or(frame.depth);
         if let Some(color) = style.paint.bg.or(style.paint.fg) {
@@ -1045,6 +1063,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         padding: Padding,
         depth: usize,
     ) {
+        let current_frame = self.current_frame();
+        if current_frame.hidden {
+            return;
+        }
         let text = text.into();
         if text.is_empty() {
             return;
@@ -1061,8 +1083,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             (rect.width - padding.left as i32 - padding.right as i32).max(0),
             (rect.height - padding.top as i32 - padding.bottom as i32).max(0),
         );
-        let frame_clip = self.layout_stack.last().expect("No active frame").clip;
-        let clip = frame_clip.intersection(content);
+        let clip = current_frame.clip.intersection(content);
         if clip.is_empty() {
             return;
         }
@@ -1159,7 +1180,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
     pub fn gap(&mut self, gap: impl IntoSize) {
         if let Some(gap) = gap.into_size() {
-            let frame = self.layout_stack.last().expect("No active frame");
+            let frame = self.current_frame();
             let gap = self.resolve_size(gap, frame.flow);
             self.walk_layout(0, 0, gap, None);
         }
@@ -1233,14 +1254,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let depth = self.current_frame().depth;
 
         let index = self.state.accessability_state.current_nodes.len();
-        let mut node = SemanticNode::new(
-            bounds,
-            text_start..text_end,
-            role,
-            state,
-            depth,
-            sig,
-        );
+        let mut node = SemanticNode::new(bounds, text_start..text_end, role, state, depth, sig);
         node.hint_range = (hint_start, hint_end);
         self.state.accessability_state.current_nodes.push(node);
         index
@@ -1293,7 +1307,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, layout);
 
-        if rect.is_empty() {
+        if rect.is_empty() || layout.hide || self.current_frame().hidden {
             return State::new(rect);
         }
 
@@ -1423,10 +1437,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     }
 
     pub fn paint_image(&mut self, bounds: Rect, image: Image<'a>, style: ImageStyle) {
-        if bounds.is_empty() {
+        let frame = self.current_frame();
+        if bounds.is_empty() || style.layout.hide || frame.hidden {
             return;
         }
-        let frame = self.current_frame();
         let depth = style.layout.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
         self.commands[depth].push(Command::Image {
@@ -1600,7 +1614,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         scroll_y: i32,
         ui: impl FnOnce(&mut Self) -> R,
     ) -> State {
-        let parent_frame = self.current_frame();
+        let parent_frame = *self.current_frame();
         let parent_scroll = parent_frame.scroll_y;
         let parent_default_align = parent_frame.align_children;
         let parent_vertical = parent_frame.flow.vertical();
@@ -1660,6 +1674,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             self.layout_stack.last_mut().unwrap().bleed = true;
         }
 
+        let hidden = layout.hide || parent_frame.hidden;
         let scope = self.next_scope();
         let frame = self.current_frame();
         let depth = layout.depth.unwrap_or(frame.depth);
@@ -1672,8 +1687,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             && layout.height.is_some()
             && clip.intersection(outer_bounds).is_empty();
 
-        let paints_bg =
-            !culled && (style.paint.bg.is_some() || style.paint.hover.is_some() || style.paint.selected.is_some());
+        let paints_bg = !hidden
+            && !culled
+            && (style.paint.bg.is_some() || style.paint.hover.is_some() || style.paint.selected.is_some());
         let bg_index = paints_bg.then(|| {
             self.commands[depth].push(Command::Rect {
                 bounds: outer_bounds,
@@ -1711,6 +1727,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             outer_width: layout.width.map(|_| width),
             outer_height: layout.height.map(|_| height),
             scope,
+            hidden,
             ..Default::default()
         };
 
@@ -1733,7 +1750,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             fitted_h + margin.axis(Flow::Down),
         );
 
-        let state = if culled {
+        let state = if culled || hidden {
             State::new(fitted_bounds)
         } else {
             self.interact(fitted_bounds, depth)
@@ -1752,7 +1769,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             }
         }
 
-        if !culled && let Some(color) = resolve_border(&style.paint, state.hovered) {
+        if !culled
+            && !hidden
+            && let Some(color) = resolve_border(&style.paint, state.hovered)
+        {
             self.commands[depth].push(Command::RectStroke {
                 bounds: fitted_bounds,
                 clip,
@@ -1971,6 +1991,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             cursor_x: if flow == Flow::Left { bounds.right() } else { bounds.x },
             cursor_y: if flow == Flow::Up { bounds.bottom() } else { bounds.y },
             scope,
+            hidden: parent.hidden,
             ..Default::default()
         };
 

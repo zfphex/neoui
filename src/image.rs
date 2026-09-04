@@ -12,7 +12,6 @@ use zune_png::PngDecoder;
 const LANES: u32 = 0x00FF_00FF;
 const BIAS: u32 = 0x0080_0080;
 const RGB: u32 = 0x00FF_FFFF;
-const WEIGHT_ONE: u32 = 256;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Image<'a> {
@@ -107,120 +106,112 @@ pub fn decode(bytes: &[u8]) -> Result<(Vec<u32>, usize, usize), Box<dyn std::err
     Ok((out, width, height))
 }
 
+#[inline(always)]
+fn cubic(x: f32) -> f32 {
+    let x = x.abs();
+    if x < 1.0 {
+        (1.5 * x - 2.5) * x * x + 1.0
+    } else if x < 2.0 {
+        ((-0.5 * x + 2.5) * x - 4.0) * x + 2.0
+    } else {
+        0.0
+    }
+}
+
+struct Axis {
+    taps: usize,
+    first: Vec<usize>,
+    weights: Vec<i16>,
+}
+
+fn axis(src_len: usize, dst_len: usize) -> Axis {
+    let ratio = src_len as f32 / dst_len as f32;
+    let scale = (ratio * 0.5).max(1.0);
+    let radius = 2.0 * scale;
+    let taps = ((2.0 * radius).ceil() as usize + 1).min(src_len).max(1);
+    let inv = 1.0 / scale;
+    let max_start = src_len - taps;
+
+    let mut first = Vec::with_capacity(dst_len);
+    let mut weights = vec![0i16; dst_len * taps];
+    let mut row = vec![0.0f32; taps];
+
+    for i in 0..dst_len {
+        let center = (i as f32 + 0.5) * ratio;
+        let start = ((center - radius).floor() as i64).clamp(0, max_start as i64) as usize;
+        first.push(start);
+
+        let mut sum = 0.0f32;
+        for tap in 0..taps {
+            let w = cubic(((start + tap) as f32 + 0.5 - center) * inv) * inv;
+            row[tap] = w;
+            sum += w;
+        }
+
+        let norm = if sum != 0.0 { 256.0 / sum } else { 0.0 };
+        let mut exact = 0.0f32;
+        let mut assigned = 0i32;
+        let base = i * taps;
+        for tap in 0..taps {
+            exact += row[tap] * norm;
+            let cum = exact.round() as i32;
+            let w = cum - assigned;
+            assigned += w;
+            weights[base + tap] = w as i16;
+        }
+    }
+
+    Axis { taps, first, weights }
+}
+
+#[inline(always)]
+fn gather(source: &[u32], weights: &[i16], stride: usize) -> u32 {
+    let mut c0 = 0i32;
+    let mut c1 = 0i32;
+    let mut c2 = 0i32;
+    let mut c3 = 0i32;
+    for tap in 0..weights.len() {
+        let p = source[tap * stride];
+        let w = weights[tap] as i32;
+        c0 += (p & 0xFF) as i32 * w;
+        c1 += ((p >> 8) & 0xFF) as i32 * w;
+        c2 += ((p >> 16) & 0xFF) as i32 * w;
+        c3 += ((p >> 24) as i32) * w;
+    }
+    let b0 = ((c0 + 128) >> 8).clamp(0, 255) as u32;
+    let b1 = ((c1 + 128) >> 8).clamp(0, 255) as u32;
+    let b2 = ((c2 + 128) >> 8).clamp(0, 255) as u32;
+    let b3 = ((c3 + 128) >> 8).clamp(0, 255) as u32;
+    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
 pub fn resize(src: Image, width: usize, height: usize) -> Vec<u32> {
     assert!(width > 0 && height > 0 && src.width > 0 && src.height > 0);
-
-    struct Axis {
-        pub taps: usize,
-        pub first: Vec<usize>,
-        pub weights: Vec<u16>,
+    if src.width == width && src.height == height {
+        return src.pixels.to_vec();
     }
 
-    fn axis(source_len: usize, dest_len: usize) -> Axis {
-        let ratio = source_len as f32 / dest_len as f32;
-        let half = (ratio * 0.5).max(0.5);
-        let taps = ((2.0 * half).ceil() as usize + 1).clamp(1, source_len);
-        let last_window = source_len - taps;
-
-        let mut first = Vec::with_capacity(dest_len);
-        let mut weights = vec![0u16; dest_len * taps];
-        let mut scratch = vec![0f32; taps];
-
-        for i in 0..dest_len {
-            let centre = (i as f32 + 0.5) * ratio;
-            let (low, high) = (centre - half, centre + half);
-            let begin = low.floor() as i64;
-            let window = begin.clamp(0, last_window as i64) as usize;
-
-            scratch.fill(0.0);
-            let mut total = 0.0;
-            for tap in 0..taps {
-                let edge = begin + tap as i64;
-                let weight = (((edge + 1) as f32).min(high) - (edge as f32).max(low)).max(0.0);
-                let j = edge.clamp(0, source_len as i64 - 1) as usize;
-                scratch[j.saturating_sub(window).min(taps - 1)] += weight;
-                total += weight;
-            }
-            if total <= 0.0 {
-                scratch[0] = 1.0;
-                total = 1.0;
-            }
-
-            let normalize = WEIGHT_ONE as f32 / total;
-            let (mut exact, mut assigned) = (0.0f32, 0u32);
-            for tap in 0..taps {
-                exact += scratch[tap] * normalize;
-                let weight = (exact.round() as u32).saturating_sub(assigned).min(WEIGHT_ONE);
-                weights[i * taps + tap] = weight as u16;
-                assigned += weight;
-            }
-            first.push(window);
-        }
-
-        Axis { taps, first, weights }
-    }
-
-    #[inline(always)]
-    fn gather(source: &[u32], weights: &[u16], stride: usize) -> u32 {
-        let (mut low, mut high) = (0u32, 0u32);
-        for (tap, &weight) in weights.iter().enumerate() {
-            let pixel = source[tap * stride];
-            let weight = weight as u32;
-            low += (pixel & LANES) * weight;
-            high += ((pixel >> 8) & LANES) * weight;
-        }
-        ((low >> 8) & LANES) | (((high >> 8) & LANES) << 8)
-    }
-
-    let mut reduced: Vec<u32> = Vec::new();
-    let (mut src_w, mut src_h) = (src.width, src.height);
-    while src_w >= 2 * width && src_h >= 2 * height {
-        let (half_w, half_h) = (src_w.div_ceil(2), src_h.div_ceil(2));
-        let current: &[u32] = if reduced.is_empty() { src.pixels } else { &reduced };
-        let mut next = vec![0u32; half_w * half_h];
-        for y in 0..half_h {
-            let top = (y * 2).min(src_h - 1) * src_w;
-            let bottom = (y * 2 + 1).min(src_h - 1) * src_w;
-            for (x, pixel) in next[y * half_w..][..half_w].iter_mut().enumerate() {
-                let left = x * 2;
-                let right = (left + 1).min(src_w - 1);
-                let (a, b) = (current[top + left], current[top + right]);
-                let (c, d) = (current[bottom + left], current[bottom + right]);
-                let low = (a & LANES) + (b & LANES) + (c & LANES) + (d & LANES) + 0x0002_0002;
-                let high =
-                    ((a >> 8) & LANES) + ((b >> 8) & LANES) + ((c >> 8) & LANES) + ((d >> 8) & LANES) + 0x0002_0002;
-                *pixel = ((low >> 2) & LANES) | (((high >> 2) & LANES) << 8);
-            }
-        }
-        reduced = next;
-        src_w = half_w;
-        src_h = half_h;
-    }
-
-    let pixels: &[u32] = if reduced.is_empty() { src.pixels } else { &reduced };
-    if src_w == width && src_h == height {
-        return pixels.to_vec();
-    }
+    let horiz = axis(src.width, width);
+    let vert = axis(src.height, height);
+    let mut scratch = vec![0u32; width * src.height];
     let mut out = vec![0u32; width * height];
 
-    let horizontal = axis(src_w, width);
-    let vertical = axis(src_h, height);
-    let row_start = vertical.first[0];
-    let rows = (vertical.first[height - 1] + vertical.taps).min(src_h) - row_start;
-
-    let mut scratch = vec![0u32; width * rows];
-    for row in 0..rows {
-        let source_row = &pixels[(row_start + row) * src_w..][..src_w];
-        for (i, pixel) in scratch[row * width..][..width].iter_mut().enumerate() {
-            let weights = &horizontal.weights[i * horizontal.taps..][..horizontal.taps];
-            *pixel = gather(&source_row[horizontal.first[i]..], weights, 1);
+    for y in 0..src.height {
+        let src_row = &src.pixels[y * src.width..];
+        let dst_row = &mut scratch[y * width..];
+        for x in 0..width {
+            let first = horiz.first[x];
+            let weights = &horiz.weights[x * horiz.taps..(x + 1) * horiz.taps];
+            dst_row[x] = gather(&src_row[first..], weights, 1);
         }
     }
+
     for y in 0..height {
-        let weights = &vertical.weights[y * vertical.taps..][..vertical.taps];
-        let top = vertical.first[y] - row_start;
-        for (x, pixel) in out[y * width..][..width].iter_mut().enumerate() {
-            *pixel = gather(&scratch[top * width + x..], weights, width);
+        let first = vert.first[y];
+        let weights = &vert.weights[y * vert.taps..(y + 1) * vert.taps];
+        let dst_row = &mut out[y * width..];
+        for x in 0..width {
+            dst_row[x] = gather(&scratch[first * width + x..], weights, width);
         }
     }
 

@@ -177,6 +177,33 @@ fn main() {
         let inner = ui.current_frame().inner_bounds;
         assert_eq!(c, Rect::new(inner.x + (inner.width - 50) / 2, inner.y + (inner.height - 85) / 2, 50, 85));
 
+        // Relative padding in flows:
+        // Container is 200 wide, 100 high.
+        // padlr(0.1) -> 10% of 200 = 20px on left and right.
+        // padtb(0.2) -> 20% of 100 = 20px on top and bottom.
+        ui.place_right(flow().bounds(Rect::new(0, 0, 200, 100)).padlr(0.1).padtb(0.2), |ui| {
+            assert_eq!(ui.rect(rect().wh(20)).bounds, Rect::new(20, 20, 20, 20));
+            assert_eq!(ui.rect(rect().wh(20)).bounds, Rect::new(40, 20, 20, 20));
+        });
+
+        // Relative padding uniform:
+        // 200 wide, 100 high with pad(0.1) -> 20px horiz, 10px vert.
+        ui.place_down(flow().bounds(Rect::new(0, 0, 200, 100)).pad(0.1), |ui| {
+            assert_eq!(ui.rect(rect().wh(20)).bounds, Rect::new(20, 10, 20, 20));
+        });
+
+        // Relative padding on widgets with explicit dimensions:
+        ui.place_down(flow().bounds(Rect::new(0, 0, 400, 400)), |ui| {
+            let r = ui.rect(rect().w(200).h(100).padlr(0.1).padtb(0.2));
+            assert_eq!(r.bounds, Rect::new(0, 0, 200, 100));
+        });
+
+        // Relative margin on widgets:
+        // 100x100 box with mar(0.1) -> grows outwards by 10px on each edge -> 120x120 bounds
+        ui.place_right(flow().bounds(Rect::new(50, 50, 200, 200)), |ui| {
+            assert_eq!(ui.rect(rect().wh(100).mar(0.1)).bounds, Rect::new(40, 40, 120, 120));
+        });
+
         ui.window.close();
     });
 }

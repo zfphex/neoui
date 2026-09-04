@@ -63,7 +63,7 @@ pub struct Frame {
     pub max_child_width: i32,
     pub max_child_height: i32,
     pub scroll_y: i32,
-    pub padding: Padding,
+    pub padding: ResolvedPadding,
     pub gap: i32,
     pub outer_width: Option<i32>,
     pub outer_height: Option<i32>,
@@ -83,9 +83,9 @@ impl Frame {
         }
         let (w, h) = (
             self.outer_width
-                .unwrap_or(w + (self.padding.left + self.padding.right) as i32),
+                .unwrap_or(w + (self.padding.left + self.padding.right)),
             self.outer_height
-                .unwrap_or(h + (self.padding.top + self.padding.bottom) as i32),
+                .unwrap_or(h + (self.padding.top + self.padding.bottom)),
         );
         if self.bleed {
             (w.min(self.outer_bounds.width), h.min(self.outer_bounds.height))
@@ -1060,7 +1060,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         font_size: usize,
         line_height: Option<usize>,
         alignment: Alignment,
-        padding: Padding,
+        padding: ResolvedPadding,
         depth: usize,
     ) {
         let current_frame = self.current_frame();
@@ -1078,10 +1078,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         // Clip glyphs
         let content = Rect::new(
-            rect.x + padding.left as i32,
-            rect.y + padding.top as i32,
-            (rect.width - padding.left as i32 - padding.right as i32).max(0),
-            (rect.height - padding.top as i32 - padding.bottom as i32).max(0),
+            rect.x + padding.left,
+            rect.y + padding.top,
+            (rect.width - padding.left - padding.right).max(0),
+            (rect.height - padding.top - padding.bottom).max(0),
         );
         let clip = current_frame.clip.intersection(content);
         if clip.is_empty() {
@@ -1127,7 +1127,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             font_size,
             line_height,
             alignment,
-            padding,
+            padding.resolve(rect),
             depth,
         );
     }
@@ -1295,15 +1295,25 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         hint: &str,
         paint: impl FnOnce(&mut Self, Rect, &State, usize),
     ) -> State {
-        let padding = layout.padding.unwrap_or_default();
-        let width = layout
-            .width
-            .map(|w| self.resolve_style_size(w, Flow::Right, layout))
-            .unwrap_or(content_width + padding.left as i32 + padding.right as i32);
-        let height = layout
-            .height
-            .map(|h| self.resolve_style_size(h, Flow::Down, layout))
-            .unwrap_or(content_height + padding.top as i32 + padding.bottom as i32);
+        let parent_bounds = if layout.bleed {
+            self.current_frame().outer_bounds
+        } else {
+            self.current_frame().inner_bounds
+        };
+        let explicit_w = layout.width.map(|w| self.resolve_style_size(w, Flow::Right, layout));
+        let explicit_h = layout.height.map(|h| self.resolve_style_size(h, Flow::Down, layout));
+        let ref_bounds = Rect::new(
+            0,
+            0,
+            explicit_w.unwrap_or(parent_bounds.width),
+            explicit_h.unwrap_or(parent_bounds.height),
+        );
+        let padding = layout
+            .padding
+            .map(|p| p.resolve(ref_bounds))
+            .unwrap_or_default();
+        let width = explicit_w.unwrap_or(content_width + padding.left + padding.right);
+        let height = explicit_h.unwrap_or(content_height + padding.top + padding.bottom);
 
         let (paint_x, paint_y, rect, paint_bounds) = self.resolve_item_layout(width, height, layout);
 
@@ -1348,10 +1358,10 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
 
         let content = Rect::new(
-            paint_x + padding.left as i32,
-            paint_y + padding.top as i32,
-            (width - (padding.left + padding.right) as i32).max(0),
-            (height - (padding.top + padding.bottom) as i32).max(0),
+            paint_x + padding.left,
+            paint_y + padding.top,
+            (width - (padding.left + padding.right)).max(0),
+            (height - (padding.top + padding.bottom)).max(0),
         );
 
         paint(self, content, &state, depth);
@@ -1418,7 +1428,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                             (content.width, (ih * content.width) / iw.max(1))
                         };
                         let alignment = style.content.unwrap_or(Alignment::Center);
-                        match align_rect(content, w, h, alignment, Padding::new()) {
+                        match align_rect(content, w, h, alignment, ResolvedPadding::new()) {
                             Some((x, y)) => Rect::new(x, y, w, h),
                             None => return,
                         }
@@ -1475,10 +1485,12 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     pub fn lines(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'a>>>, style: TextStyle) -> State {
         let parts: Vec<Line<'a>> = parts.into_iter().map(Into::into).collect();
         let default_size = self.default_font_size;
+        let frame = *self.current_frame();
+        let parent_bounds = if style.layout.bleed { frame.outer_bounds } else { frame.inner_bounds };
 
         let mut content_w = 0i32;
         let mut baseline = 0i32;
-        let mut run_metrics: Vec<(TextMetrics, Padding, i32)> = Vec::with_capacity(parts.len());
+        let mut run_metrics: Vec<(TextMetrics, ResolvedPadding, i32)> = Vec::with_capacity(parts.len());
         for part in &parts {
             let font_size = part.style.font_size.unwrap_or(default_size);
             let metrics = if part.content.is_empty() {
@@ -1492,7 +1504,16 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     i32::MAX,
                 )
             };
-            let run_pad = part.style.layout.padding.unwrap_or_default();
+            let part_parent_bounds = if part.style.layout.bleed { frame.outer_bounds } else { parent_bounds };
+            let explicit_w = part.style.layout.width.map(|w| self.resolve_style_size(w, Flow::Right, &part.style.layout));
+            let explicit_h = part.style.layout.height.map(|h| self.resolve_style_size(h, Flow::Down, &part.style.layout));
+            let ref_bounds = Rect::new(
+                0,
+                0,
+                explicit_w.unwrap_or(part_parent_bounds.width),
+                explicit_h.unwrap_or(part_parent_bounds.height),
+            );
+            let run_pad = part.style.layout.padding.map(|p| p.resolve(ref_bounds)).unwrap_or_default();
             let face = self.face(part.style.font);
             let line_metrics = self.state.fonts[face]
                 .horizontal_line_metrics(font_size as f32)
@@ -1500,15 +1521,15 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             let line_step = part.style.line_height.map_or(line_metrics.new_line_size, |h| h as f32);
             let above = (line_metrics.ascent + (line_step - line_metrics.ascent + line_metrics.descent) / 2.0).round()
                 as i32
-                + run_pad.top as i32;
-            content_w += metrics.width + run_pad.left as i32 + run_pad.right as i32;
+                + run_pad.top;
+            content_w += metrics.width + run_pad.left + run_pad.right;
             baseline = baseline.max(above);
             run_metrics.push((metrics, run_pad, above));
         }
         let content_h = run_metrics
             .iter()
             .map(|(metrics, run_pad, above)| {
-                baseline - above + run_pad.top as i32 + metrics.height + run_pad.bottom as i32
+                baseline - above + run_pad.top + metrics.height + run_pad.bottom
             })
             .max()
             .unwrap_or(0);
@@ -1521,7 +1542,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             |ui, inner, _, depth| {
                 // The whole run is placed as one group, on both axes.
                 let alignment = style.content.unwrap_or(Alignment::Center);
-                let Some((group_x, group_y)) = align_rect(inner, content_w, content_h, alignment, Padding::new())
+                let Some((group_x, group_y)) = align_rect(inner, content_w, content_h, alignment, ResolvedPadding::new())
                 else {
                     return;
                 };
@@ -1529,11 +1550,11 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 let mut cursor_x = group_x;
                 for (part, (metrics, run_pad, above)) in parts.into_iter().zip(run_metrics) {
                     if part.content.is_empty() {
-                        cursor_x += run_pad.left as i32 + run_pad.right as i32;
+                        cursor_x += run_pad.left + run_pad.right;
                         continue;
                     }
                     let font_size = part.style.font_size.unwrap_or(default_size);
-                    let run_w = metrics.width + run_pad.left as i32 + run_pad.right as i32;
+                    let run_w = metrics.width + run_pad.left + run_pad.right;
                     let run_y = group_y + baseline - above;
 
                     ui.paint_text_measured(
@@ -1559,10 +1580,20 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
     pub fn text(&mut self, text: impl Into<Cow<'a, str>>, style: TextStyle) -> State {
         let text: Cow<'a, str> = text.into();
         let font_size = style.font_size.unwrap_or(self.default_font_size);
-        let padding = style.layout.padding.unwrap_or_default();
+        let frame = *self.current_frame();
+        let parent_bounds = if style.layout.bleed { frame.outer_bounds } else { frame.inner_bounds };
+        let explicit_w = style.layout.width.map(|w| self.resolve_style_size(w, Flow::Right, &style.layout));
+        let explicit_h = style.layout.height.map(|h| self.resolve_style_size(h, Flow::Down, &style.layout));
+        let ref_bounds = Rect::new(
+            0,
+            0,
+            explicit_w.unwrap_or(parent_bounds.width),
+            explicit_h.unwrap_or(parent_bounds.height),
+        );
+        let padding = style.layout.padding.map(|p| p.resolve(ref_bounds)).unwrap_or_default();
         let max_width = match (style.wrap, style.layout.width) {
             (true, Some(width)) => (self.resolve_style_size(width, Flow::Right, &style.layout)
-                - (padding.left + padding.right) as i32)
+                - (padding.left + padding.right))
                 .max(1),
             _ => i32::MAX,
         };
@@ -1599,7 +1630,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     font_size,
                     style.line_height,
                     style.content.unwrap_or(Alignment::Center),
-                    Padding::default(),
+                    ResolvedPadding::default(),
                     depth,
                 );
             },
@@ -1628,8 +1659,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         let reverse_x = parent_frame.flow == Flow::Left && explicit_x.is_none();
         let reverse_y = parent_frame.flow == Flow::Up && explicit_y.is_none();
-
-        let margin = layout.margin.unwrap_or_default();
 
         let anchor_x = explicit_x.unwrap_or(parent_frame.cursor_x);
         let anchor_y = explicit_y.unwrap_or(if parent_scroll != 0 {
@@ -1679,7 +1708,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let frame = self.current_frame();
         let depth = layout.depth.unwrap_or(frame.depth);
         let clip = frame.clip;
-        let padding = layout.padding.unwrap_or_default();
+        let padding = layout.padding.map(|p| p.resolve(outer_bounds)).unwrap_or_default();
+        let margin = layout.margin.map(|m| m.resolve(outer_bounds)).unwrap_or_default();
         let align_children = style.align_children;
 
         let culled = !layout.skip_cull
@@ -1701,12 +1731,12 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         });
 
         let mut inner_bounds = outer_bounds;
-        inner_bounds.x += padding.left as i32;
-        inner_bounds.width = inner_bounds.width.saturating_sub((padding.left + padding.right) as i32);
-        inner_bounds.y += padding.top as i32;
+        inner_bounds.x += padding.left;
+        inner_bounds.width = inner_bounds.width.saturating_sub(padding.left + padding.right);
+        inner_bounds.y += padding.top;
         inner_bounds.height = inner_bounds
             .height
-            .saturating_sub((padding.top + padding.bottom) as i32);
+            .saturating_sub(padding.top + padding.bottom);
 
         let gap = layout.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
@@ -1744,8 +1774,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             fitted_h,
         );
         let fitted_bounds = Rect::new(
-            fitted_bounds.x - margin.left as i32,
-            fitted_bounds.y - margin.top as i32,
+            fitted_bounds.x - margin.left,
+            fitted_bounds.y - margin.top,
             fitted_w + margin.axis(Flow::Right),
             fitted_h + margin.axis(Flow::Down),
         );
@@ -1936,10 +1966,14 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let paint_x = style.x.map_or(layout.paint_x, |x| self.resolve_size(x, Flow::Right));
         let paint_y = style.y.map_or(layout.paint_y, |y| self.resolve_size(y, Flow::Down));
 
-        let margin = style.margin.unwrap_or_default();
+        let item_bounds = Rect::new(paint_x, paint_y, width, height);
+        let margin = style
+            .margin
+            .map(|m| m.resolve(item_bounds))
+            .unwrap_or_default();
         let paint_bounds = Rect::new(
-            paint_x - margin.left as i32,
-            paint_y - margin.top as i32,
+            paint_x - margin.left,
+            paint_y - margin.top,
             width + margin.axis(Flow::Right),
             height + margin.axis(Flow::Down),
         );

@@ -1,7 +1,7 @@
 use crate::*;
 use std::borrow::Cow;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Size {
     Pixel(i32),
     /// 0.0 to 1.0 of parent's total space.
@@ -34,17 +34,53 @@ pub enum Fit {
     Contain,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Padding {
-    pub top: usize,
-    pub bottom: usize,
-    pub left: usize,
-    pub right: usize,
+    pub top: Size,
+    pub bottom: Size,
+    pub left: Size,
+    pub right: Size,
 }
 
 impl Padding {
     pub const fn new() -> Self {
         Padding {
+            top: Size::Pixel(0),
+            bottom: Size::Pixel(0),
+            left: Size::Pixel(0),
+            right: Size::Pixel(0),
+        }
+    }
+
+    pub fn resolve(self, bounds: Rect) -> ResolvedPadding {
+        ResolvedPadding {
+            top: resolve_edge(self.top, bounds.height),
+            bottom: resolve_edge(self.bottom, bounds.height),
+            left: resolve_edge(self.left, bounds.width),
+            right: resolve_edge(self.right, bounds.width),
+        }
+    }
+}
+
+fn resolve_edge(size: Size, total: i32) -> i32 {
+    match size {
+        Size::Pixel(px) => px.max(0),
+        Size::Percentage(pct) => ((total.max(0) as f32) * pct).max(0.0).round() as i32,
+        Size::Fill | Size::FillMinus(_) => todo!(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct ResolvedPadding {
+    pub top: i32,
+    pub bottom: i32,
+    pub left: i32,
+    pub right: i32,
+}
+
+impl ResolvedPadding {
+    pub const fn new() -> Self {
+        ResolvedPadding {
             top: 0,
             bottom: 0,
             left: 0,
@@ -53,20 +89,7 @@ impl Padding {
     }
 
     pub const fn axis(self, flow: Flow) -> i32 {
-        if flow.vertical() {
-            (self.top + self.bottom) as i32
-        } else {
-            (self.left + self.right) as i32
-        }
-    }
-}
-
-pub const fn pad(p: usize) -> Padding {
-    Padding {
-        top: p,
-        bottom: p,
-        left: p,
-        right: p,
+        if flow.vertical() { self.top + self.bottom } else { self.left + self.right }
     }
 }
 
@@ -640,89 +663,175 @@ pub const trait Boxed: Sized {
         self
     }
 
-    // #[inline]
-    // fn padding(mut self, padding: Padding) -> Self {
-    //     self.layout_mut().padding = Some(padding);
-    //     self
-    // }
-
-    // #[inline]
-    // fn margin(mut self, margin: Padding) -> Self {
-    //     self.layout_mut().margin = Some(margin);
-    //     self
-    // }
-
-    #[rustfmt::skip] #[inline]    fn pad(self, v: usize)   -> Self { self.pad_edges(v, true, true, true, true) }
-    #[rustfmt::skip] #[inline]    fn padh(self, v: usize)  -> Self { self.pad_edges(v, false, false, true, true) }
-    #[rustfmt::skip] #[inline]    fn padv(self, v: usize)  -> Self { self.pad_edges(v, true, true, false, false) }
-    #[rustfmt::skip] #[inline]    fn padt(self, v: usize)  -> Self { self.pad_edges(v, true, false, false, false) }
-    #[rustfmt::skip] #[inline]    fn padb(self, v: usize)  -> Self { self.pad_edges(v, false, true, false, false) }
-    #[rustfmt::skip] #[inline]    fn padl(self, v: usize)  -> Self { self.pad_edges(v, false, false, true, false) }
-    #[rustfmt::skip] #[inline]    fn padr(self, v: usize)  -> Self { self.pad_edges(v, false, false, false, true) }
-    #[rustfmt::skip] #[inline]    fn padtl(self, v: usize) -> Self { self.pad_edges(v, true, false, true, false) }
-    #[rustfmt::skip] #[inline]    fn padtr(self, v: usize) -> Self { self.pad_edges(v, true, false, false, true) }
-    #[rustfmt::skip] #[inline]    fn padbl(self, v: usize) -> Self { self.pad_edges(v, false, true, true, false) }
-    #[rustfmt::skip] #[inline]    fn padbr(self, v: usize) -> Self { self.pad_edges(v, false, true, false, true) }
-
-    #[rustfmt::skip] #[inline]    fn padtb(self, v: usize) -> Self { self.pad_edges(v, true, true, false, false) }
-    #[rustfmt::skip] #[inline]    fn padlr(self, v: usize) -> Self { self.pad_edges(v, false, false, true, true) }
-
-    #[rustfmt::skip] #[inline]    fn mar(self, v: usize)   -> Self { self.mar_edges(v, true, true, true, true) }
-    #[rustfmt::skip] #[inline]    fn marh(self, v: usize)  -> Self { self.mar_edges(v, false, false, true, true) }
-    #[rustfmt::skip] #[inline]    fn marv(self, v: usize)  -> Self { self.mar_edges(v, true, true, false, false) }
-    #[rustfmt::skip] #[inline]    fn mart(self, v: usize)  -> Self { self.mar_edges(v, true, false, false, false) }
-    #[rustfmt::skip] #[inline]    fn marb(self, v: usize)  -> Self { self.mar_edges(v, false, true, false, false) }
-    #[rustfmt::skip] #[inline]    fn marl(self, v: usize)  -> Self { self.mar_edges(v, false, false, true, false) }
-    #[rustfmt::skip] #[inline]    fn marr(self, v: usize)  -> Self { self.mar_edges(v, false, false, false, true) }
-    #[rustfmt::skip] #[inline]    fn martl(self, v: usize) -> Self { self.mar_edges(v, true, false, true, false) }
-    #[rustfmt::skip] #[inline]    fn martr(self, v: usize) -> Self { self.mar_edges(v, true, false, false, true) }
-    #[rustfmt::skip] #[inline]    fn marbl(self, v: usize) -> Self { self.mar_edges(v, false, true, true, false) }
-    #[rustfmt::skip] #[inline]    fn marbr(self, v: usize) -> Self { self.mar_edges(v, false, true, false, true) }
-
-    #[rustfmt::skip] #[inline]    fn martb(self, v: usize) -> Self { self.mar_edges(v, true, true, false, false) }
-    #[rustfmt::skip] #[inline]    fn marlr(self, v: usize) -> Self { self.mar_edges(v, false, false, true, true) }
+    #[inline]
+    fn padding(mut self, padding: Padding) -> Self {
+        self.layout_mut().padding = Some(padding);
+        self
+    }
 
     #[inline]
-    fn pad_edges(mut self, v: usize, top: bool, bottom: bool, left: bool, right: bool) -> Self {
+    fn margin(mut self, margin: Padding) -> Self {
+        self.layout_mut().margin = Some(margin);
+        self
+    }
+
+    #[inline]
+    fn pad(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, true, true, true, true)
+    }
+    #[inline]
+    fn padh(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, false, false, true, true)
+    }
+    #[inline]
+    fn padv(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, true, true, false, false)
+    }
+    #[inline]
+    fn padt(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, true, false, false, false)
+    }
+    #[inline]
+    fn padb(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, false, true, false, false)
+    }
+    #[inline]
+    fn padl(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, false, false, true, false)
+    }
+    #[inline]
+    fn padr(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, false, false, false, true)
+    }
+    #[inline]
+    fn padtl(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, true, false, true, false)
+    }
+    #[inline]
+    fn padtr(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, true, false, false, true)
+    }
+    #[inline]
+    fn padbl(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, false, true, true, false)
+    }
+    #[inline]
+    fn padbr(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, false, true, false, true)
+    }
+
+    #[inline]
+    fn padtb(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, true, true, false, false)
+    }
+    #[inline]
+    fn padlr(self, v: impl [const] IntoSize) -> Self {
+        self.pad_edges(v, false, false, true, true)
+    }
+
+    #[inline]
+    fn mar(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, true, true, true, true)
+    }
+    #[inline]
+    fn marh(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, false, false, true, true)
+    }
+    #[inline]
+    fn marv(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, true, true, false, false)
+    }
+    #[inline]
+    fn mart(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, true, false, false, false)
+    }
+    #[inline]
+    fn marb(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, false, true, false, false)
+    }
+    #[inline]
+    fn marl(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, false, false, true, false)
+    }
+    #[inline]
+    fn marr(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, false, false, false, true)
+    }
+    #[inline]
+    fn martl(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, true, false, true, false)
+    }
+    #[inline]
+    fn martr(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, true, false, false, true)
+    }
+    #[inline]
+    fn marbl(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, false, true, true, false)
+    }
+    #[inline]
+    fn marbr(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, false, true, false, true)
+    }
+
+    #[inline]
+    fn martb(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, true, true, false, false)
+    }
+    #[inline]
+    fn marlr(self, v: impl [const] IntoSize) -> Self {
+        self.mar_edges(v, false, false, true, true)
+    }
+
+    #[inline]
+    fn pad_edges(mut self, v: impl [const] IntoSize, top: bool, bottom: bool, left: bool, right: bool) -> Self {
+        let size = match v.into_size() {
+            Some(s) => s,
+            None => Size::Pixel(0),
+        };
         let layout = self.layout_mut();
         let mut p = match layout.padding {
             Some(p) => p,
             None => Padding::new(),
         };
         if top {
-            p.top = v;
+            p.top = size;
         }
         if bottom {
-            p.bottom = v;
+            p.bottom = size;
         }
         if left {
-            p.left = v;
+            p.left = size;
         }
         if right {
-            p.right = v;
+            p.right = size;
         }
         layout.padding = Some(p);
         self
     }
 
     #[inline]
-    fn mar_edges(mut self, v: usize, top: bool, bottom: bool, left: bool, right: bool) -> Self {
+    fn mar_edges(mut self, v: impl [const] IntoSize, top: bool, bottom: bool, left: bool, right: bool) -> Self {
+        let size = match v.into_size() {
+            Some(s) => s,
+            None => Size::Pixel(0),
+        };
         let layout = self.layout_mut();
         let mut p = match layout.margin {
             Some(p) => p,
             None => Padding::new(),
         };
         if top {
-            p.top = v;
+            p.top = size;
         }
         if bottom {
-            p.bottom = v;
+            p.bottom = size;
         }
         if left {
-            p.left = v;
+            p.left = size;
         }
         if right {
-            p.right = v;
+            p.right = size;
         }
         layout.margin = Some(p);
         self
@@ -998,6 +1107,18 @@ const impl IntoSize for i32 {
 const impl IntoSize for usize {
     fn into_size(self) -> Option<Size> {
         Some(Size::Pixel(self as i32))
+    }
+}
+
+const impl IntoSize for f64 {
+    fn into_size(self) -> Option<Size> {
+        Some(Size::Percentage(self as f32))
+    }
+}
+
+const impl IntoSize for Option<Size> {
+    fn into_size(self) -> Option<Size> {
+        self
     }
 }
 

@@ -59,22 +59,17 @@ pub fn align_rect(
     child_w: i32,
     child_h: i32,
     alignment: Alignment,
-    padding: Padding,
+    padding: ResolvedPadding,
 ) -> Option<(i32, i32)> {
-    let pad_left = padding.left as i32;
-    let pad_right = padding.right as i32;
-    let pad_top = padding.top as i32;
-    let pad_bottom = padding.bottom as i32;
-
-    let available_w = parent.width - pad_left - pad_right;
-    let available_h = parent.height - pad_top - pad_bottom;
+    let available_w = parent.width - padding.left - padding.right;
+    let available_h = parent.height - padding.top - padding.bottom;
 
     if available_w <= 0 || available_h <= 0 {
         return None;
     }
 
-    let inner_x = parent.x + pad_left;
-    let inner_y = parent.y + pad_top;
+    let inner_x = parent.x + padding.left;
+    let inner_y = parent.y + padding.top;
 
     let align_x = if child_w >= available_w { inner_x } else { inner_x + (available_w - child_w) / 2 };
     let align_y = if child_h >= available_h { inner_y } else { inner_y + (available_h - child_h) / 2 };

@@ -82,8 +82,7 @@ impl Frame {
             w = w.saturating_sub(self.gap);
         }
         let (w, h) = (
-            self.outer_width
-                .unwrap_or(w + (self.padding.left + self.padding.right)),
+            self.outer_width.unwrap_or(w + (self.padding.left + self.padding.right)),
             self.outer_height
                 .unwrap_or(h + (self.padding.top + self.padding.bottom)),
         );
@@ -272,7 +271,8 @@ fn resolve_border(style: &Paint, hovered: bool) -> Option<u32> {
     }
 }
 
-pub const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
+pub const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/NeoGrotesque-Regular.ttf");
+// pub const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Aptos.ttf");
 
 pub fn family(id: usize) -> [[Option<usize>; 9]; 2] {
     let mut faces = [[None; 9]; 2];
@@ -1308,10 +1308,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             explicit_w.unwrap_or(parent_bounds.width),
             explicit_h.unwrap_or(parent_bounds.height),
         );
-        let padding = layout
-            .padding
-            .map(|p| p.resolve(ref_bounds))
-            .unwrap_or_default();
+        let padding = layout.padding.map(|p| p.resolve(ref_bounds)).unwrap_or_default();
         let width = explicit_w.unwrap_or(content_width + padding.left + padding.right);
         let height = explicit_h.unwrap_or(content_height + padding.top + padding.bottom);
 
@@ -1505,15 +1502,28 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 )
             };
             let part_parent_bounds = if part.style.layout.bleed { frame.outer_bounds } else { parent_bounds };
-            let explicit_w = part.style.layout.width.map(|w| self.resolve_style_size(w, Flow::Right, &part.style.layout));
-            let explicit_h = part.style.layout.height.map(|h| self.resolve_style_size(h, Flow::Down, &part.style.layout));
+            let explicit_w = part
+                .style
+                .layout
+                .width
+                .map(|w| self.resolve_style_size(w, Flow::Right, &part.style.layout));
+            let explicit_h = part
+                .style
+                .layout
+                .height
+                .map(|h| self.resolve_style_size(h, Flow::Down, &part.style.layout));
             let ref_bounds = Rect::new(
                 0,
                 0,
                 explicit_w.unwrap_or(part_parent_bounds.width),
                 explicit_h.unwrap_or(part_parent_bounds.height),
             );
-            let run_pad = part.style.layout.padding.map(|p| p.resolve(ref_bounds)).unwrap_or_default();
+            let run_pad = part
+                .style
+                .layout
+                .padding
+                .map(|p| p.resolve(ref_bounds))
+                .unwrap_or_default();
             let face = self.face(part.style.font);
             let line_metrics = self.state.fonts[face]
                 .horizontal_line_metrics(font_size as f32)
@@ -1528,9 +1538,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         }
         let content_h = run_metrics
             .iter()
-            .map(|(metrics, run_pad, above)| {
-                baseline - above + run_pad.top + metrics.height + run_pad.bottom
-            })
+            .map(|(metrics, run_pad, above)| baseline - above + run_pad.top + metrics.height + run_pad.bottom)
             .max()
             .unwrap_or(0);
 
@@ -1542,7 +1550,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             |ui, inner, _, depth| {
                 // The whole run is placed as one group, on both axes.
                 let alignment = style.content.unwrap_or(Alignment::Center);
-                let Some((group_x, group_y)) = align_rect(inner, content_w, content_h, alignment, ResolvedPadding::new())
+                let Some((group_x, group_y)) =
+                    align_rect(inner, content_w, content_h, alignment, ResolvedPadding::new())
                 else {
                     return;
                 };
@@ -1582,8 +1591,14 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let font_size = style.font_size.unwrap_or(self.default_font_size);
         let frame = *self.current_frame();
         let parent_bounds = if style.layout.bleed { frame.outer_bounds } else { frame.inner_bounds };
-        let explicit_w = style.layout.width.map(|w| self.resolve_style_size(w, Flow::Right, &style.layout));
-        let explicit_h = style.layout.height.map(|h| self.resolve_style_size(h, Flow::Down, &style.layout));
+        let explicit_w = style
+            .layout
+            .width
+            .map(|w| self.resolve_style_size(w, Flow::Right, &style.layout));
+        let explicit_h = style
+            .layout
+            .height
+            .map(|h| self.resolve_style_size(h, Flow::Down, &style.layout));
         let ref_bounds = Rect::new(
             0,
             0,
@@ -1592,9 +1607,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         );
         let padding = style.layout.padding.map(|p| p.resolve(ref_bounds)).unwrap_or_default();
         let max_width = match (style.wrap, style.layout.width) {
-            (true, Some(width)) => (self.resolve_style_size(width, Flow::Right, &style.layout)
-                - (padding.left + padding.right))
-                .max(1),
+            (true, Some(width)) => {
+                (self.resolve_style_size(width, Flow::Right, &style.layout) - (padding.left + padding.right)).max(1)
+            }
             _ => i32::MAX,
         };
         let metrics = self.measure_text(&text, style.font, font_size, style.line_height, max_width);
@@ -1734,9 +1749,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         inner_bounds.x += padding.left;
         inner_bounds.width = inner_bounds.width.saturating_sub(padding.left + padding.right);
         inner_bounds.y += padding.top;
-        inner_bounds.height = inner_bounds
-            .height
-            .saturating_sub(padding.top + padding.bottom);
+        inner_bounds.height = inner_bounds.height.saturating_sub(padding.top + padding.bottom);
 
         let gap = layout.gap.map(|gap| self.resolve_size(gap, flow)).unwrap_or_default();
 
@@ -1967,10 +1980,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         let paint_y = style.y.map_or(layout.paint_y, |y| self.resolve_size(y, Flow::Down));
 
         let item_bounds = Rect::new(paint_x, paint_y, width, height);
-        let margin = style
-            .margin
-            .map(|m| m.resolve(item_bounds))
-            .unwrap_or_default();
+        let margin = style.margin.map(|m| m.resolve(item_bounds)).unwrap_or_default();
         let paint_bounds = Rect::new(
             paint_x - margin.left,
             paint_y - margin.top,

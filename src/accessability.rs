@@ -351,114 +351,51 @@ pub fn snap_focus(
     search_radius: f32,
     active_depth: Option<usize>,
 ) -> bool {
-    if nodes.is_empty() {
-        return false;
-    }
-
     let search_radius_sq = search_radius * search_radius;
-
-    // Tier 1: Exact Point-in-Rect Containment with Matching Signature
-    // If the active point is still inside a node of matching role and matching text signature (same element in place), snap immediately.
-    for (i, node) in nodes.iter().enumerate() {
-        if let Some(depth) = active_depth {
-            if (node.depth as usize) < depth {
-                continue;
-            }
-        }
-        if !node.state.contains(StateFlags::DISABLED)
-            && node.role.intersects(cursor.role)
-            && rect_contains_point(node.bounds, cursor.point)
-            && (cursor.text_signature == 0 || node.text_signature == cursor.text_signature)
-        {
-            cursor.stream_index = i;
-            cursor.point = node.centroid();
-            cursor.role = node.role;
-            cursor.text_signature = node.text_signature;
-            cursor.depth = node.depth as usize;
-            return true;
-        }
-    }
-
-    // Tier 2: Localized Shift (Neighborhood Signature Match)
-    // If the element moved (e.g. layout reflow, scrolling, prepend), find matching node within radius R.
-    let mut best_tier2_idx: Option<usize> = None;
-    let mut best_tier2_dist_sq = f32::MAX;
+    let mut exact = None;
+    let mut shifted = None;
+    let mut containing = None;
+    let mut nearest = None;
+    let mut shifted_dist_sq = f32::MAX;
+    let mut nearest_dist_sq = f32::MAX;
 
     for (i, node) in nodes.iter().enumerate() {
-        if let Some(depth) = active_depth {
-            if (node.depth as usize) < depth {
-                continue;
-            }
-        }
         if node.state.contains(StateFlags::DISABLED) {
             continue;
         }
-
-        if node.role.intersects(cursor.role) && node.text_signature == cursor.text_signature {
-            let d_sq = dist_sq(cursor.point, node.centroid());
-            if d_sq <= search_radius_sq && d_sq < best_tier2_dist_sq {
-                best_tier2_dist_sq = d_sq;
-                best_tier2_idx = Some(i);
-            }
-        }
-    }
-
-    if let Some(idx) = best_tier2_idx {
-        let node = &nodes[idx];
-        cursor.stream_index = idx;
-        cursor.point = node.centroid();
-        cursor.role = node.role;
-        cursor.text_signature = node.text_signature;
-        cursor.depth = node.depth as usize;
-        return true;
-    }
-
-    // Tier 1b: In-Place Element Mutation (Rename Label in place)
-    // If the element at cursor.point has matching role (even if label changed), lock focus in place.
-    for (i, node) in nodes.iter().enumerate() {
         if let Some(depth) = active_depth {
             if (node.depth as usize) < depth {
                 continue;
             }
         }
-        if !node.state.contains(StateFlags::DISABLED)
-            && node.role.intersects(cursor.role)
-            && rect_contains_point(node.bounds, cursor.point)
+
+        let matching_role = node.role.intersects(cursor.role);
+        if matching_role && rect_contains_point(node.bounds, cursor.point) {
+            if cursor.text_signature == 0 || node.text_signature == cursor.text_signature {
+                exact = Some(i);
+                break;
+            }
+            if containing.is_none() {
+                containing = Some(i);
+            }
+        }
+
+        let d_sq = dist_sq(cursor.point, node.centroid());
+        if matching_role
+            && node.text_signature == cursor.text_signature
+            && d_sq <= search_radius_sq
+            && d_sq < shifted_dist_sq
         {
-            cursor.stream_index = i;
-            cursor.point = node.centroid();
-            cursor.role = node.role;
-            cursor.text_signature = node.text_signature;
-            cursor.depth = node.depth as usize;
-            return true;
+            shifted_dist_sq = d_sq;
+            shifted = Some(i);
+        }
+        if node.role.is_focusable() && d_sq < nearest_dist_sq {
+            nearest_dist_sq = d_sq;
+            nearest = Some(i);
         }
     }
 
-    //Tier 3: Deletion Fallback (Nearest Focusable Element)
-    // If the focused element was deleted or moved beyond radius R, snap to the nearest focusable node.
-    let mut best_tier3_idx: Option<usize> = None;
-    let mut best_tier3_dist_sq = f32::MAX;
-
-    for (i, node) in nodes.iter().enumerate() {
-        if let Some(depth) = active_depth {
-            if (node.depth as usize) < depth {
-                continue;
-            }
-        }
-        if node.state.contains(StateFlags::DISABLED) {
-            continue;
-        }
-
-        if node.role.is_focusable() {
-            let d_sq = dist_sq(cursor.point, node.centroid());
-            if d_sq < best_tier3_dist_sq {
-                best_tier3_dist_sq = d_sq;
-                best_tier3_idx = Some(i);
-            }
-        }
-    }
-
-    if let Some(idx) = best_tier3_idx {
+    if let Some(idx) = exact.or(shifted).or(containing).or(nearest) {
         let node = &nodes[idx];
         cursor.stream_index = idx;
         cursor.point = node.centroid();
@@ -478,37 +415,7 @@ pub fn navigate_sequential(
     forward: bool,
     active_depth: Option<usize>,
 ) -> bool {
-    if nodes.is_empty() {
-        return false;
-    }
-
-    let count = nodes.len();
-    let start_idx = cursor.stream_index;
-
-    for step in 1..=count {
-        let idx = if forward {
-            (start_idx + step) % count
-        } else {
-            (start_idx + count - (step % count)) % count
-        };
-
-        let node = &nodes[idx];
-        if let Some(depth) = active_depth {
-            if (node.depth as usize) < depth {
-                continue;
-            }
-        }
-        if !node.state.contains(StateFlags::DISABLED) && node.role.is_focusable() {
-            cursor.stream_index = idx;
-            cursor.point = node.centroid();
-            cursor.role = node.role;
-            cursor.text_signature = node.text_signature;
-            cursor.depth = node.depth as usize;
-            return true;
-        }
-    }
-
-    false
+    navigate_semantic(nodes, cursor, Role::FOCUSABLE, forward, active_depth)
 }
 
 /// Spatial 2D directional navigation (Arrow Keys).
@@ -734,35 +641,20 @@ impl AccessabilityState {
                 if let Some(cursor) = &mut self.cursor {
                     if tab {
                         navigate_sequential(&self.prev_nodes, cursor, !shift, active_depth);
-                    } else if arrow_right {
+                    } else {
+                        let direction = if arrow_right {
+                            Direction::Right
+                        } else if arrow_left {
+                            Direction::Left
+                        } else if arrow_down {
+                            Direction::Down
+                        } else {
+                            Direction::Up
+                        };
                         navigate_directional(
                             &self.prev_nodes,
                             cursor,
-                            Direction::Right,
-                            self.directional_alpha,
-                            active_depth,
-                        );
-                    } else if arrow_left {
-                        navigate_directional(
-                            &self.prev_nodes,
-                            cursor,
-                            Direction::Left,
-                            self.directional_alpha,
-                            active_depth,
-                        );
-                    } else if arrow_down {
-                        navigate_directional(
-                            &self.prev_nodes,
-                            cursor,
-                            Direction::Down,
-                            self.directional_alpha,
-                            active_depth,
-                        );
-                    } else if arrow_up {
-                        navigate_directional(
-                            &self.prev_nodes,
-                            cursor,
-                            Direction::Up,
+                            direction,
                             self.directional_alpha,
                             active_depth,
                         );

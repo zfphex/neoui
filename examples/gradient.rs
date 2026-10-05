@@ -40,17 +40,27 @@ fn main() {
             );
 
             if fade > 0.0 {
-                ui.gradient(gradient().x(rail.x).y(0).width(rail.width).height(h), 180.0)
-                    .stop(at(-55.0), glow(0.0))
-                    .stop(at(-32.0), glow(0.11))
-                    .stop(at(0.0), glow(0.30))
-                    .stop(at(32.0), glow(0.11))
-                    .stop(at(55.0), glow(0.0));
+                ui.gradient(
+                    gradient().x(rail.x).y(0).width(rail.width).height(h),
+                    180.0,
+                    &[
+                        (at(-55.0), glow(0.0)),
+                        (at(-32.0), glow(0.11)),
+                        (at(0.0), glow(0.30)),
+                        (at(32.0), glow(0.11)),
+                        (at(55.0), glow(0.0)),
+                    ],
+                );
 
-                ui.gradient(gradient().x(rail.x).y(0).width(1).height(h), 180.0)
-                    .stop(at(-70.0), rgba(155, 132, 217, 0))
-                    .stop(at(0.0), rgba(199, 183, 240, (0.75 * fade * 255.0) as u8))
-                    .stop(at(70.0), rgba(155, 132, 217, 0));
+                ui.gradient(
+                    gradient().x(rail.x).y(0).width(1).height(h),
+                    180.0,
+                    &[
+                        (at(-70.0), rgba(155, 132, 217, 0)),
+                        (at(0.0), rgba(199, 183, 240, (0.75 * fade * 255.0) as u8)),
+                        (at(70.0), rgba(155, 132, 217, 0)),
+                    ],
+                );
             }
 
             let top = (h - 26 * 15) / 2;

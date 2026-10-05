@@ -33,6 +33,68 @@ fn test_in_place_rename_mutation() {
 }
 
 #[test]
+fn test_snap_candidate_priority() {
+    let signature = hash32("Save");
+    let mut nodes = [
+        SemanticNode::new(Rect::new(40, 40, 20, 20), 0..0, Role::LINK, StateFlags::NONE, 1, 0),
+        SemanticNode::new(Rect::new(0, 0, 100, 100), 0..0, Role::BUTTON, StateFlags::NONE, 1, 0),
+        SemanticNode::new(
+            Rect::new(100, 0, 100, 100),
+            0..0,
+            Role::BUTTON,
+            StateFlags::NONE,
+            1,
+            signature,
+        ),
+        SemanticNode::new(
+            Rect::new(-100, 0, 100, 100),
+            0..0,
+            Role::BUTTON,
+            StateFlags::NONE,
+            1,
+            signature,
+        ),
+        SemanticNode::new(
+            Rect::new(0, 0, 100, 100),
+            0..0,
+            Role::BUTTON,
+            StateFlags::NONE,
+            1,
+            signature,
+        ),
+    ];
+    let original = SpatialCursor::new((50.0, 50.0), Role::BUTTON, signature, 0, 1);
+    for (count, expected) in [(1, 0), (2, 1), (4, 2), (5, 4)] {
+        let mut cursor = original;
+        assert!(snap_focus(&nodes[..count], &mut cursor, 200.0, Some(1)));
+        assert_eq!(cursor.stream_index, expected);
+        assert_eq!(cursor.point, nodes[expected].centroid());
+        assert_eq!(cursor.role, nodes[expected].role);
+        assert_eq!(cursor.text_signature, nodes[expected].text_signature);
+        assert_eq!(cursor.depth, 1);
+    }
+
+    nodes[4].state = StateFlags::DISABLED;
+    nodes[2].depth = 0;
+    let mut cursor = original;
+    assert!(snap_focus(&nodes, &mut cursor, 200.0, Some(1)));
+    assert_eq!(cursor.stream_index, 3);
+
+    let mut cursor = original;
+    assert!(snap_focus(&nodes, &mut cursor, 20.0, Some(1)));
+    assert_eq!(cursor.stream_index, 1);
+
+    let mut cursor = original;
+    cursor.text_signature = 0;
+    assert!(snap_focus(&nodes, &mut cursor, 200.0, Some(1)));
+    assert_eq!(cursor.stream_index, 1);
+
+    let mut cursor = original;
+    assert!(!snap_focus(&[], &mut cursor, 200.0, Some(1)));
+    assert_eq!(cursor, original);
+}
+
+#[test]
 fn test_semantic_jumping() {
     let nodes = vec![
         SemanticNode::new(
@@ -352,4 +414,3 @@ fn test_accessibility_hints() {
     assert_eq!(cancel_node.text(arena), "Cancel");
     assert_eq!(cancel_node.hint(arena), "");
 }
-

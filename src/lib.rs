@@ -1,4 +1,3 @@
-#![feature(portable_simd)]
 #![feature(const_trait_impl)]
 pub mod style;
 pub use style::*;
@@ -462,36 +461,6 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
         buffer.clear();
         let _ = buffer.write_fmt(format_args);
         unsafe { std::mem::transmute::<&str, &'a str>(buffer.as_str()) }
-    }
-}
-
-pub struct GradientStops<'ui, 'frame, 'text> {
-    pub slot: Option<(usize, usize)>,
-    ui: &'ui mut FrameContext<'frame, 'text>,
-    state: State,
-}
-
-impl GradientStops<'_, '_, '_> {
-    pub fn stop(self, position: f32, color: u32) -> Self {
-        if let Some((depth, index)) = self.slot
-            && let Command::Gradient { gradient, .. } = &mut self.ui.commands[depth][index]
-        {
-            assert!(
-                (gradient.count as usize) < MAX_GRADIENT_STOPS,
-                "a gradient holds at most {MAX_GRADIENT_STOPS} stops"
-            );
-            gradient.stops[gradient.count as usize] = (position, color);
-            gradient.count += 1;
-        }
-        self
-    }
-}
-
-impl Deref for GradientStops<'_, '_, '_> {
-    type Target = State;
-
-    fn deref(&self) -> &Self::Target {
-        &self.state
     }
 }
 
@@ -1020,8 +989,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 clip,
                 color,
                 radius: style.paint.radius.unwrap_or(0),
-                border_thickness: style.paint.border_thickness.unwrap_or(1),
-                border_sides: style.paint.border_side.unwrap_or(border::ALL),
+                border_thickness: style.paint.border_thickness,
+                border_sides: style.paint.border_side,
             });
         }
     }
@@ -1371,8 +1340,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 clip,
                 color,
                 radius: style.radius.unwrap_or(0),
-                border_thickness: style.border_thickness.unwrap_or(1),
-                border_sides: style.border_side.unwrap_or(border::ALL),
+                border_thickness: style.border_thickness,
+                border_sides: style.border_side,
             });
         }
 
@@ -1436,7 +1405,7 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                     image,
                     bounds,
                     clip,
-                    opacity: style.paint.opacity.unwrap_or(255),
+                    opacity: style.paint.opacity,
                     radius: style.paint.radius.unwrap_or(0),
                 });
             },
@@ -1454,29 +1423,31 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
             image,
             bounds,
             clip,
-            opacity: style.paint.opacity.unwrap_or(255),
+            opacity: style.paint.opacity,
             radius: style.paint.radius.unwrap_or(0),
         });
     }
 
-    pub fn gradient(&mut self, style: RectStyle, angle: f32) -> GradientStops<'_, 'frame, 'a> {
-        let mut slot = None;
-        let state = self.widget(0, 0, &style.layout, &style.paint, |ui, content, _, depth| {
+    pub fn gradient(&mut self, style: RectStyle, angle: f32, stops: &[(f32, u32)]) -> State {
+        assert!(
+            stops.len() <= MAX_GRADIENT_STOPS,
+            "a gradient holds at most {MAX_GRADIENT_STOPS} stops"
+        );
+        self.widget(0, 0, &style.layout, &style.paint, |ui, content, _, depth| {
+            let mut gradient = Gradient {
+                stops: [(0.0, 0); MAX_GRADIENT_STOPS],
+                count: stops.len() as u8,
+                angle,
+            };
+            gradient.stops[..stops.len()].copy_from_slice(stops);
             let clip = ui.current_frame().clip;
             ui.commands[depth].push(Command::Gradient {
                 bounds: content,
                 clip,
                 radius: style.paint.radius.unwrap_or(0),
-                gradient: Gradient {
-                    stops: [(0.0, 0); MAX_GRADIENT_STOPS],
-                    count: 0,
-                    angle,
-                },
+                gradient,
             });
-            slot = Some((depth, ui.commands[depth].len() - 1));
-        });
-
-        GradientStops { ui: self, slot, state }
+        })
     }
 
     pub fn lines(&mut self, parts: impl IntoIterator<Item = impl Into<Line<'a>>>, style: TextStyle) -> State {
@@ -1821,8 +1792,8 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
                 clip,
                 color,
                 radius: style.paint.radius.unwrap_or(0),
-                border_thickness: style.paint.border_thickness.unwrap_or(1),
-                border_sides: style.paint.border_side.unwrap_or(border::ALL),
+                border_thickness: style.paint.border_thickness,
+                border_sides: style.paint.border_side,
             });
         }
 

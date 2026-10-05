@@ -182,8 +182,8 @@ pub struct Paint {
     pub radius: Option<usize>,
 
     pub border: Option<u32>,
-    pub border_thickness: Option<usize>,
-    pub border_side: Option<u8>,
+    pub border_thickness: usize,
+    pub border_side: u8,
 
     pub is_selected: bool,
     pub selected: Option<u32>,
@@ -192,7 +192,7 @@ pub struct Paint {
     pub hover: Option<u32>,
     pub hover_border: Option<u32>,
 
-    pub opacity: Option<u8>,
+    pub opacity: u8,
 }
 
 impl Paint {
@@ -202,14 +202,14 @@ impl Paint {
             bg: None,
             radius: None,
             border: None,
-            border_thickness: None,
-            border_side: None,
+            border_thickness: 1,
+            border_side: border::ALL,
             is_selected: false,
             selected: None,
             selected_border: None,
             hover: None,
             hover_border: None,
-            opacity: None,
+            opacity: 255,
         }
     }
 }
@@ -868,13 +868,13 @@ pub const trait Painted: Sized {
 
     #[inline]
     fn border_thickness(mut self, thickness: usize) -> Self {
-        self.paint_mut().border_thickness = Some(thickness);
+        self.paint_mut().border_thickness = thickness;
         self
     }
 
     #[inline]
     fn border_side(mut self, side: u8) -> Self {
-        self.paint_mut().border_side = Some(side);
+        self.paint_mut().border_side = side;
         self
     }
 
@@ -910,7 +910,7 @@ pub const trait Painted: Sized {
 
     #[inline]
     fn opacity(mut self, opacity: u8) -> Self {
-        self.paint_mut().opacity = Some(opacity);
+        self.paint_mut().opacity = opacity;
         self
     }
 }

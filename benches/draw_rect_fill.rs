@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use neoui::*;
 
 fn bench_draw_rect_fill_sizes(c: &mut Criterion) {
@@ -217,70 +217,6 @@ fn bench_draw_rect_fill_colors(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_draw_rect_fill_simd_vs_scalar(c: &mut Criterion) {
-    let mut group = c.benchmark_group("draw_rect_fill_simd_vs_scalar");
-    group.sample_size(100);
-    group.warm_up_time(std::time::Duration::from_millis(100));
-    group.measurement_time(std::time::Duration::from_millis(300));
-
-    const WIN_W: usize = 1920;
-    const WIN_H: usize = 1080;
-    let mut buffer = vec![0u32; WIN_W * WIN_H];
-    let clip = Rect::new(0, 0, WIN_W as i32, WIN_H as i32);
-    let color = red();
-
-    let sizes = [("300x300", 300, 300), ("800x600", 800, 600)];
-
-    for (size_name, w, h) in sizes {
-        let rect = Rect::new(50, 50, w, h);
-        let pixels = (w * h) as u64;
-
-        group.throughput(Throughput::Elements(pixels));
-        group.bench_with_input(BenchmarkId::new("wip", size_name), &rect, |b, &r| {
-            b.iter(|| {
-                draw_rect_fill_wip(
-                    black_box(&mut buffer),
-                    black_box(r),
-                    WIN_W,
-                    WIN_H,
-                    black_box(16),
-                    black_box(color),
-                    black_box(clip),
-                );
-            });
-        });
-
-        group.bench_with_input(BenchmarkId::new("scalar", size_name), &rect, |b, &r| {
-            b.iter(|| {
-                draw_rect_fill_scalar(
-                    black_box(&mut buffer),
-                    black_box(r),
-                    WIN_W,
-                    WIN_H,
-                    black_box(16),
-                    black_box(color),
-                    black_box(clip),
-                );
-            });
-        });
-
-        group.bench_with_input(BenchmarkId::new("current", size_name), &rect, |b, &r| {
-            b.iter(|| {
-                draw_rect_fill(
-                    black_box(&mut buffer),
-                    black_box(r),
-                    WIN_W,
-                    WIN_H,
-                    black_box(16),
-                    black_box(color),
-                    black_box(clip),
-                );
-            });
-        });
-    }
-    group.finish();
-}
-
 fn fast_criterion() -> Criterion {
     Criterion::default()
         .warm_up_time(std::time::Duration::from_millis(100))
@@ -296,7 +232,6 @@ criterion_group! {
         bench_draw_rect_fill_aspect_ratios,
         bench_draw_rect_fill_radii,
         bench_draw_rect_fill_clipping,
-        bench_draw_rect_fill_colors,
-        bench_draw_rect_fill_simd_vs_scalar
+        bench_draw_rect_fill_colors
 }
 criterion_main!(benches);

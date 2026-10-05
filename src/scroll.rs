@@ -57,7 +57,6 @@ pub struct Scroll {
     /// Where a discrete wheel is animating to, and the curve taking it there.
     pub wheel_target: f32,
     pub wheel_start: f32,
-    pub wheel_slope: f32,
     pub wheel_elapsed: f32,
     pub last_timestamp: Option<f64>,
     /// Where the middle button went down, while it is still held.
@@ -80,7 +79,6 @@ impl Scroll {
             initial_velocity: 0.0,
             wheel_target: 0.0,
             wheel_start: 0.0,
-            wheel_slope: 0.0,
             last_timestamp: None,
             anchor: None,
             wheel_step: 150.0,
@@ -170,30 +168,8 @@ impl Scroll {
             // A discrete wheel has no gesture to end, so it never stretches.
             // Similar to chrome://flags/#smooth-scrolling which feels pretty bad imo...
             if event.phase == ScrollPhase::None {
-                let travelled = (self.wheel_elapsed / WHEEL_DURATION).min(1.0);
-                let span = self.wheel_target - self.wheel_start;
-                let curve = |x: f32| {
-                    cubic_bezier(
-                        WHEEL_CURVE.0,
-                        WHEEL_CURVE.1 * self.wheel_slope,
-                        WHEEL_CURVE.2,
-                        WHEEL_CURVE.3,
-                        x,
-                    )
-                };
-                let velocity = if travelled < 1.0 {
-                    let step = 1e-3;
-                    (curve((travelled + step).min(1.0)) - curve(travelled)) / step * span / WHEEL_DURATION
-                } else {
-                    0.0
-                };
-
                 self.wheel_target = (self.wheel_target + delta).clamp(0.0, max);
                 self.wheel_start = self.offset;
-                let span = self.wheel_target - self.wheel_start;
-                // Carry the speed of the animation already running into the slope of the new one,
-                // so a burst of notches reads as one accelerating scroll instead of a stutter.
-                self.wheel_slope = if span.abs() > f32::EPSILON { velocity * WHEEL_DURATION / span } else { 0.0 };
                 self.wheel_elapsed = 0.0;
                 continue;
             }
@@ -264,13 +240,7 @@ impl Scroll {
         if self.wheel_elapsed < WHEEL_DURATION {
             self.wheel_elapsed += dt;
             let travelled = (self.wheel_elapsed / WHEEL_DURATION).min(1.0);
-            let progress = cubic_bezier(
-                WHEEL_CURVE.0,
-                WHEEL_CURVE.1 * self.wheel_slope,
-                WHEEL_CURVE.2,
-                WHEEL_CURVE.3,
-                travelled,
-            );
+            let progress = cubic_bezier(WHEEL_CURVE.0, WHEEL_CURVE.1, WHEEL_CURVE.2, WHEEL_CURVE.3, travelled);
             self.offset = self.wheel_start + (self.wheel_target - self.wheel_start) * progress;
         }
 

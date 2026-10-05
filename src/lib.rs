@@ -305,12 +305,14 @@ pub fn ui_hidden(width: usize, height: usize) -> Context {
 pub struct Context {
     pub window: std::pin::Pin<Box<Window>>,
     pub state: UiState,
+    string_pool: UnsafeCell<Vec<String>>,
 }
 
 impl Context {
     pub fn new(window: std::pin::Pin<Box<Window>>) -> Self {
         Context {
             window,
+            string_pool: UnsafeCell::new(Vec::with_capacity(128)),
             state: UiState {
                 fonts: vec![fontdue::Font::from_bytes(DEFAULT_FONT, fontdue::FontSettings::default()).unwrap()],
                 fallbacks: Vec::new(),
@@ -340,8 +342,6 @@ impl Context {
                 render_cache: RenderCache::default(),
                 commands: [const { Vec::new() }; 16],
                 vsync: true,
-                string_pool: UnsafeCell::new(Vec::with_capacity(128)),
-                string_index: Cell::new(0),
                 accessability: true,
                 accessability_state: AccessabilityState::new(),
             },
@@ -400,8 +400,6 @@ pub struct UiState {
     pub layout_stack: Vec<Frame>,
     pub render_cache: RenderCache,
     pub commands: [Vec<Command<'static>>; 16],
-    pub string_pool: UnsafeCell<Vec<Box<String>>>,
-    pub string_index: Cell<usize>,
     pub accessability: bool,
     pub accessability_state: AccessabilityState,
 }
@@ -444,23 +442,34 @@ pub struct FrameContext<'frame, 'a> {
     pub window: &'frame mut Window,
     pub commands: [Vec<Command<'a>>; 16],
     pub state: &'frame mut UiState,
+    string_pool: &'a UnsafeCell<Vec<String>>,
+    string_index: &'frame Cell<usize>,
 }
 
 impl<'frame, 'a> FrameContext<'frame, 'a> {
     pub fn fmt(&self, format_args: std::fmt::Arguments<'_>) -> &'a str {
         use std::fmt::Write;
-        let index = self.state.string_index.get();
-        self.state.string_index.set(index + 1);
-        let buffer = unsafe {
-            let pool = &mut *self.state.string_pool.get();
-            if index >= pool.len() {
-                pool.push(Box::new(String::with_capacity(64)));
+        if let Some(text) = format_args.as_str() {
+            return text;
+        }
+        let index = self.string_index.get();
+        let mut buffer = unsafe {
+            let pool = &mut *self.string_pool.get();
+            if index == pool.len() {
+                pool.push(String::new());
+                String::with_capacity(64)
+            } else {
+                std::mem::take(&mut pool[index])
             }
-            &mut *(&raw mut *pool[index])
         };
+        self.string_index.set(index + 1);
         buffer.clear();
         let _ = buffer.write_fmt(format_args);
-        unsafe { std::mem::transmute::<&str, &'a str>(buffer.as_str()) }
+        unsafe {
+            let pool = &mut *self.string_pool.get();
+            pool[index] = buffer;
+            pool[index].as_str()
+        }
     }
 }
 
@@ -484,15 +493,18 @@ impl Context {
         F: for<'frame> FnMut(&mut FrameContext<'frame, 'a>),
     {
         let state = &mut self.state;
+        let string_pool = &self.string_pool;
+        let string_index = Cell::new(0);
 
         self.window.draw(|window| {
-            state.string_index.set(0);
             //Safety: Requires that commands are cleared each frame and adhear to the 'a lifetime.
             let commands: [Vec<Command<'a>>; 16] = unsafe { std::mem::transmute(std::mem::take(&mut state.commands)) };
             let mut frame = FrameContext {
                 window,
                 state,
                 commands,
+                string_pool,
+                string_index: &string_index,
             };
             let now = std::time::Instant::now();
             frame.dt = (now - frame.last_frame_time).as_secs_f32();

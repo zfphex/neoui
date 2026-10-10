@@ -273,6 +273,9 @@ impl SemanticNode {
 pub struct SpatialCursor {
     /// Continuous 2D sub-pixel coordinate (centroid of active element).
     pub point: (f32, f32),
+    /// Preferred column/row for a run of arrow navigation, separate from focus identity.
+    pub navigation_anchor: (f32, f32),
+    pub navigation_direction: Option<Direction>,
     /// Role flags of the active element.
     pub role: Role,
     /// 32-bit content signature of the active element's text.
@@ -287,6 +290,8 @@ impl SpatialCursor {
     pub fn new(point: (f32, f32), role: Role, text_signature: u32, stream_index: usize, depth: usize) -> Self {
         Self {
             point,
+            navigation_anchor: point,
+            navigation_direction: None,
             role,
             text_signature,
             stream_index,
@@ -397,6 +402,10 @@ pub fn snap_focus(
 
     if let Some(idx) = exact.or(shifted).or(containing).or(nearest) {
         let node = &nodes[idx];
+        if exact.is_none() && shifted.is_none() {
+            cursor.navigation_anchor = node.centroid();
+            cursor.navigation_direction = None;
+        }
         cursor.stream_index = idx;
         cursor.point = node.centroid();
         cursor.role = node.role;
@@ -418,9 +427,9 @@ pub fn navigate_sequential(
     navigate_semantic(nodes, cursor, Role::FOCUSABLE, forward, active_depth)
 }
 
-/// Spatial 2D directional navigation (Arrow Keys).
-/// Projects directional edge-to-edge distances and cone constraints from `cursor.point`
-/// across focusable candidate nodes, minimizing orthogonal secondary-axis drift.
+/// Arrow navigation prefers candidates beyond the source rectangle's facing edge.
+/// Overlapping candidates are a fallback only if they extend beyond that edge.
+/// The orthogonal anchor survives wide/narrow items and frame reconciliation.
 pub fn navigate_directional(
     nodes: &[SemanticNode],
     cursor: &mut SpatialCursor,
@@ -428,127 +437,87 @@ pub fn navigate_directional(
     alpha: f32,
     active_depth: Option<usize>,
 ) -> bool {
-    if nodes.is_empty() {
+    let Some(source) = nodes.get(cursor.stream_index) else {
         return false;
-    }
-
-    let (dx, dy) = direction.vector();
-    let (cx, cy) = cursor.point;
-
-    let mut best_idx: Option<usize> = None;
-    let mut best_cost = f32::MAX;
-
-    // Structured for auto-vectorization over candidate node chunks
+    };
+    let horizontal = matches!(direction, Direction::Left | Direction::Right);
+    let same_axis = cursor
+        .navigation_direction
+        .is_some_and(|previous| matches!(previous, Direction::Left | Direction::Right) == horizontal);
+    let anchor = if same_axis { cursor.navigation_anchor } else { cursor.point };
+    let s = source.bounds;
+    let edge = match direction {
+        Direction::Right => (s.x + s.width) as f32,
+        Direction::Left => s.x as f32,
+        Direction::Down => (s.y + s.height) as f32,
+        Direction::Up => s.y as f32,
+    };
+    let mut best: Option<(bool, f32, usize)> = None;
     for (i, node) in nodes.iter().enumerate() {
-        if let Some(depth) = active_depth {
-            if (node.depth as usize) < depth {
-                continue;
-            }
-        }
-        if node.state.contains(StateFlags::DISABLED) || !node.role.is_focusable() {
+        if i == cursor.stream_index
+            || node.state.contains(StateFlags::DISABLED)
+            || !node.role.is_focusable()
+            || node.bounds.is_empty()
+            || active_depth.is_some_and(|depth| (node.depth as usize) < depth)
+        {
             continue;
         }
-
-        let (tx, ty) = node.centroid();
-        let vx = tx - cx;
-        let vy = ty - cy;
-        let d_sq = vx * vx + vy * vy;
-
-        if d_sq < 0.25 {
-            // Skip currently focused element
-            continue;
-        }
-
-        let d = d_sq.sqrt();
-        let dot = (vx * dx + vy * dy) / d;
-
-        // Bounding box edge-to-edge projection
         let r = node.bounds;
-        let x0 = r.x as f32;
-        let y0 = r.y as f32;
-        let x1 = (r.x + r.width) as f32;
-        let y1 = (r.y + r.height) as f32;
-
-        let (primary_dist, secondary_dist, is_forward) = match direction {
-            Direction::Right => {
-                let forward = x1 > cx + 1.0;
-                let p = if x0 >= cx { x0 - cx } else { 0.0 };
-                let s = if y0 <= cy && cy <= y1 {
-                    0.0
-                } else if y1 < cy {
-                    cy - y1
-                } else {
-                    y0 - cy
-                };
-                (p, s, forward)
-            }
-            Direction::Left => {
-                let forward = x0 < cx - 1.0;
-                let p = if x1 <= cx { cx - x1 } else { 0.0 };
-                let s = if y0 <= cy && cy <= y1 {
-                    0.0
-                } else if y1 < cy {
-                    cy - y1
-                } else {
-                    y0 - cy
-                };
-                (p, s, forward)
-            }
-            Direction::Down => {
-                let forward = y1 > cy + 1.0;
-                let p = if y0 >= cy { y0 - cy } else { 0.0 };
-                let s = if x0 <= cx && cx <= x1 {
-                    0.0
-                } else if x1 < cx {
-                    cx - x1
-                } else {
-                    x0 - cx
-                };
-                (p, s, forward)
-            }
-            Direction::Up => {
-                let forward = y0 < cy - 1.0;
-                let p = if y1 <= cy { cy - y1 } else { 0.0 };
-                let s = if x0 <= cx && cx <= x1 {
-                    0.0
-                } else if x1 < cx {
-                    cx - x1
-                } else {
-                    x0 - cx
-                };
-                (p, s, forward)
-            }
+        let (near, far, orthogonal_start, orthogonal_end, preferred) = match direction {
+            Direction::Right => (
+                r.x as f32,
+                (r.x + r.width) as f32,
+                r.y as f32,
+                (r.y + r.height) as f32,
+                anchor.1,
+            ),
+            Direction::Left => (
+                -(r.x + r.width) as f32,
+                -r.x as f32,
+                r.y as f32,
+                (r.y + r.height) as f32,
+                anchor.1,
+            ),
+            Direction::Down => (
+                r.y as f32,
+                (r.y + r.height) as f32,
+                r.x as f32,
+                (r.x + r.width) as f32,
+                anchor.0,
+            ),
+            Direction::Up => (
+                -(r.y + r.height) as f32,
+                -r.y as f32,
+                r.x as f32,
+                (r.x + r.width) as f32,
+                anchor.0,
+            ),
         };
-
-        if !is_forward {
+        let origin = if matches!(direction, Direction::Left | Direction::Up) { -edge } else { edge };
+        if far <= origin {
             continue;
         }
-
-        // Candidate must be within directional cone (cos(theta) >= 0.5) or have direct primary-axis projection overlap
-        if dot < 0.5 && secondary_dist > 0.0 {
-            continue;
-        }
-
-        let cos_theta = dot.clamp(-1.0, 1.0);
-        let cost = primary_dist + secondary_dist * (1.0 + alpha * 2.0) + (1.0 - cos_theta) * 30.0;
-
-        if cost < best_cost {
-            best_cost = cost;
-            best_idx = Some(i);
+        let overlapping = near < origin - 1.0;
+        let primary = (near - origin).max(0.0);
+        let secondary = (orthogonal_start - preferred).max(preferred - orthogonal_end).max(0.0);
+        // Distance to the nearest point on the candidate, not its centre.
+        let cost = primary + secondary * (1.0 + alpha.max(0.0) * 2.0);
+        if best.is_none_or(|(was_overlapping, best_cost, _)| (overlapping, cost) < (was_overlapping, best_cost)) {
+            best = Some((overlapping, cost, i));
         }
     }
-
-    if let Some(idx) = best_idx {
-        let node = &nodes[idx];
-        cursor.stream_index = idx;
-        cursor.point = node.centroid();
-        cursor.role = node.role;
-        cursor.text_signature = node.text_signature;
-        cursor.depth = node.depth as usize;
-        return true;
-    }
-
-    false
+    let Some((_, _, idx)) = best else {
+        return false;
+    };
+    let node = &nodes[idx];
+    cursor.stream_index = idx;
+    cursor.point = node.centroid();
+    cursor.role = node.role;
+    cursor.text_signature = node.text_signature;
+    cursor.depth = node.depth as usize;
+    cursor.navigation_anchor = anchor;
+    cursor.navigation_direction = Some(direction);
+    true
 }
 
 /// Semantic jumping (e.g. H for Header, L for Link, B for Button).
@@ -582,6 +551,8 @@ pub fn navigate_semantic(
         if !node.state.contains(StateFlags::DISABLED) && node.role.intersects(target_role) {
             cursor.stream_index = idx;
             cursor.point = node.centroid();
+            cursor.navigation_anchor = cursor.point;
+            cursor.navigation_direction = None;
             cursor.role = node.role;
             cursor.text_signature = node.text_signature;
             cursor.depth = node.depth as usize;
@@ -605,7 +576,7 @@ pub struct AccessabilityState {
     pub cursor: Option<SpatialCursor>,
     /// Search radius for Tier 2 shift resolution.
     pub search_radius: f32,
-    /// Angle cost factor for 2D directional cone navigation.
+    /// Additional penalty for distance from the preferred navigation row/column.
     pub directional_alpha: f32,
     /// Flag indicating whether accessibility keyboard focus visual indicators are active.
     pub keyboard_nav_active: bool,
@@ -714,6 +685,108 @@ impl AccessabilityState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn buttons(bounds: &[Rect]) -> Vec<SemanticNode> {
+        bounds
+            .iter()
+            .enumerate()
+            .map(|(i, &bounds)| SemanticNode::new(bounds, 0..0, Role::BUTTON, StateFlags::NONE, 0, i as u32 + 1))
+            .collect()
+    }
+
+    fn cursor_at(nodes: &[SemanticNode], index: usize) -> SpatialCursor {
+        let n = &nodes[index];
+        SpatialCursor::new(n.centroid(), n.role, n.text_signature, index, 0)
+    }
+
+    #[test]
+    fn wide_task_row_preserves_toolbar_column_across_frames() {
+        let nodes = buttons(&[
+            Rect::new(0, 0, 100, 30),
+            Rect::new(110, 0, 100, 30),
+            Rect::new(220, 0, 100, 30),
+            Rect::new(0, 50, 320, 30),
+        ]);
+        for start in 0..3 {
+            let mut cursor = cursor_at(&nodes, start);
+            assert!(navigate_directional(&nodes, &mut cursor, Direction::Down, 2.0, None));
+            assert_eq!(cursor.stream_index, 3);
+            assert!(snap_focus(&nodes, &mut cursor, 200.0, None));
+            assert!(navigate_directional(&nodes, &mut cursor, Direction::Up, 2.0, None));
+            assert_eq!(cursor.stream_index, start);
+        }
+    }
+
+    #[test]
+    fn right_from_library_excludes_toggle_inside_sidebar_column() {
+        let nodes = buttons(&[
+            Rect::new(8, 60, 264, 36),
+            Rect::new(240, 10, 30, 30),
+            Rect::new(488, 180, 600, 36),
+            Rect::new(488, 218, 600, 36),
+        ]);
+        let mut cursor = cursor_at(&nodes, 0);
+        assert!(navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None));
+        assert_eq!(cursor.stream_index, 2);
+    }
+
+    #[test]
+    fn horizontal_anchor_survives_tall_destination() {
+        let nodes = buttons(&[
+            Rect::new(0, 0, 30, 40),
+            Rect::new(0, 50, 30, 40),
+            Rect::new(50, 0, 30, 90),
+        ]);
+        let mut cursor = cursor_at(&nodes, 1);
+        assert!(navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None));
+        snap_focus(&nodes, &mut cursor, 200.0, None);
+        assert!(navigate_directional(&nodes, &mut cursor, Direction::Left, 2.0, None));
+        assert_eq!(cursor.stream_index, 1);
+        navigate_sequential(&nodes, &mut cursor, true, None);
+        assert_eq!(cursor.navigation_direction, None);
+        assert_eq!(cursor.navigation_anchor, cursor.point);
+    }
+
+    #[test]
+    fn axis_change_resets_anchor_and_failed_move_preserves_it() {
+        let nodes = buttons(&[
+            Rect::new(0, 0, 100, 30),
+            Rect::new(0, 50, 320, 30),
+            Rect::new(340, 50, 30, 30),
+        ]);
+        let mut cursor = cursor_at(&nodes, 0);
+        navigate_directional(&nodes, &mut cursor, Direction::Down, 2.0, None);
+        let point = cursor.point;
+        navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None);
+        assert_eq!(cursor.navigation_anchor, point);
+        let before = cursor;
+        assert!(!navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None));
+        assert_eq!(cursor, before);
+    }
+
+    #[test]
+    fn overlapping_fallback_respects_eligibility_and_prefers_separated_nodes() {
+        let mut nodes = buttons(&[
+            Rect::new(0, 0, 100, 30),
+            Rect::new(80, 0, 40, 30),
+            Rect::new(200, 0, 30, 30),
+        ]);
+        let mut cursor = cursor_at(&nodes, 0);
+        navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None);
+        assert_eq!(cursor.stream_index, 2);
+        nodes[2].state = StateFlags::DISABLED;
+        cursor = cursor_at(&nodes, 0);
+        navigate_directional(&nodes, &mut cursor, Direction::Right, 2.0, None);
+        assert_eq!(cursor.stream_index, 1);
+        cursor = cursor_at(&nodes, 0);
+        assert!(!navigate_directional(
+            &nodes,
+            &mut cursor,
+            Direction::Right,
+            2.0,
+            Some(1)
+        ));
+    }
 
     #[test]
     fn test_tier_1_containment() {

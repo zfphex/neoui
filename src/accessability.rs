@@ -1,4 +1,4 @@
-use minwin::{Key, PlatformWindow, Rect, Window};
+use minwin::{Key, Mouse, PlatformWindow, Rect, Window};
 use rustc_hash::FxHasher;
 use std::hash::Hasher;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Range};
@@ -597,13 +597,14 @@ impl AccessabilityState {
 
     /// Process arrow navigation and optional Tab/Shift-Tab traversal against `prev_nodes`,
     /// then clear the frame buffers.
-    pub fn begin_frame(
-        &mut self,
-        window: Option<&Window>,
-        active_depth: Option<usize>,
-        tab_navigation: bool,
-    ) {
-        if let Some(win) = window {
+    pub fn begin_frame(&mut self, window: Option<&Window>, active_depth: Option<usize>, tab_navigation: bool) {
+        // A mouse press starts a new focus interaction. The clicked widget may
+        // claim focus while drawing; a click on empty space leaves it cleared.
+        if window.is_some_and(|win| !win.focused() || win.mouse_pressed(Mouse::Left)) {
+            self.cursor = None;
+            self.keyboard_nav_active = false;
+        }
+        if let Some(win) = window.filter(|win| win.focused()) {
             let modifiers = win.modifiers();
             let shift = modifiers.shift;
             let tab = tab_navigation && win.pressed(Key::Tab);
@@ -670,8 +671,11 @@ impl AccessabilityState {
 
     /// End of frame focus resolution: snaps cursor to Frame N nodes and swaps buffers.
     pub fn end_frame(&mut self, active_depth: Option<usize>) {
-        if let Some(cursor) = &mut self.cursor {
-            snap_focus(&self.current_nodes, cursor, self.search_radius, active_depth);
+        if let Some(cursor) = &mut self.cursor
+            && !snap_focus(&self.current_nodes, cursor, self.search_radius, active_depth)
+        {
+            self.cursor = None;
+            self.keyboard_nav_active = false;
         }
 
         std::mem::swap(&mut self.prev_nodes, &mut self.current_nodes);
@@ -703,6 +707,25 @@ mod tests {
     fn cursor_at(nodes: &[SemanticNode], index: usize) -> SpatialCursor {
         let n = &nodes[index];
         SpatialCursor::new(n.centroid(), n.role, n.text_signature, index, 0)
+    }
+
+    #[test]
+    fn focus_clears_when_no_eligible_controls_remain() {
+        let nodes = buttons(&[Rect::new(0, 0, 100, 30)]);
+        let mut state = AccessabilityState::new();
+        state.cursor = Some(cursor_at(&nodes, 0));
+        state.keyboard_nav_active = true;
+        state.end_frame(None);
+        assert!(state.cursor.is_none());
+        assert!(!state.keyboard_nav_active);
+    }
+
+    #[test]
+    fn cleared_focus_is_not_restored_by_frame_reconciliation() {
+        let mut state = AccessabilityState::new();
+        state.current_nodes = buttons(&[Rect::new(0, 0, 100, 30)]);
+        state.end_frame(None);
+        assert!(state.cursor.is_none());
     }
 
     #[test]

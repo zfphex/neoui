@@ -595,12 +595,18 @@ impl AccessabilityState {
         }
     }
 
-    /// Pre-frame input dispatch: processes Tab/Arrow keyboard navigation against `prev_nodes` and clears frame buffers.
-    pub fn begin_frame(&mut self, window: Option<&Window>, active_depth: Option<usize>) {
+    /// Process arrow navigation and optional Tab/Shift-Tab traversal against `prev_nodes`,
+    /// then clear the frame buffers.
+    pub fn begin_frame(
+        &mut self,
+        window: Option<&Window>,
+        active_depth: Option<usize>,
+        tab_navigation: bool,
+    ) {
         if let Some(win) = window {
             let modifiers = win.modifiers();
             let shift = modifiers.shift;
-            let tab = win.pressed(Key::Tab);
+            let tab = tab_navigation && win.pressed(Key::Tab);
             let arrow_up = win.pressed(Key::ArrowUp) || win.pressed(Key::Up);
             let arrow_down = win.pressed(Key::ArrowDown) || win.pressed(Key::Down);
             let arrow_left = win.pressed(Key::ArrowLeft) || win.pressed(Key::Left);

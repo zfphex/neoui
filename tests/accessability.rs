@@ -253,7 +253,7 @@ fn test_depth_layer_isolation() {
 #[test]
 fn test_ui_state_accessability_lifecycle() {
     let mut accessability = AccessabilityState::new();
-    accessability.begin_frame(None, None);
+    accessability.begin_frame(None, None, true);
 
     let node1 = SemanticNode::new(
         Rect::new(0, 0, 100, 30),

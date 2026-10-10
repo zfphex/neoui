@@ -343,6 +343,9 @@ impl Context {
                 commands: [const { Vec::new() }; 16],
                 vsync: true,
                 accessability: true,
+                space_activates_controls: true,
+                enter_activates_controls: true,
+                tab_navigation: true,
                 accessability_state: AccessabilityState::new(),
             },
         }
@@ -400,7 +403,11 @@ pub struct UiState {
     pub layout_stack: Vec<Frame>,
     pub render_cache: RenderCache,
     pub commands: [Vec<Command<'static>>; 16],
+
     pub accessability: bool,
+    pub space_activates_controls: bool,
+    pub enter_activates_controls: bool,
+    pub tab_navigation: bool,
     pub accessability_state: AccessabilityState,
 }
 
@@ -532,7 +539,7 @@ impl Context {
                 frame
                     .state
                     .accessability_state
-                    .begin_frame(Some(frame.window), frame.hovered_depth);
+                    .begin_frame(Some(frame.window), frame.hovered_depth, frame.state.tab_navigation);
             }
 
             let (width, height) = frame.window.size();
@@ -894,7 +901,9 @@ impl<'frame, 'a> FrameContext<'frame, 'a> {
 
         let (focused, key_activated) = if self.state.accessability {
             let focused = self.state.accessability_state.is_focused(rect, Role::FOCUSABLE);
-            let key_activated = focused && (self.window.pressed(Key::Enter) || self.window.pressed(Key::Space));
+            let key_activated = focused
+                && ((self.state.enter_activates_controls && self.window.pressed(Key::Enter))
+                    || (self.state.space_activates_controls && self.window.pressed(Key::Space)));
             (focused, key_activated)
         } else {
             (false, false)
